@@ -27,15 +27,16 @@ It includes:
 Run this SQL in the Supabase SQL editor to create the `portfolios` table:
 
 ```sql
-create extension if not exists "pgcrypto";
+create extension if not exists "uuid-ossp";
 
 create table if not exists public.portfolios (
-  id uuid primary key default gen_random_uuid(),
+  id uuid primary key default uuid_generate_v4(),
   device_id text not null,
   data jsonb not null,
   updated_at timestamp with time zone default now()
 );
-create index if not exists on public.portfolios (device_id);
+
+create index if not exists portfolios_device_id_idx on public.portfolios (device_id);
 ```
 
 Add simple RLS policies for no-login device-based access (adjust for production security). See README in `/supabase/` for policies.
