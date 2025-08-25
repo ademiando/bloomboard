@@ -45,3 +45,5 @@ Add simple RLS policies for no-login device-based access (adjust for production 
 - This repo is modular: edit components in `/components`, API routes in `/app/api`.
 - Replace `public/logo.svg` with your brand logo for final branding.
 
+
+eNoPALmg0pmRNZJm
