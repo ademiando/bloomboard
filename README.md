@@ -1,2 +1,0 @@
-# Bloomboard Premium
-Landing + Dashboard
