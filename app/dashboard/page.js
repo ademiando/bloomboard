@@ -1,49 +1,22 @@
 'use client';
-import { useEffect, useMemo, useState } from "react";
+
+import { useEffect, useState, useMemo } from "react";
 import { getDeviceId } from "@/lib/deviceId";
 import { loadPortfolio, savePortfolio } from "@/lib/supabaseClient";
-import dynamic from "next/dynamic";
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend
-} from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import { PlusCircle, Edit, Trash2 } from "lucide-react";
 
-// TradingView widget (sudah ada di projectmu)
-const TradingViewWidget = dynamic(() => import("@/components/TradingViewWidget"), { ssr: false });
-
-/* ------------------- Simple UI Components ------------------- */
-const Button = ({ children, className = "", variant = "default", ...props }) => {
-  const base = "px-3 py-2 rounded-lg text-sm font-medium transition";
-  const variants = {
-    default: "bg-blue-600 text-white hover:bg-blue-700",
-    outline: "border border-gray-300 hover:bg-gray-100",
-    destructive: "bg-red-600 text-white hover:bg-red-700",
-  };
-  return (
-    <button {...props} className={`${base} ${variants[variant]} ${className}`}>
-      {children}
-    </button>
-  );
-};
-
-const Card = ({ children, className = "" }) => (
-  <div className={`bg-white rounded-2xl shadow p-4 ${className}`}>{children}</div>
-);
-
-const Input = ({ className = "", ...props }) => (
-  <input
-    {...props}
-    className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-500 ${className}`}
-  />
-);
-/* ------------------------------------------------------------- */
+// Warna chart
+const COLORS = ["#00C49F", "#0088FE", "#FFBB28", "#FF8042", "#AA46BE", "#FF5A5F"];
 
 export default function DashboardPage() {
   const [portfolio, setPortfolio] = useState([]);
   const [marketData, setMarketData] = useState({});
   const [currency, setCurrency] = useState("USD");
+  const [rates, setRates] = useState({});
   const [isModalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+
   const deviceId = useMemo(() => getDeviceId(), []);
 
   // Load portfolio dari Supabase
@@ -54,185 +27,294 @@ export default function DashboardPage() {
         setPortfolio(
           data.length
             ? data
-            : [{ id: Date.now(), symbol: "NASDAQ:NVDA", quantity: 10, purchasePrice: 160, currency: "USD", date: "2023-01-15" }]
+            : [{ id: Date.now(), symbol: "AAPL", quantity: 5, purchasePrice: 120, currency: "USD" }]
         );
       } catch (e) {
         console.error(e);
-        setPortfolio([{ id: Date.now(), symbol: "NASDAQ:NVDA", quantity: 10, purchasePrice: 160, currency: "USD", date: "2023-01-15" }]);
       }
     })();
   }, [deviceId]);
 
-  // Fetch market data (via /api/quotes yang sudah kamu punya)
+  // Fetch forex rates untuk konversi
+  useEffect(() => {
+    async function fetchRates() {
+      try {
+        const res = await fetch(
+          `https://finnhub.io/api/v1/forex/rates?token=${process.env.NEXT_PUBLIC_FINNHUB_API_KEY}`
+        );
+        const data = await res.json();
+        setRates(data.quote || {});
+      } catch (e) {
+        console.error("Failed to fetch forex rates", e);
+      }
+    }
+    fetchRates();
+  }, []);
+
+  // Fetch harga realtime
   useEffect(() => {
     if (!portfolio.length) return;
-    const fetchQuotes = async () => {
+
+    async function fetchQuotes() {
       try {
-        const symbols = portfolio.map((p) => p.symbol).join(",");
-        const res = await fetch(`/api/quotes?symbols=${symbols}`);
-        const data = await res.json();
-        setMarketData(data);
-      } catch (err) {
-        console.error("Failed to fetch quotes", err);
+        const symbols = portfolio.map((a) => a.symbol);
+        const results = {};
+
+        await Promise.all(
+          symbols.map(async (s) => {
+            const res = await fetch(
+              `https://finnhub.io/api/v1/quote?symbol=${s}&token=${process.env.NEXT_PUBLIC_FINNHUB_API_KEY}`
+            );
+            const d = await res.json();
+            results[s] = d;
+          })
+        );
+
+        setMarketData(results);
+      } catch (e) {
+        console.error("Failed to fetch quotes", e);
       }
-    };
+    }
+
     fetchQuotes();
-    const interval = setInterval(fetchQuotes, 60000);
+    const interval = setInterval(fetchQuotes, 10000); // update tiap 10 detik
     return () => clearInterval(interval);
   }, [portfolio]);
 
-  // Modal helpers
-  const openModal = (a = null) => { setEditing(a); setModalOpen(true); };
-  const closeModal = () => { setEditing(null); setModalOpen(false); };
+  // Open/close modal
+  const openModal = (asset = null) => {
+    setEditing(asset);
+    setModalOpen(true);
+  };
+  const closeModal = () => {
+    setEditing(null);
+    setModalOpen(false);
+  };
+
+  // Save asset baru/edited
   const save = async (d) => {
     if (!d.symbol) return alert("Symbol required");
+    let newPortfolio;
     if (d.id) {
-      setPortfolio((prev) => prev.map((x) => (x.id === d.id ? { ...x, ...d } : x)));
+      newPortfolio = portfolio.map((x) => (x.id === d.id ? { ...x, ...d } : x));
     } else {
-      setPortfolio((prev) => [...prev, { ...d, id: Date.now() }]);
+      newPortfolio = [...portfolio, { ...d, id: Date.now() }];
     }
-    await savePortfolio(deviceId, portfolio);
+    setPortfolio(newPortfolio);
+    await savePortfolio(deviceId, newPortfolio);
     closeModal();
   };
-  const remove = (id) => {
-    setPortfolio((prev) => prev.filter((x) => x.id !== id));
+
+  // Remove asset
+  const remove = async (id) => {
+    const newPortfolio = portfolio.filter((x) => x.id !== id);
+    setPortfolio(newPortfolio);
+    await savePortfolio(deviceId, newPortfolio);
   };
 
-  // Allocation data (Pie Chart)
-  const allocation = portfolio.map((a) => {
-    const price = marketData[a.symbol]?.c || a.purchasePrice;
-    return { name: a.symbol, value: price * a.quantity };
-  });
-  const colors = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"];
+  // Hitung nilai dalam currency terpilih
+  const convertValue = (value, from = "USD") => {
+    if (currency === from) return value;
+    const rate = rates?.[`${from}${currency}`] || 1;
+    return value * rate;
+  };
 
-  // PnL data (Line Chart)
-  const pnlData = portfolio.map((a) => {
-    const currentPrice = marketData[a.symbol]?.c || a.purchasePrice;
-    const pnl = (currentPrice - a.purchasePrice) * a.quantity;
-    return { name: a.symbol, pnl };
+  // Hitung PnL dan nilai total
+  const portfolioWithPnL = portfolio.map((a) => {
+    const q = marketData[a.symbol]?.c || a.purchasePrice;
+    const currentValue = convertValue(q * a.quantity, a.currency);
+    const invested = convertValue(a.purchasePrice * a.quantity, a.currency);
+    return {
+      ...a,
+      currentPrice: q,
+      currentValue,
+      invested,
+      pnl: currentValue - invested,
+      pnlPct: ((currentValue - invested) / invested) * 100,
+    };
   });
+
+  const totalInvested = portfolioWithPnL.reduce((acc, a) => acc + a.invested, 0);
+  const totalValue = portfolioWithPnL.reduce((acc, a) => acc + a.currentValue, 0);
+  const totalPnL = totalValue - totalInvested;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="min-h-screen bg-black text-gray-200 p-6">
       {/* Header */}
-      <Card className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold">My Portfolio</h2>
-          <p className="text-gray-500">{portfolio.length} Assets</p>
-        </div>
-        <Button onClick={() => openModal(null)}>+ Add Asset</Button>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left side */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* TradingView Chart */}
-          <Card>
-            <TradingViewWidget symbol={portfolio[0]?.symbol || "SP:SPX"} />
-          </Card>
-
-          {/* Asset Table */}
-          <Card className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th>Symbol</th>
-                  <th>Quantity</th>
-                  <th>Avg. Price</th>
-                  <th>Current Price</th>
-                  <th>PnL</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {portfolio.map((a) => {
-                  const currentPrice = marketData[a.symbol]?.c || a.purchasePrice;
-                  const pnl = (currentPrice - a.purchasePrice) * a.quantity;
-                  return (
-                    <tr key={a.id} className="border-b">
-                      <td>{a.symbol}</td>
-                      <td>{a.quantity}</td>
-                      <td>{a.purchasePrice} {currency}</td>
-                      <td>{currentPrice} {currency}</td>
-                      <td className={pnl >= 0 ? "text-green-600" : "text-red-600"}>
-                        {pnl.toFixed(2)}
-                      </td>
-                      <td className="space-x-2">
-                        <Button size="sm" onClick={() => openModal(a)}>Edit</Button>
-                        <Button size="sm" variant="destructive" onClick={() => remove(a.id)}>Remove</Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </Card>
-
-          {/* PnL Chart */}
-          <Card>
-            <h3 className="text-lg font-semibold mb-2">PnL by Asset</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={pnlData}>
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="pnl" stroke="#10b981" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
-        </div>
-
-        {/* Right side */}
-        <div className="lg:col-span-1 space-y-6">
-          {/* Allocation Chart */}
-          <Card>
-            <h3 className="text-lg font-semibold mb-2">Allocation</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie data={allocation} dataKey="value" nameKey="name" outerRadius={120} label>
-                  {allocation.map((_, i) => (
-                    <Cell key={i} fill={colors[i % colors.length]} />
-                  ))}
-                </Pie>
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </Card>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Portfolio Dashboard</h1>
+        <div className="flex items-center gap-4">
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            className="bg-gray-900 border border-gray-700 p-2 rounded-lg"
+          >
+            <option value="USD">USD</option>
+            <option value="IDR">IDR</option>
+            <option value="EUR">EUR</option>
+          </select>
+          <button
+            onClick={() => openModal(null)}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg"
+          >
+            <PlusCircle size={18} /> Add Asset
+          </button>
         </div>
       </div>
 
-      {/* Asset Modal */}
+      {/* Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-gray-900 p-4 rounded-lg">
+          <p className="text-gray-400">Total Invested</p>
+          <p className="text-xl font-bold">{currency} {totalInvested.toFixed(2)}</p>
+        </div>
+        <div className="bg-gray-900 p-4 rounded-lg">
+          <p className="text-gray-400">Current Value</p>
+          <p className="text-xl font-bold">{currency} {totalValue.toFixed(2)}</p>
+        </div>
+        <div className="bg-gray-900 p-4 rounded-lg">
+          <p className="text-gray-400">PnL</p>
+          <p className={`text-xl font-bold ${totalPnL >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {currency} {totalPnL.toFixed(2)} ({((totalPnL / totalInvested) * 100).toFixed(2)}%)
+          </p>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-gray-900 rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-800 text-gray-400">
+            <tr>
+              <th className="p-3 text-left">Symbol</th>
+              <th className="p-3 text-right">Quantity</th>
+              <th className="p-3 text-right">Buy Price</th>
+              <th className="p-3 text-right">Current Price</th>
+              <th className="p-3 text-right">Invested</th>
+              <th className="p-3 text-right">Value</th>
+              <th className="p-3 text-right">PnL</th>
+              <th className="p-3 text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {portfolioWithPnL.map((a) => (
+              <tr key={a.id} className="border-t border-gray-800">
+                <td className="p-3">{a.symbol}</td>
+                <td className="p-3 text-right">{a.quantity}</td>
+                <td className="p-3 text-right">{a.purchasePrice}</td>
+                <td className="p-3 text-right">{a.currentPrice?.toFixed(2)}</td>
+                <td className="p-3 text-right">{currency} {a.invested.toFixed(2)}</td>
+                <td className="p-3 text-right">{currency} {a.currentValue.toFixed(2)}</td>
+                <td
+                  className={`p-3 text-right ${
+                    a.pnl >= 0 ? "text-green-400" : "text-red-400"
+                  }`}
+                >
+                  {currency} {a.pnl.toFixed(2)} ({a.pnlPct.toFixed(2)}%)
+                </td>
+                <td className="p-3 text-center flex gap-2 justify-center">
+                  <button onClick={() => openModal(a)} className="text-blue-400 hover:text-blue-600">
+                    <Edit size={16} />
+                  </button>
+                  <button onClick={() => remove(a.id)} className="text-red-400 hover:text-red-600">
+                    <Trash2 size={16} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Allocation Chart */}
+      <div className="bg-gray-900 mt-6 p-6 rounded-lg">
+        <h2 className="text-lg font-semibold mb-4">Portfolio Allocation</h2>
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={portfolioWithPnL}
+              dataKey="currentValue"
+              nameKey="symbol"
+              cx="50%"
+              cy="50%"
+              outerRadius={120}
+              label
+            >
+              {portfolioWithPnL.map((_, i) => (
+                <Cell key={i} fill={COLORS[i % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Modal Add/Edit Asset */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md space-y-4">
-            <h3 className="text-xl font-semibold">{editing ? "Edit Asset" : "Add Asset"}</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+          <div className="bg-gray-900 p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-lg font-bold mb-4">{editing ? "Edit Asset" : "Add Asset"}</h2>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const formData = new FormData(e.currentTarget);
-                const newAsset = {
+                const form = new FormData(e.target);
+                save({
                   id: editing?.id,
-                  symbol: formData.get("symbol"),
-                  quantity: parseFloat(formData.get("quantity")),
-                  purchasePrice: parseFloat(formData.get("purchasePrice")),
-                  currency: formData.get("currency") || "USD",
-                  date: formData.get("date"),
-                };
-                save(newAsset);
+                  symbol: form.get("symbol"),
+                  quantity: parseFloat(form.get("quantity")),
+                  purchasePrice: parseFloat(form.get("purchasePrice")),
+                  currency: form.get("currency"),
+                });
               }}
-              className="space-y-3"
+              className="space-y-4"
             >
-              <Input name="symbol" placeholder="Symbol (e.g., NASDAQ:AAPL)" defaultValue={editing?.symbol} />
-              <Input name="quantity" type="number" step="any" placeholder="Quantity" defaultValue={editing?.quantity} />
-              <Input name="purchasePrice" type="number" step="any" placeholder="Purchase Price" defaultValue={editing?.purchasePrice} />
-              <Input name="currency" placeholder="Currency" defaultValue={editing?.currency || "USD"} />
-              <Input name="date" type="date" defaultValue={editing?.date} />
-              <div className="flex justify-end space-x-2 pt-2">
-                <Button type="button" variant="outline" onClick={closeModal}>Cancel</Button>
-                <Button type="submit">Save</Button>
+              <input
+                name="symbol"
+                placeholder="Symbol (e.g. AAPL, TSLA, BINANCE:BTCUSDT)"
+                defaultValue={editing?.symbol || ""}
+                className="w-full p-2 rounded bg-gray-800 border border-gray-700"
+              />
+              <input
+                name="quantity"
+                type="number"
+                step="any"
+                placeholder="Quantity"
+                defaultValue={editing?.quantity || ""}
+                className="w-full p-2 rounded bg-gray-800 border border-gray-700"
+              />
+              <input
+                name="purchasePrice"
+                type="number"
+                step="any"
+                placeholder="Purchase Price"
+                defaultValue={editing?.purchasePrice || ""}
+                className="w-full p-2 rounded bg-gray-800 border border-gray-700"
+              />
+              <select
+                name="currency"
+                defaultValue={editing?.currency || "USD"}
+                className="w-full p-2 rounded bg-gray-800 border border-gray-700"
+              >
+                <option value="USD">USD</option>
+                <option value="IDR">IDR</option>
+                <option value="EUR">EUR</option>
+              </select>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded bg-green-600 hover:bg-green-700"
+                >
+                  Save
+                </button>
               </div>
             </form>
-          </Card>
+          </div>
         </div>
       )}
     </div>
