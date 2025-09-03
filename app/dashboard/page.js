@@ -1,117 +1,160 @@
-
-// app/dashboard/page.js
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Edit3, Trash2, X } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { getDeviceId } from '@/lib/deviceId';
-import { loadPortfolio, savePortfolio } from '@/lib/supabaseClient';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-/*
-FINAL Portfolio tracker single-file:
-- Finnhub WS realtime ticks + REST fallback
-- Finnhub Search (typeahead) + stock profile to detect currency
-- Add/Edit/Delete asset
-- Add by Qty or by Amount (in display currency) with auto-calculation
-- FX rates realtime (USD base) and conversion
-- Persist to Supabase if available, fallback to localStorage
-- Responsive dark/minimal UI
-Requirements:
-- NEXT_PUBLIC_FINNHUB_API_KEY env variable
-- dependencies: recharts, lucide-react
-*/
+// Try to import existing helpers if present (supabase persistence & device id).
+// If not present, we'll fallback to localStorage — imports wrapped in try/catch below.
+let getDeviceId;
+let loadPortfolio;
+let savePortfolio;
+try {
+  // eslint-disable-next-line import/no-unresolved, import/no-extraneous-dependencies
+  // note: if these files exist in your repo, they'll be used; otherwise we'll use fallback
+  // keep them dynamic to avoid build failure if absent
+  // In Next.js, dynamic require at runtime: wrap in try/catch
+  // eslint-disable-next-line global-require
+  const dev = require('@/lib/deviceId');
+  getDeviceId = dev.getDeviceId || (() => 'anon');
+} catch (e) {
+  getDeviceId = () => 'anon';
+}
+try {
+  // eslint-disable-next-line global-require
+  const sup = require('@/lib/supabaseClient');
+  loadPortfolio = sup.loadPortfolio;
+  savePortfolio = sup.savePortfolio;
+} catch (e) {
+  loadPortfolio = null;
+  savePortfolio = null;
+}
 
+/* ==========================
+   CONFIG
+   ========================== */
 const FINNHUB_KEY = process.env.NEXT_PUBLIC_FINNHUB_API_KEY || '';
 const WS_URL = FINNHUB_KEY ? `wss://ws.finnhub.io?token=${FINNHUB_KEY}` : null;
+const POLL_INTERVAL_MS = 10000; // fallback polling interval for quotes
+const FX_INTERVAL_MS = 60 * 1000; // FX update interval
 const COLORS = ['#06b6d4', '#10b981', '#84cc16', '#f97316', '#ef4444', '#8b5cf6'];
 
+/* ==========================
+   SMALL HELPERS
+   ========================== */
 const fmtIDR = (v) => {
   if (v === null || v === undefined || Number.isNaN(v)) return '-';
   return 'Rp ' + Math.round(Number(v)).toLocaleString('id-ID');
 };
-const fmtNum = (v, opts = { min: 2, max: 2 }) => {
+const fmtNum = (v, min = 2) => {
   if (v === null || v === undefined || Number.isNaN(v)) return '-';
-  return Number(v).toLocaleString('en-US', { minimumFractionDigits: opts.min, maximumFractionDigits: opts.max });
+  return Number(v).toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: 2 });
 };
-const debounce = (fn, ms = 260) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; };
+const debounce = (fn, ms = 300) => {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+};
 
+/* ==========================
+   SMALL UI ATOMS (self-contained)
+   ========================== */
+const IconPlus = ({ className = '', size = 14 }) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 20 20" fill="none">
+    <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+const IconEdit = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"><path d="M3 21l3-1 9-9 3 3-9 9-6  -2z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+const IconTrash = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6v12M16 6v12M9 6l1-2h4l1 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+);
+
+/* ==========================
+   MAIN COMPONENT
+   ========================== */
 export default function DashboardPage() {
   const deviceId = useMemo(() => {
-    try { return getDeviceId(); } catch { return 'anon'; }
+    try {
+      return getDeviceId ? getDeviceId() : 'anon';
+    } catch {
+      return 'anon';
+    }
   }, []);
 
-  // Core data
-  const [portfolio, setPortfolio] = useState([]); // items: { id, symbol, qty, purchasePrice, currency, date, note }
-  const [marketData, setMarketData] = useState({}); // symbol -> quote object { c, p, t }
-  const [fxRates, setFxRates] = useState({ base: 'USD', rates: { USD: 1 } }); // USD -> CUR mapping
+  // portfolio: array of assets { id, symbol, qty, purchasePrice, currency, date, note }
+  const [portfolio, setPortfolio] = useState([]);
+  const [marketData, setMarketData] = useState({}); // symbol -> { c, p, t } from Finnhub quote/trade
+  const [fxRates, setFxRates] = useState({ base: 'USD', rates: { USD: 1 } }); // USD -> CUR
   const [displayCurrency, setDisplayCurrency] = useState('IDR');
 
   // UI state
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editing, setEditing] = useState(null); // object or null
-  const [modalModeAmount, setModalModeAmount] = useState(false); // false => qty mode, true => amount mode
+  const [isModalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [liveFlash, setLiveFlash] = useState({}); // symbol -> timestamp (for short highlight when tick arrives)
-
-  // WS and subscriptions
+  const [liveFlash, setLiveFlash] = useState({}); // symbol -> timestamp
   const wsRef = useRef(null);
-  const subscribed = useRef(new Set());
+  const subscribedRef = useRef(new Set());
+  const pollRef = useRef(null);
 
-  /* ------------------ Load persisted portfolio ------------------ */
+  /* ---------------- load persisted portfolio (supabase or localStorage) ---------------- */
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        if (typeof loadPortfolio === 'function') {
+        if (loadPortfolio) {
           const res = await loadPortfolio(deviceId);
-          if (mounted && res && Array.isArray(res.data)) {
+          if (res && Array.isArray(res.data) && mounted) {
             setPortfolio(res.data);
             return;
           }
         }
-      } catch (e) { /* ignore and fallback */ }
-
-      // fallback localStorage
+      } catch (e) {
+        // ignore, fallback
+      }
       try {
-        const raw = localStorage.getItem('bb_portfolio_v3');
+        const raw = localStorage.getItem('bb_portfolio_v_final');
         if (raw && mounted) setPortfolio(JSON.parse(raw));
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
     })();
     return () => { mounted = false; };
   }, [deviceId]);
 
-  // persist helper (Supabase try, then localStorage)
+  /* ---------------- persist helper ---------------- */
   const persist = async (next) => {
     setPortfolio(next);
     try {
       setSaving(true);
-      if (typeof savePortfolio === 'function') await savePortfolio(deviceId, next);
-      localStorage.setItem('bb_portfolio_v3', JSON.stringify(next));
+      if (savePortfolio) await savePortfolio(deviceId, next);
+      localStorage.setItem('bb_portfolio_v_final', JSON.stringify(next));
     } catch (e) {
-      // fallback local
-      localStorage.setItem('bb_portfolio_v3', JSON.stringify(next));
+      // fallback localStorage
+      localStorage.setItem('bb_portfolio_v_final', JSON.stringify(next));
     } finally {
       setSaving(false);
     }
   };
 
-  /* ------------------ Finnhub WebSocket ------------------ */
+  /* ---------------- Finnhub WebSocket (realtime trades) ---------------- */
   useEffect(() => {
     if (!WS_URL) {
-      console.warn('Finnhub key missing — live WS disabled.');
+      console.warn('Finnhub WS disabled (missing API key)');
       return;
     }
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      // subscribe to current portfolio
+      // subscribe to existing portfolio symbols
       portfolio.forEach(a => {
-        try { ws.send(JSON.stringify({ type: 'subscribe', symbol: a.symbol })); subscribed.current.add(a.symbol); } catch {}
+        try {
+          ws.send(JSON.stringify({ type: 'subscribe', symbol: a.symbol }));
+          subscribedRef.current.add(a.symbol);
+        } catch {}
       });
     };
 
@@ -123,64 +166,75 @@ export default function DashboardPage() {
             const next = { ...prev };
             msg.data.forEach(tr => {
               const s = tr.s;
-              next[s] = { ...(next[s] || {}), c: tr.p, t: tr.t, p: tr.p };
+              // tr.p price, tr.t timestamp
+              next[s] = { ...(next[s] || {}), c: tr.p, t: tr.t };
+              // set flash
               setLiveFlash(f => ({ ...f, [s]: Date.now() }));
             });
             return next;
           });
         }
-      } catch (err) {
-        console.error('WS parse err', err);
+      } catch (e) {
+        // ignore parse errors
       }
     };
 
-    ws.onerror = (err) => { console.warn('Finnhub WS error', err); };
+    ws.onerror = (e) => {
+      console.warn('Finnhub WS error', e);
+    };
 
     ws.onclose = () => {
-      // try reconnect after short delay (simple)
-      setTimeout(() => { if (wsRef.current === ws) wsRef.current = null; }, 3000);
+      // let reconnection be handled by re-mounting when needed; keep simple here
+      wsRef.current = null;
     };
 
     return () => {
-      // cleanup
       try {
-        portfolio.forEach(a => { if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'unsubscribe', symbol: a.symbol })); } });
+        portfolio.forEach(a => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'unsubscribe', symbol: a.symbol }));
+          }
+        });
       } catch {}
       try { ws.close(); } catch {}
       wsRef.current = null;
     };
+    // NOTE: we intentionally don't add portfolio to deps to avoid reopen; subscription management handled separately
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [WS_URL]);
 
-  // Manage subscriptions when portfolio changes (subscribe/unsubscribe)
+  // subscribe/unsubscribe when portfolio changes (send messages on existing ws)
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const desired = new Set(portfolio.map(p => p.symbol));
-    desired.forEach(s => {
-      if (!subscribed.current.has(s)) {
-        try { ws.send(JSON.stringify({ type: 'subscribe', symbol: s })); subscribed.current.add(s); } catch {}
+    desired.forEach(sym => {
+      if (!subscribedRef.current.has(sym)) {
+        try { ws.send(JSON.stringify({ type: 'subscribe', symbol: sym })); subscribedRef.current.add(sym); } catch {}
       }
     });
-    Array.from(subscribed.current).forEach(s => {
-      if (!desired.has(s)) {
-        try { ws.send(JSON.stringify({ type: 'unsubscribe', symbol: s })); subscribed.current.delete(s); } catch {}
+    Array.from(subscribedRef.current).forEach(sym => {
+      if (!desired.has(sym)) {
+        try { ws.send(JSON.stringify({ type: 'unsubscribe', symbol: sym })); subscribedRef.current.delete(sym); } catch {}
       }
     });
   }, [portfolio]);
 
-  /* ------------------ FX + REST fallback fetch ------------------ */
+  /* ---------------- REST fallback polling for quotes and FX rates ---------------- */
   useEffect(() => {
     let mounted = true;
-    const updateFxAndMissing = async () => {
+    const fetchFxAndQuotes = async () => {
       if (!FINNHUB_KEY) return;
       try {
-        const r = await fetch(`https://finnhub.io/api/v1/forex/rates?base=USD&token=${FINNHUB_KEY}`);
-        const j = await r.json();
-        if (mounted && j && j.rates) setFxRates({ base: j.base || 'USD', rates: j.rates || {} });
-      } catch (e) { /* ignore */ }
+        // FX rates (USD base)
+        const rfx = await fetch(`https://finnhub.io/api/v1/forex/rates?base=USD&token=${FINNHUB_KEY}`);
+        const jfx = await rfx.json();
+        if (mounted && jfx && jfx.rates) setFxRates({ base: jfx.base || 'USD', rates: jfx.rates || {} });
+      } catch (e) {
+        // ignore
+      }
 
-      // fetch missing or stale quotes (>60s)
+      // quotes for symbols not present or stale (>60s)
       const now = Date.now();
       const needs = portfolio.filter(a => {
         const md = marketData[a.symbol];
@@ -189,23 +243,33 @@ export default function DashboardPage() {
         return false;
       }).map(a => a.symbol);
 
-      if (needs.length && FINNHUB_KEY) {
-        await Promise.all(needs.map(async s => {
+      if (needs.length > 0 && FINNHUB_KEY) {
+        await Promise.all(needs.map(async (s) => {
           try {
-            const rr = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}&token=${FINNHUB_KEY}`);
-            const jj = await rr.json();
-            setMarketData(prev => ({ ...prev, [s]: jj }));
-          } catch (e) {}
+            const rq = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}&token=${FINNHUB_KEY}`);
+            const jq = await rq.json();
+            setMarketData(prev => ({ ...prev, [s]: jq }));
+          } catch {}
         }));
       }
     };
 
-    updateFxAndMissing();
-    const iid = setInterval(updateFxAndMissing, 60 * 1000);
-    return () => { mounted = false; clearInterval(iid); };
+    // initial
+    fetchFxAndQuotes();
+    // poll for quotes periodically (also serves as fallback if WS missing)
+    pollRef.current = setInterval(fetchFxAndQuotes, POLL_INTERVAL_MS);
+    // fx refetch interval
+    const fxiid = setInterval(fetchFxAndQuotes, FX_INTERVAL_MS);
+
+    return () => {
+      mounted = false;
+      if (pollRef.current) clearInterval(pollRef.current);
+      clearInterval(fxiid);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolio, marketData]);
 
-  /* ------------------ Typeahead search ------------------ */
+  /* ---------------- Typeahead search (Finnhub search) ---------------- */
   const doSearch = useMemo(() => debounce(async (q) => {
     if (!q || !FINNHUB_KEY) { setSearchResults([]); return; }
     setLoadingSearch(true);
@@ -222,189 +286,165 @@ export default function DashboardPage() {
   }, 260), []);
   useEffect(() => { doSearch(searchQ); }, [searchQ, doSearch]);
 
-  /* ------------------ Helper: conversion functions ------------------ */
-  // fxRates.rates: USD -> CUR (e.g. rates['IDR'] = 15500)
-  function convertToDisplay(valueInAssetCurrency, assetCurrency = 'USD') {
-    if (valueInAssetCurrency === null || valueInAssetCurrency === undefined) return 0;
+  /* ---------------- Conversion helpers ---------------- */
+  // fxRates.rates: USD -> CUR (e.g., rates['IDR'] = 15500)
+  const convertToDisplay = (value, from = 'USD') => {
+    if (value === null || value === undefined) return 0;
     const rates = fxRates.rates || {};
-    if (assetCurrency === displayCurrency) return valueInAssetCurrency;
-    // Convert assetCurrency -> USD -> displayCurrency using rates (USD->CUR)
-    // valueInUSD = (assetCurrency === 'USD') ? value : value / rates[assetCurrency]
-    const rFrom = (assetCurrency === 'USD') ? 1 : (rates[assetCurrency] || 1);
+    if (from === displayCurrency) return value;
+    // convert from -> USD -> display
+    const rFrom = (from === 'USD') ? 1 : (rates[from] || 1);
     const rTo = (displayCurrency === 'USD') ? 1 : (rates[displayCurrency] || 1);
-    const valueInUSD = (assetCurrency === 'USD') ? valueInAssetCurrency : (valueInAssetCurrency / rFrom);
-    return valueInUSD * rTo;
-  }
+    const valueUsd = (from === 'USD') ? value : (value / rFrom);
+    return valueUsd * rTo;
+  };
 
-  function displayFormat(value) {
+  const displayFormat = (value) => {
     if (displayCurrency === 'IDR') return fmtIDR(value);
     return `${displayCurrency} ${fmtNum(value)}`;
-  }
+  };
 
-  /* ------------------ Compute live portfolio with conversions ------------------ */
+  /* ---------------- Derived live portfolio ---------------- */
   const portLive = useMemo(() => {
     return portfolio.map(a => {
       const md = marketData[a.symbol] || {};
       const livePrice = md.c || md.p || a.purchasePrice || 0;
       const investedAbs = (Number(a.purchasePrice) || 0) * (Number(a.qty) || 0);
       const currentAbs = (Number(livePrice) || 0) * (Number(a.qty) || 0);
-      const investedDisp = convertToDisplay(investedAbs, a.currency || 'USD');
-      const currentDisp = convertToDisplay(currentAbs, a.currency || 'USD');
-      const pnl = currentDisp - investedDisp;
-      const pnlPct = investedDisp ? (pnl / investedDisp) * 100 : 0;
-      return { ...a, livePrice, investedDisp, currentDisp, pnl, pnlPct };
+      const invested = convertToDisplay(investedAbs, a.currency || 'USD');
+      const current = convertToDisplay(currentAbs, a.currency || 'USD');
+      const pnl = current - invested;
+      const pnlPct = invested ? (pnl / invested) * 100 : 0;
+      return { ...a, livePrice, invested, current, pnl, pnlPct };
     });
   }, [portfolio, marketData, fxRates, displayCurrency]);
 
   const totals = useMemo(() => {
-    const invested = portLive.reduce((s, x) => s + (x.investedDisp || 0), 0);
-    const current = portLive.reduce((s, x) => s + (x.currentDisp || 0), 0);
+    const invested = portLive.reduce((s, a) => s + (a.invested || 0), 0);
+    const current = portLive.reduce((s, a) => s + (a.current || 0), 0);
     const pnl = current - invested;
     const pnlPct = invested ? (pnl / invested) * 100 : 0;
     return { invested, current, pnl, pnlPct };
   }, [portLive]);
 
-  /* ------------------ Add / Edit / Delete actions ------------------ */
+  /* ---------------- CRUD actions ---------------- */
   const openAdd = () => {
     setEditing({ symbol: '', qty: 0, purchasePrice: 0, currency: 'USD', date: '' });
-    setModalModeAmount(false);
-    setIsModalOpen(true);
     setSearchQ('');
     setSearchResults([]);
+    setModalOpen(true);
   };
-  const openEdit = (a) => {
-    setEditing({ ...a });
-    setModalModeAmount(false);
-    setIsModalOpen(true);
+  const openEdit = (asset) => {
+    setEditing({ ...asset });
     setSearchQ('');
     setSearchResults([]);
+    setModalOpen(true);
   };
   const closeModal = () => {
-    setEditing(null); setIsModalOpen(false); setSearchQ(''); setSearchResults([]);
+    setEditing(null);
+    setModalOpen(false);
+    setSearchQ('');
+    setSearchResults([]);
   };
 
-  // pick suggestion -> fetch quote & profile then set editing symbol/vendor defaults
-  const pickSuggestion = async (symbol) => {
-    try {
-      // set symbol quickly
-      setEditing(ed => ({ ...(ed||{}), symbol }));
-      setSearchQ('');
-      setSearchResults([]);
-
-      // fetch quote for live price
-      if (FINNHUB_KEY) {
-        const qres = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`);
-        const jq = await qres.json();
-        setMarketData(prev => ({ ...prev, [symbol]: jq }));
-
-        // fetch profile2 to detect currency if available
-        try {
-          const pr = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`);
-          const jp = await pr.json();
-          if (jp && jp.currency) {
-            setEditing(ed => ({ ...(ed||{}), currency: jp.currency }));
-          }
-        } catch {}
-      }
-    } catch (e) {
-      console.error('pickSuggestion err', e);
-    }
-  };
-
-  // upsert asset from modal form
-  const upsertAsset = async (payload) => {
-    // payload can be { id?, symbol, qty, purchasePrice, currency, date }
+  const upsertAsset = async (item) => {
+    // item: { id?, symbol, qty, purchasePrice, currency, date }
     const cleaned = {
-      id: payload.id || Date.now(),
-      symbol: (payload.symbol || '').toString().trim().toUpperCase(),
-      qty: Number(payload.qty || payload.quantity || 0) || 0,
-      purchasePrice: Number(payload.purchasePrice || payload.purchase_price || 0) || 0,
-      currency: payload.currency || 'USD',
-      date: payload.date || ''
+      id: item.id || Date.now(),
+      symbol: (item.symbol || '').toString().trim().toUpperCase(),
+      qty: Number(item.qty || 0) || 0,
+      purchasePrice: Number(item.purchasePrice || item.purchase_price || 0) || 0,
+      currency: item.currency || 'USD',
+      date: item.date || ''
     };
     if (!cleaned.symbol) return alert('Symbol required');
 
     const exists = portfolio.find(p => p.id === cleaned.id);
     const next = exists ? portfolio.map(p => p.id === cleaned.id ? { ...p, ...cleaned } : p) : [...portfolio, cleaned];
 
-    // subscribe WS for new symbol immediately
+    // subscribe WS if needed immediately
     try {
       const ws = wsRef.current;
-      if (!exists && ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'subscribe', symbol: cleaned.symbol })); subscribed.current.add(cleaned.symbol); }
+      if (!exists && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'subscribe', symbol: cleaned.symbol }));
+        subscribedRef.current.add(cleaned.symbol);
+      }
     } catch {}
 
     await persist(next);
     closeModal();
   };
 
-  const removeAsset = async (id) => {
+  const deleteAsset = async (id) => {
     const removed = portfolio.find(p => p.id === id);
     const next = portfolio.filter(p => p.id !== id);
     try {
       const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN && removed) { ws.send(JSON.stringify({ type: 'unsubscribe', symbol: removed.symbol })); subscribed.current.delete(removed.symbol); }
+      if (ws && ws.readyState === WebSocket.OPEN && removed) {
+        ws.send(JSON.stringify({ type: 'unsubscribe', symbol: removed.symbol }));
+        subscribedRef.current.delete(removed.symbol);
+      }
     } catch {}
     await persist(next);
   };
 
-  /* ------------------ Modal helper: compute qty when user enters amount ------------------ */
-  // amountInDisplayCurrency -> qty  = amount / price_in_displayCurrency
-  const computeQtyFromAmount = (amount, symbol, assetCurrency) => {
-    const md = marketData[symbol] || {};
-    const livePrice = md.c || md.p || 0;
-    // price in asset currency -> convert to display currency
-    const priceInDisplay = convertPriceToDisplay(livePrice, assetCurrency);
-    if (!priceInDisplay || priceInDisplay === 0) return 0;
-    return Number(amount) / Number(priceInDisplay);
+  /* ---------------- Modal helper: pick suggestion -> fetch profile/quote ---------------- */
+  const pickSuggestion = async (symbol) => {
+    // set symbol quickly
+    setEditing(ed => ({ ...(ed || {}), symbol }));
+    setSearchQ('');
+    setSearchResults([]);
+
+    if (!FINNHUB_KEY) return;
+    try {
+      const qRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`);
+      const jq = await qRes.json();
+      setMarketData(prev => ({ ...prev, [symbol]: jq }));
+    } catch (e) { /* ignore */ }
+
+    // try to fetch profile (to detect currency for stock tickers)
+    try {
+      const pr = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`);
+      const jp = await pr.json();
+      if (jp && jp.currency) {
+        setEditing(ed => ({ ...(ed || {}), currency: jp.currency }));
+      }
+    } catch (e) { /* ignore */ }
   };
 
-  // convert 1 unit price from assetCurrency to displayCurrency
-  const convertPriceToDisplay = (price, assetCurrency) => {
-    // price: number in assetCurrency
-    // we want price_in_displayCurrency
-    const rates = fxRates.rates || {};
-    if (assetCurrency === displayCurrency) return price;
-    const rFrom = (assetCurrency === 'USD') ? 1 : (rates[assetCurrency] || 1);
-    const rTo = (displayCurrency === 'USD') ? 1 : (rates[displayCurrency] || 1);
-    const priceUsd = (assetCurrency === 'USD') ? price : (price / rFrom);
-    return priceUsd * rTo;
-  };
-
-  /* ------------------ Small UI atoms ------------------ */
-  const Card = ({ children, className='' }) => <div className={`bg-zinc-950 border border-zinc-900 rounded-2xl p-4 ${className}`}>{children}</div>;
-  const Small = ({ children, className='' }) => <div className={`text-xs text-zinc-400 ${className}`}>{children}</div>;
-
-  /* ------------------ Live flash cleanup ------------------ */
+  /* ---------------- live flash cleanup ---------------- */
   useEffect(() => {
     if (!Object.keys(liveFlash).length) return;
     const iid = setInterval(() => {
       const cutoff = Date.now() - 700;
       setLiveFlash(prev => {
         const copy = {};
-        Object.entries(prev).forEach(([k,t]) => { if (t > cutoff) copy[k] = t; });
+        Object.entries(prev).forEach(([k, t]) => { if (t > cutoff) copy[k] = t; });
         return copy;
       });
     }, 200);
     return () => clearInterval(iid);
   }, [liveFlash]);
 
-  /* ------------------ Render ------------------ */
+  /* ===========================
+     RENDER
+     =========================== */
   return (
     <div className="min-h-screen bg-black text-zinc-100 p-4">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
 
-        {/* header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <div className="text-xs text-zinc-400">PORTFOLIO</div>
-            <div className="text-2xl font-semibold">Portfolio</div>
+            <div className="text-2xl font-semibold">Portfolio Tracker</div>
             <div className="text-xs text-zinc-500 mt-1">{portfolio.length} assets • live</div>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm">
               <label className="text-xs text-zinc-400 mr-2">Currency</label>
-              <select value={displayCurrency} onChange={e => setDisplayCurrency(e.target.value)} className="bg-transparent outline-none text-zinc-100">
+              <select value={displayCurrency} onChange={(e) => setDisplayCurrency(e.target.value)} className="bg-transparent outline-none text-zinc-100">
                 <option value="IDR">IDR</option>
                 <option value="USD">USD</option>
                 <option value="EUR">EUR</option>
@@ -412,88 +452,81 @@ export default function DashboardPage() {
             </div>
 
             <button onClick={openAdd} className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-medium hover:bg-emerald-500">
-              <Plus size={16}/> Add
+              <IconPlus /> Add
             </button>
           </div>
         </div>
 
-        {/* summary */}
+        {/* Summary */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <Card>
-            <Small>Trading Balance</Small>
+          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
+            <div className="text-xs text-zinc-400">Invested</div>
             <div className="text-lg font-semibold">{displayFormat(totals.invested)}</div>
-          </Card>
-          <Card>
-            <Small>Invested</Small>
-            <div className="text-lg font-semibold">{displayFormat(totals.invested)}</div>
-          </Card>
-          <Card>
-            <Small>P&amp;L</Small>
-            <div className={`text-lg font-semibold ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >=0 ? '+' : ''}{displayFormat(totals.pnl)} <span className="text-xs text-zinc-400">({totals.pnlPct?.toFixed(2)}%)</span></div>
-          </Card>
-          <Card>
-            <Small>Total Equity</Small>
+          </div>
+          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
+            <div className="text-xs text-zinc-400">Market Value</div>
             <div className="text-lg font-semibold">{displayFormat(totals.current)}</div>
-          </Card>
+          </div>
+          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
+            <div className="text-xs text-zinc-400">P&amp;L</div>
+            <div className={`text-lg font-semibold ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl>=0?'+':''}{displayFormat(totals.pnl)} <span className="text-xs text-zinc-400">({totals.pnlPct?.toFixed(2)}%)</span></div>
+          </div>
+          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
+            <div className="text-xs text-zinc-400">Total Equity</div>
+            <div className="text-lg font-semibold">{displayFormat(totals.current)}</div>
+          </div>
         </div>
 
-        {/* main grid */}
+        {/* Main grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* left: table & PnL bars */}
+          {/* Left: table + pnl bars */}
           <div className="lg:col-span-2 space-y-4">
-
-            {/* asset table */}
             <div className="bg-zinc-950 border border-zinc-900 rounded-2xl overflow-hidden">
               <div className="px-4 py-3 border-b border-zinc-900 flex items-center justify-between">
-                <div className="text-sm font-medium text-zinc-300">Code</div>
-                <div className="hidden sm:flex gap-6 text-xs text-zinc-500">
-                  <div className="w-24 text-right">Invested</div>
-                  <div className="w-24 text-right">Market</div>
-                  <div className="w-32 text-right">P&amp;L</div>
-                  <div className="w-12" />
-                </div>
+                <div className="text-sm font-medium text-zinc-300">Assets</div>
+                <div className="text-xs text-zinc-500">Live prices via Finnhub</div>
               </div>
 
               <div className="divide-y divide-zinc-900">
                 {portLive.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-zinc-500">Belum ada asset. Tekan Add untuk menambah.</div>
-                ) : portLive.map(a => (
+                  <div className="px-4 py-8 text-center text-zinc-500">No assets yet. Click Add to track.</div>
+                ) : portLive.map((a) => (
                   <div key={a.id} className="px-4 py-4 flex items-center justify-between hover:bg-zinc-900">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3">
                         <div className="font-semibold text-sm">{a.symbol}</div>
-                        <div className="text-xs text-zinc-500">{a.qty} Lot</div>
+                        <div className="text-xs text-zinc-500">{Number(a.qty)} qty</div>
                         {liveFlash[a.symbol] && <div className="ml-2 text-xs text-emerald-400">live</div>}
                       </div>
                       <div className="text-xs text-zinc-500 mt-1">{displayFormat(a.invested)} • <span className="text-xs text-zinc-400">{fmtNum(a.purchasePrice)}</span></div>
                     </div>
 
                     <div className="hidden sm:flex items-center gap-6 text-right">
-                      <div className="w-24">{displayFormat(a.invested)}</div>
-                      <div className="w-24">
+                      <div className="w-28">{displayFormat(a.invested)}</div>
+                      <div className="w-28">
                         <div className="text-sm font-medium text-emerald-400">{displayFormat(a.current)}</div>
                         <div className="text-xs text-zinc-400">{fmtNum(a.livePrice)}</div>
                       </div>
-                      <div className="w-32 text-right">
-                        <div className={`${a.pnl>=0 ? 'text-emerald-400' : 'text-red-400'} font-medium`}>{a.pnl>=0?'+':''}{displayFormat(a.pnl)}</div>
+                      <div className="w-36 text-right">
+                        <div className={`${a.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'} font-medium`}>{a.pnl >= 0 ? '+' : ''}{displayFormat(a.pnl)}</div>
                         <div className="text-xs text-zinc-400">{a.pnlPct?.toFixed(2)}%</div>
                       </div>
                       <div className="w-12 flex gap-2 justify-end">
-                        <button onClick={()=>openEdit(a)} className="text-zinc-300 hover:text-white"><Edit3 size={16} /></button>
-                        <button onClick={()=>removeAsset(a.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16}/></button>
+                        <button onClick={() => openEdit(a)} className="text-zinc-300 hover:text-white"><IconEdit /></button>
+                        <button onClick={() => deleteAsset(a.id)} className="text-red-500 hover:text-red-400"><IconTrash /></button>
                       </div>
                     </div>
 
                     {/* mobile condensed */}
                     <div className="sm:hidden flex items-center gap-3">
-                      <div className={`${a.pnl>=0 ? 'text-emerald-400' : 'text-red-400'} font-medium`}>{a.pnl>=0?'+':''}{displayFormat(a.pnl)}</div>
+                      <div className={`${a.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'} font-medium`}>{a.pnl >= 0 ? '+' : ''}{displayFormat(a.pnl)}</div>
                       <div className="flex gap-2">
-                        <button onClick={()=>openEdit(a)} className="text-zinc-300 hover:text-white"><Edit3 size={16} /></button>
-                        <button onClick={()=>removeAsset(a.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16}/></button>
+                        <button onClick={() => openEdit(a)} className="text-zinc-300 hover:text-white"><IconEdit /></button>
+                        <button onClick={() => deleteAsset(a.id)} className="text-red-500 hover:text-red-400"><IconTrash /></button>
                       </div>
                     </div>
                   </div>
-                ))}
+                )))}
               </div>
 
               <div className="px-4 py-3 border-t border-zinc-900 text-xs text-zinc-500 flex items-center justify-between">
@@ -502,14 +535,15 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* PnL per asset */}
+            {/* PnL bars */}
             <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-medium text-zinc-300">PnL per asset</div>
                 <div className="text-xs text-zinc-500">Realtime</div>
               </div>
+
               <div className="space-y-3">
-                {portLive.map(a => {
+                {portLive.map((a, i) => {
                   const max = Math.max(...portLive.map(x => Math.abs(x.pnl)), 1);
                   const pct = Math.min(100, (Math.abs(a.pnl) / max) * 100);
                   return (
@@ -525,25 +559,39 @@ export default function DashboardPage() {
                 {portLive.length === 0 && <div className="text-zinc-500 text-sm">No data</div>}
               </div>
             </div>
-
           </div>
 
-          {/* right: allocation + FX */}
+          {/* Right: allocation (simple donut) + FX */}
           <div className="space-y-4">
             <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-medium text-zinc-300">Allocation</div>
                 <div className="text-xs text-zinc-500">Live</div>
               </div>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={portLive.map(p=>({ name: p.symbol, value: p.current }))} dataKey="value" nameKey="name" outerRadius={80} label>
-                      {portLive.map((_,i)=>(<Cell key={i} fill={COLORS[i%COLORS.length]} />))}
-                    </Pie>
-                    <Tooltip formatter={(v)=> displayFormat(v)} />
-                  </PieChart>
-                </ResponsiveContainer>
+              {/* simple svg donut */}
+              <div className="w-full h-56 flex items-center justify-center">
+                <svg viewBox="0 0 200 200" className="w-full h-full">
+                  <g transform="translate(100,100)">
+                    {(() => {
+                      const total = Math.max(0.0001, portLive.reduce((s, x) => s + (x.current || 0), 0));
+                      let start = 0;
+                      return portLive.map((p, idx) => {
+                        const value = p.current || 0;
+                        const angle = (value / total) * Math.PI * 2;
+                        const x1 = Math.cos(start) * 70;
+                        const y1 = Math.sin(start) * 70;
+                        const x2 = Math.cos(start + angle) * 70;
+                        const y2 = Math.sin(start + angle) * 70;
+                        const large = angle > Math.PI ? 1 : 0;
+                        const d = `M ${x1} ${y1} A 70 70 0 ${large} 1 ${x2} ${y2} L 0 0`;
+                        start += angle;
+                        return <path key={idx} d={d} fill={COLORS[idx % COLORS.length]} opacity="0.95" />;
+                      });
+                    })()}
+                    {/* hole */}
+                    <circle cx="0" cy="0" r="40" fill="#0b1220" />
+                  </g>
+                </svg>
               </div>
             </div>
 
@@ -559,51 +607,54 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Modal Add/Edit */}
+      {/* Modal (Add/Edit) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md bg-zinc-950 border border-zinc-900 rounded-2xl p-5">
+        <Modal onClose={closeModal}>
+          <div className="w-full max-w-md">
             <div className="flex items-center justify-between mb-3">
-              <div className="text-lg font-semibold">{editing && editing.id ? 'Edit Asset' : 'Add Asset'}</div>
+              <div className="text-lg font-semibold">{editing?.id ? 'Edit Asset' : 'Add Asset'}</div>
               <button onClick={closeModal} className="text-zinc-400"><X size={18} /></button>
             </div>
 
             <form onSubmit={async (e) => {
               e.preventDefault();
               const fd = new FormData(e.target);
-              const symbol = (fd.get('symbol') || '').toString().trim().toUpperCase();
-              const currencyField = fd.get('currency') || 'USD';
-              // mode: amount or qty?
               const mode = fd.get('mode') || 'qty';
+              const symbol = (fd.get('symbol') || '').toString().trim().toUpperCase();
+              const currency = (fd.get('currency') || 'USD').toString();
               let qty = Number(fd.get('qty') || 0);
               let purchasePrice = Number(fd.get('price') || 0);
+              const date = fd.get('date') || '';
 
               if (mode === 'amount') {
                 const amount = Number(fd.get('amount') || 0);
-                // compute qty from amount: qty = amount / (livePrice-in-displayCurrency)
+                // compute qty = amount / (livePrice converted to display currency), then convert back to asset currency units
                 const md = marketData[symbol] || {};
                 const live = md.c || md.p || purchasePrice || 0;
-                const priceInDisplay = convertPriceToDisplay(live, currencyField, fxRates, displayCurrency);
-                if (!priceInDisplay || priceInDisplay === 0) return alert('Cannot compute qty: missing price or FX.');
+                // convert live (in asset currency) to display currency
+                const rateFrom = (currency === 'USD') ? 1 : (fxRates.rates?.[currency] || 1);
+                const rateTo = (displayCurrency === 'USD') ? 1 : (fxRates.rates?.[displayCurrency] || 1);
+                const priceInDisplay = ((currency === 'USD') ? live : (live / rateFrom)) * rateTo;
+                if (!priceInDisplay) {
+                  alert('Cannot compute quantity: missing price or FX.');
+                  return;
+                }
                 qty = amount / priceInDisplay;
-                // set purchasePrice in asset currency (approx)
-                // purchasePrice as value per unit in asset currency (we keep what user entered or live price)
                 if (!purchasePrice) purchasePrice = live;
               }
 
-              // commit upsert
-              await upsertAsset({ id: editing?.id, symbol, qty, purchasePrice, currency: currencyField, date: fd.get('date') || '' });
+              await upsertAsset({ id: editing?.id, symbol, qty, purchasePrice, currency, date });
             }} className="space-y-3">
 
-              {/* Typeahead */}
+              {/* Symbol / search */}
               <div>
                 <label className="text-xs text-zinc-400">Symbol</label>
                 <input name="symbol" value={editing?.symbol ?? searchQ} onChange={(ev) => {
                   const v = ev.target.value;
                   setSearchQ(v);
-                  setEditing(ed => ({ ...(ed||{}), symbol: v }));
-                }} placeholder="Search symbol (e.g. AAPL, BINANCE:BTCUSDT, IDX:INCO)" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
-                { (searchQ && (searchResults.length>0 || loadingSearch)) && (
+                  setEditing(ed => ({ ...(ed || {}), symbol: v }));
+                }} placeholder="Search symbol (AAPL, BINANCE:BTCUSDT, IDX:INCO)" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
+                {searchQ && (
                   <div className="mt-1 max-h-44 overflow-auto bg-zinc-900 border border-zinc-800 rounded-md">
                     {loadingSearch ? <div className="p-2 text-xs text-zinc-500">Searching…</div> : searchResults.map(s => (
                       <button key={s.symbol} type="button" onClick={() => pickSuggestion(s.symbol)} className="w-full text-left px-3 py-2 hover:bg-zinc-800 flex items-center justify-between text-sm">
@@ -613,63 +664,53 @@ export default function DashboardPage() {
                         </div>
                         <div className="text-xs text-zinc-400">pick</div>
                       </button>
-                    )) }
+                    ))}
                   </div>
                 )}
               </div>
 
-              {/* mode toggle: qty vs amount */}
+              {/* mode toggle */}
               <div className="flex items-center gap-2">
-                <label className={`px-3 py-1 rounded-lg text-sm ${modalModeAmount ? 'bg-zinc-800' : 'bg-zinc-700'}`}>
-                  <input type="radio" name="mode" value="qty" defaultChecked={!modalModeAmount} onChange={() => setModalModeAmount(false)} /> <span className="ml-2">Qty</span>
-                </label>
-                <label className={`px-3 py-1 rounded-lg text-sm ${modalModeAmount ? 'bg-zinc-700' : 'bg-zinc-800'}`}>
-                  <input type="radio" name="mode" value="amount" defaultChecked={modalModeAmount} onChange={() => setModalModeAmount(true)} /> <span className="ml-2">Amount ({displayCurrency})</span>
-                </label>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                {!modalModeAmount ? (
-                  <>
-                    <div>
-                      <label className="text-xs text-zinc-400">Qty</label>
-                      <input name="qty" defaultValue={editing?.qty ?? ''} type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-400">Currency</label>
-                      <select name="currency" defaultValue={editing?.currency || 'USD'} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm">
-                        <option value="USD">USD</option>
-                        <option value="IDR">IDR</option>
-                        <option value="EUR">EUR</option>
-                      </select>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <label className="text-xs text-zinc-400">Amount ({displayCurrency})</label>
-                      <input name="amount" type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-400">Asset Currency (detected or choose)</label>
-                      <select name="currency" defaultValue={editing?.currency || 'USD'} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm">
-                        <option value="USD">USD</option>
-                        <option value="IDR">IDR</option>
-                        <option value="EUR">EUR</option>
-                      </select>
-                    </div>
-                  </>
-                )}
+                <label className="text-xs text-zinc-400">Input</label>
+                <label className="flex items-center gap-2 text-sm"><input name="mode" type="radio" value="qty" defaultChecked /> Qty</label>
+                <label className="flex items-center gap-2 text-sm"><input name="mode" type="radio" value="amount" /> Amount ({displayCurrency})</label>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-zinc-400">Buy Price (per unit) (optional)</label>
+                  <label className="text-xs text-zinc-400">Qty</label>
+                  <input name="qty" defaultValue={editing?.qty ?? ''} type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-400">Currency</label>
+                  <select name="currency" defaultValue={editing?.currency || 'USD'} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm">
+                    <option value="USD">USD</option>
+                    <option value="IDR">IDR</option>
+                    <option value="EUR">EUR</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* amount / price */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-zinc-400">Amount ({displayCurrency})</label>
+                  <input name="amount" placeholder="only for Amount mode" type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-400">Buy Price (per unit)</label>
                   <input name="price" defaultValue={editing?.purchasePrice ?? ''} type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-zinc-400">Date</label>
                   <input name="date" defaultValue={editing?.date ?? ''} type="date" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-400">Note (optional)</label>
+                  <input name="note" defaultValue={editing?.note ?? ''} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
                 </div>
               </div>
 
@@ -678,56 +719,77 @@ export default function DashboardPage() {
                 <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600">Save</button>
               </div>
             </form>
-
           </div>
-        </div>
+        </Modal>
       )}
-
     </div>
   );
 
-  /* ---------------- internal helpers used in modal submission (kept local) ---------------- */
-  function convertPriceToDisplay(price, assetCurrency, fxRatesLocal = fxRates, displayCur = displayCurrency) {
-    const rates = fxRatesLocal.rates || {};
-    if (!price) return 0;
-    if (assetCurrency === displayCur) return price;
-    const rFrom = (assetCurrency === 'USD') ? 1 : (rates[assetCurrency] || 1);
-    const rTo = (displayCur === 'USD') ? 1 : (rates[displayCur] || 1);
-    const priceUsd = (assetCurrency === 'USD') ? price : (price / rFrom);
-    return priceUsd * rTo;
+  /* Note: local helper functions referenced inside render are defined below so bundlers don't complain */
+  function Modal({ children, onClose }) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="w-full">{children}</div>
+      </div>
+    );
   }
 
-  // Because of closures in render, expose compute helper functions for modal usage below
-  async function removeAsset(id) { await removeAssetAction(id); }
-  async function removeAssetAction(id) {
-    const removed = portfolio.find(p => p.id === id);
-    const next = portfolio.filter(p => p.id !== id);
+  /* Helper wrappers (to avoid function hoisting issues) */
+  async function pickSuggestion(symbol) {
+    // mirror earlier defined pickSuggestion
+    setEditing(ed => ({ ...(ed || {}), symbol }));
+    setSearchQ('');
+    setSearchResults([]);
+    if (!FINNHUB_KEY) return;
     try {
-      const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN && removed) {
-        ws.send(JSON.stringify({ type: 'unsubscribe', symbol: removed.symbol }));
-        subscribed.current.delete(removed.symbol);
-      }
-    } catch {}
-    await persist(next);
+      const qRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`);
+      const jq = await qRes.json();
+      setMarketData(prev => ({ ...prev, [symbol]: jq }));
+    } catch (e) { /* ignore */ }
+    try {
+      const pr = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`);
+      const jp = await pr.json();
+      if (jp && jp.currency) setEditing(ed => ({ ...(ed || {}), currency: jp.currency }));
+    } catch (e) { /* ignore */ }
   }
-  async function upsertAsset(payload) { await upsertAssetAction(payload); }
-  async function upsertAssetAction(payload) {
+
+  async function upsertAsset(item) {
+    await upsertAssetAction(item);
+  }
+  async function upsertAssetAction(item) {
     const cleaned = {
-      id: payload.id || Date.now(),
-      symbol: (payload.symbol || '').toString().trim().toUpperCase(),
-      qty: Number(payload.qty || payload.quantity || 0) || 0,
-      purchasePrice: Number(payload.purchasePrice || payload.price || 0) || 0,
-      currency: payload.currency || 'USD',
-      date: payload.date || ''
+      id: item.id || Date.now(),
+      symbol: (item.symbol || '').toString().trim().toUpperCase(),
+      qty: Number(item.qty || 0) || 0,
+      purchasePrice: Number(item.purchasePrice || item.purchase_price || 0) || 0,
+      currency: item.currency || 'USD',
+      date: item.date || ''
     };
     if (!cleaned.symbol) return alert('Symbol required');
     const exists = portfolio.find(p => p.id === cleaned.id);
     const next = exists ? portfolio.map(p => p.id === cleaned.id ? { ...p, ...cleaned } : p) : [...portfolio, cleaned];
     try {
       const ws = wsRef.current;
-      if (!exists && ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'subscribe', symbol: cleaned.symbol })); subscribed.current.add(cleaned.symbol); }
+      if (!exists && ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'subscribe', symbol: cleaned.symbol })); subscribedRef.current.add(cleaned.symbol); }
     } catch {}
     await persist(next);
   }
+
+  async function deleteAssetAction(id) {
+    const removed = portfolio.find(p => p.id === id);
+    const next = portfolio.filter(p => p.id !== id);
+    try {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN && removed) { ws.send(JSON.stringify({ type: 'unsubscribe', symbol: removed.symbol })); subscribedRef.current.delete(removed.symbol); }
+    } catch {}
+    await persist(next);
+  }
+
+  // expose these to JSX handlers
+  // eslint-disable-next-line no-unused-vars
+  const removeAsset = async (id) => await deleteAssetAction(id);
+  // eslint-disable-next-line no-unused-vars
+  const pickSuggestionHandler = async (symbol) => await pickSuggestion(symbol);
+  // eslint-disable-next-line no-unused-vars
+  const upsertHandler = async (item) => await upsertAsset(item);
 } // end DashboardPage
