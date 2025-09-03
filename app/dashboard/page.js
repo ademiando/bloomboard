@@ -1,123 +1,94 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Edit3, Trash2, X } from 'lucide-react';
+import { Edit3, Trash2, Plus } from 'lucide-react';
 import { getDeviceId } from '@/lib/deviceId';
 import { loadPortfolio, savePortfolio } from '@/lib/supabaseClient';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
-/* ===========================
-   CONFIG / HELPERS
-   =========================== */
+/* ---------------- Config ---------------- */
 const FINNHUB_KEY = process.env.NEXT_PUBLIC_FINNHUB_API_KEY;
-if (!FINNHUB_KEY) {
-  console.warn('NEXT_PUBLIC_FINNHUB_API_KEY not set — realtime will fail.');
-}
+const COLORS = ['#06b6d4', '#10b981', '#84cc16', '#f97316', '#ef4444', '#8b5cf6'];
 
-const COLORS = ['#06b6d4', '#6366f1', '#10b981', '#f97316', '#ef4444', '#a78bfa'];
-
-const fmt = (v, currency = 'USD') => {
-  if (Number.isNaN(v) || v === null || v === undefined) return '-';
-  try {
-    if (currency === 'IDR') {
-      return `Rp ${Number(v).toLocaleString('id-ID', { maximumFractionDigits: 0 })}`;
-    }
-    return `${currency} ${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  } catch {
-    return v;
-  }
+/* ---------------- Helpers ---------------- */
+const fmtIDR = (v) => {
+  if (v === null || v === undefined || Number.isNaN(v)) return '-';
+  return 'Rp ' + Number(v).toLocaleString('id-ID', { maximumFractionDigits: 0 });
 };
-
-const debounce = (fn, delay = 300) => {
+const fmtNum = (v) => {
+  if (v === null || v === undefined || Number.isNaN(v)) return '-';
+  return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const debounce = (fn, ms = 300) => {
   let t;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), delay);
-  };
+  return (...args) => { clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
 };
 
-/* ===========================
-   MAIN PAGE
-   =========================== */
+/* ---------------- Main ---------------- */
 export default function DashboardPage() {
-  const [portfolio, setPortfolio] = useState([]); // {id, symbol, quantity, purchasePrice, currency, date, note}
-  const [marketData, setMarketData] = useState({}); // { SYMBOL: {c: current, t:timestamp, ...}}
-  const [fxRates, setFxRates] = useState({ base: 'USD', rates: { USD: 1, IDR: 0 } });
-  const [displayCurrency, setDisplayCurrency] = useState('USD');
+  const deviceId = useMemo(()=> getDeviceId(), []);
+  const [portfolio, setPortfolio] = useState([]); // {id, symbol, qty, avg, currency, date}
+  const [marketData, setMarketData] = useState({}); // symbol -> {c, t, p}
+  const [fx, setFx] = useState({ USD: 1, IDR: 16000 }); // minimal fallback
+  const [displayCurrency, setDisplayCurrency] = useState('IDR');
   const [isModalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [loadingSearch, setLoadingSearch] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const deviceId = useMemo(() => getDeviceId(), []);
-  const wsRef = useRef(null);
 
-  // hydrate from supabase
+  // Typeahead
+  const [q, setQ] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [loadingSearch, setLoadingSearch] = useState(false);
+
+  // websocket ref
+  const wsRef = useRef(null);
+  const subscribedRef = useRef(new Set());
+
+  // load portfolio (supabase fallback localStorage)
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+    (async ()=>{
       try {
-        const { data } = await loadPortfolio(deviceId);
-        if (Array.isArray(data) && data.length) setPortfolio(data);
-        else setPortfolio([]);
+        const res = await loadPortfolio(deviceId);
+        if (mounted && res && Array.isArray(res.data)) {
+          setPortfolio(res.data);
+        } else if (mounted) {
+          // fallback localStorage
+          const raw = localStorage.getItem('bb_portfolio');
+          if (raw) setPortfolio(JSON.parse(raw));
+        }
       } catch (e) {
-        console.error('loadPortfolio failed', e);
-        setPortfolio([]);
+        const raw = localStorage.getItem('bb_portfolio');
+        if (raw) setPortfolio(JSON.parse(raw));
       }
     })();
+    return ()=>{ mounted = false; };
   }, [deviceId]);
 
-  // persist helper (and update supabase)
-  const persistPortfolio = async (next) => {
+  // persist helper (writes supabase, fallback localStorage)
+  const persist = async (next) => {
     setPortfolio(next);
     try {
-      setIsSaving(true);
       await savePortfolio(deviceId, next);
+      localStorage.setItem('bb_portfolio', JSON.stringify(next));
     } catch (e) {
-      console.error('savePortfolio failed', e);
-    } finally {
-      setIsSaving(false);
+      // fallback local
+      localStorage.setItem('bb_portfolio', JSON.stringify(next));
     }
   };
 
-  /* -------------------------
-     FINNHUB: initial quotes (one-shot)
-     ------------------------- */
-  const fetchQuotesBulk = async (symbols) => {
-    if (!symbols?.length || !FINNHUB_KEY) return {};
-    const res = {};
-    await Promise.all(
-      symbols.map(async (s) => {
-        try {
-          const r = await fetch(
-            `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}&token=${FINNHUB_KEY}`
-          );
-          const j = await r.json();
-          // j.c current price; j.t timestamp
-          res[s] = j;
-        } catch (err) {
-          // ignore
-        }
-      })
-    );
-    return res;
-  };
-
-  /* -------------------------
-     FINNHUB: websocket for live updates
-     ------------------------- */
+  /* ---------------- Finnhub WS ---------------- */
   useEffect(() => {
-    if (!FINNHUB_KEY) return;
-    // open websocket
+    if (!FINNHUB_KEY) {
+      console.warn('Finnhub key missing — realtime disabled');
+      return;
+    }
     const ws = new WebSocket(`wss://ws.finnhub.io?token=${FINNHUB_KEY}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      // subscribe to existing symbols
-      (portfolio || []).forEach((a) => {
-        try {
-          ws.send(JSON.stringify({ type: 'subscribe', symbol: a.symbol }));
-        } catch {}
+      // subscribe to existing portfolio symbols
+      portfolio.forEach(a => {
+        try { ws.send(JSON.stringify({ type: 'subscribe', symbol: a.symbol })); subscribedRef.current.add(a.symbol);} catch {}
       });
     };
 
@@ -125,537 +96,395 @@ export default function DashboardPage() {
       try {
         const msg = JSON.parse(evt.data);
         if (msg.type === 'trade' && Array.isArray(msg.data)) {
-          // multiple trades — update marketData for related symbols
-          setMarketData((prev) => {
-            const copy = { ...prev };
-            msg.data.forEach((trade) => {
-              // trade.s symbol, trade.p price
-              const sym = trade.s;
-              const price = trade.p;
-              copy[sym] = { ...copy[sym], c: price, t: trade.t };
+          setMarketData(prev => {
+            const next = {...prev};
+            msg.data.forEach(tr => {
+              const s = tr.s; // symbol
+              next[s] = {...(next[s]||{}), c: tr.p, t: tr.t, p: tr.p};
             });
-            return copy;
+            return next;
           });
         }
-      } catch (e) {
-        console.error('ws parse err', e);
-      }
+      } catch(e) { console.error('ws parse', e); }
     };
 
-    ws.onerror = (e) => {
-      console.warn('Finnhub WS error', e);
-    };
+    ws.onerror = (e) => { console.warn('ws err', e); };
 
     ws.onclose = () => {
-      // reconnect after short delay
-      setTimeout(() => {
+      // try reconnect after delay
+      setTimeout(()=> {
         if (wsRef.current === ws) wsRef.current = null;
-      }, 1000 * 5);
+      }, 2000);
     };
 
-    return () => {
+    return ()=> {
       try {
-        // unsubscribe all then close
-        (portfolio || []).forEach((a) => {
-          try {
-            ws.send(JSON.stringify({ type: 'unsubscribe', symbol: a.symbol }));
-          } catch {}
+        portfolio.forEach(a => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type:'unsubscribe', symbol: a.symbol }));
+          }
         });
-      } catch {}
-      try {
         ws.close();
       } catch {}
       wsRef.current = null;
     };
-    // note: we intentionally don't include portfolio in deps to avoid re-opening WS each change;
-    // we'll send subscribe/unsubscribe messages in a separate effect below.
+    // intentionally not including portfolio in deps to avoid re-opening; we will send subscribe messages separately
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [FINNHUB_KEY]);
 
-  // Manage subscriptions on change to portfolio symbols
+  // subscribe/unsubscribe when portfolio changes
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    // figure out which symbols to subscribe/unsubscribe
-    const currentSubs = new Set(Object.keys(marketData || {})); // approx
-    const desired = new Set(portfolio.map((p) => p.symbol));
+    const desired = new Set(portfolio.map(p=>p.symbol));
     // subscribe new
-    desired.forEach((s) => {
-      if (!currentSubs.has(s)) {
-        try {
-          ws.send(JSON.stringify({ type: 'subscribe', symbol: s }));
-        } catch {}
+    desired.forEach(s => {
+      if (!subscribedRef.current.has(s)) {
+        try { ws.send(JSON.stringify({ type: 'subscribe', symbol: s })); subscribedRef.current.add(s); } catch {}
       }
     });
     // unsubscribe removed
-    currentSubs.forEach((s) => {
+    Array.from(subscribedRef.current).forEach(s => {
       if (!desired.has(s)) {
-        try {
-          ws.send(JSON.stringify({ type: 'unsubscribe', symbol: s }));
-        } catch {}
+        try { ws.send(JSON.stringify({ type: 'unsubscribe', symbol: s })); subscribedRef.current.delete(s); } catch {}
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolio]);
 
-  /* -------------------------
-     Periodic: fetch any missing quotes (fallback) & FX rates
-     ------------------------- */
-  useEffect(() => {
+  /* ---------------- FX + REST price fallback ---------------- */
+  useEffect(()=> {
     let mounted = true;
-
-    const updateFx = async () => {
+    const updateFxAndMissing = async () => {
       if (!FINNHUB_KEY) return;
       try {
-        // Finnhub forex rates endpoint: /forex/rates?base=USD
+        // FX rates base USD
         const r = await fetch(`https://finnhub.io/api/v1/forex/rates?base=USD&token=${FINNHUB_KEY}`);
-        const j = await r.json(); // { base: 'USD', rates: { 'IDR': 15500, ... } }
-        if (mounted && j && j.rates) {
-          setFxRates({ base: j.base || 'USD', rates: j.rates || {} });
+        const jr = await r.json(); // { base: 'USD', rates: { IDR: 15500, ... } }
+        if (mounted && jr && jr.rates) {
+          setFx(prev => ({ ...prev, ...jr.rates, USD:1 })); // store rates like {IDR:15500, EUR:0.93, USD:1}
         }
-      } catch (e) {
-        console.error('fx fetch err', e);
-      }
-    };
+      } catch(e) { /* ignore */ }
 
-    const updateMissingQuotes = async () => {
-      // fetch quotes for symbols not present in marketData or older than 60s
+      // check missing quotes or stale >60s and fetch via REST
       const now = Date.now();
-      const needs = [];
-      portfolio.forEach((a) => {
+      const needs = portfolio.filter(a => {
         const md = marketData[a.symbol];
-        if (!md || !md.t || now - (md.t * 1000 || 0) > 60 * 1000) needs.push(a.symbol);
-      });
-      if (needs.length) {
-        const q = await fetchQuotesBulk(needs);
-        setMarketData((prev) => ({ ...prev, ...q }));
+        if (!md || !md.t) return true;
+        // md.t is seconds
+        if (now - (md.t*1000 || 0) > 60*1000) return true;
+        return false;
+      }).map(a=>a.symbol);
+
+      if (needs.length && FINNHUB_KEY) {
+        await Promise.all(needs.map(async s=>{
+          try {
+            const rr = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}&token=${FINNHUB_KEY}`);
+            const jj = await rr.json();
+            setMarketData(prev => ({ ...prev, [s]: jj }));
+          } catch {}
+        }));
       }
     };
 
-    // initial
-    updateFx();
-    updateMissingQuotes();
-    const intv = setInterval(() => {
-      updateFx();
-      updateMissingQuotes();
-    }, 60 * 1000); // every 60s
-    return () => {
-      mounted = false;
-      clearInterval(intv);
+    updateFxAndMissing();
+    const iid = setInterval(updateFxAndMissing, 60*1000);
+    return ()=> { mounted=false; clearInterval(iid); };
+  // include portfolio & marketData lengths
+  }, [portfolio, marketData, FINNHUB_KEY]);
+
+  /* ---------------- Typeahead search ---------------- */
+  const doSearch = useMemo(()=> debounce(async (qstr)=> {
+    if (!qstr || !FINNHUB_KEY) { setSuggestions([]); return; }
+    setLoadingSearch(true);
+    try {
+      const res = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(qstr)}&token=${FINNHUB_KEY}`);
+      const j = await res.json(); // { result: [{symbol, description, ...}]}
+      const arr = (j.result || []).slice(0,8).map(r=>({ symbol: r.symbol, desc: r.description }));
+      setSuggestions(arr);
+    } catch(e) { setSuggestions([]); }
+    setLoadingSearch(false);
+  }, 260), [FINNHUB_KEY]);
+
+  useEffect(()=> { doSearch(q); }, [q, doSearch]);
+
+  /* ---------------- Portfolio live computations ---------------- */
+  const portLive = useMemo(()=> {
+    // convert everything to displayCurrency (IDR preferred)
+    const rateToDisplay = (cur='USD') => {
+      // fx rates mapping USD->X, we want value in displayCurrency
+      if (cur === displayCurrency) return 1;
+      const rates = fx || {};
+      const toRate = rates[displayCurrency] || (displayCurrency === 'USD' ? 1 : null);
+      const fromRate = rates[cur] || (cur === 'USD' ? 1 : null);
+      if (fromRate == null || toRate == null) return 1; // fallback
+      // value in USD = val / fromRate (if fromRate is USD->FROM)
+      // Finnhub rates are USD -> CUR. So 1 USD = rates[CUR], so 1 CUR = 1/rates[CUR] USD.
+      // To convert value(from) to display: value_in_USD = value / rates[from]; result = value_in_USD * rates[display]
+      const conv = (v) => ( (v / (fromRate)) * (toRate) );
+      return conv;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [portfolio, FINNHUB_KEY]);
 
-  /* -------------------------
-     Search typeahead (Finnhub symbol lookup)
-     ------------------------- */
-  const doSearch = useMemo(
-    () =>
-      debounce(async (q) => {
-        setLoadingSearch(true);
-        if (!q || !FINNHUB_KEY) {
-          setSearchResults([]);
-          setLoadingSearch(false);
-          return;
+    // easier: compute per-asset using fx mapping: compute absolute invested in USD first then to display
+    const rates = fx || {};
+    return portfolio.map(a=>{
+      const sym = a.symbol;
+      const md = marketData[sym] || {};
+      const live = md.c || md.p || a.purchasePrice || 0;
+      // invested in asset's currency absolute
+      const investedAbs = (Number(a.purchasePrice) || 0) * (Number(a.qty) || Number(a.quantity) || 0);
+      const currentAbs = (Number(live) || 0) * (Number(a.qty) || Number(a.quantity) || 0);
+
+      // convert asset currency -> displayCurrency using rates where rates maps USD->CUR
+      const convert = (val, from= (a.currency || 'USD')) => {
+        if (from === displayCurrency) return val;
+        // if from === USD and displayCurrency === IDR: val * rates['IDR']
+        if (from === 'USD') {
+          const to = rates[displayCurrency] || (displayCurrency === 'USD' ? 1 : 1);
+          return val * to;
         }
-        try {
-          const res = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${FINNHUB_KEY}`);
-          const j = await res.json();
-          const results = (j.result || []).slice(0, 8).map((r) => ({
-            symbol: r.symbol,
-            description: r.description,
-            type: r.type,
-          }));
-          setSearchResults(results);
-        } catch (e) {
-          setSearchResults([]);
-          console.error('search err', e);
-        } finally {
-          setLoadingSearch(false);
-        }
-      }, 300),
-    [FINNHUB_KEY]
-  );
+        // from != USD: first to USD: val_in_USD = val / rates[from]
+        const rFrom = rates[from] || (from === 'USD' ? 1 : 1);
+        const rTo = rates[displayCurrency] || (displayCurrency === 'USD' ? 1 : 1);
+        return (val / rFrom) * rTo;
+      };
 
-  useEffect(() => {
-    doSearch(searchQuery);
-  }, [searchQuery, doSearch]);
-
-  /* -------------------------
-     Helpers: conversion & totals
-     ------------------------- */
-  const convert = (value, from = 'USD', to = displayCurrency) => {
-    if (value === null || value === undefined) return 0;
-    if (from === to) return value;
-    // first convert 'from' -> USD using fxRates if necessary, then to 'to'
-    // fxRates.base is USD; fxRates.rates gives mapping USD -> X
-    const rates = fxRates.rates || {};
-    // convert 'from' to USD
-    let amountInUSD = value;
-    if (from === 'USD') amountInUSD = value;
-    else {
-      // need USD->FROM? we have USD->FROM in rates; FROM->USD = 1 / rates[FROM]
-      const r = rates[from];
-      if (r) amountInUSD = value / r;
-      else amountInUSD = value; // fallback
-    }
-    if (to === 'USD') return amountInUSD;
-    const rTo = rates[to];
-    if (rTo) return amountInUSD * rTo;
-    return amountInUSD;
-  };
-
-  const portfolioWithLive = useMemo(() => {
-    return portfolio.map((a) => {
-      const symbol = a.symbol;
-      // prefer WS live price (marketData[symbol].p or .c)
-      const md = marketData[symbol] || {};
-      const livePrice = md.p || md.c || a.purchasePrice || 0;
-      const investedAbsolute = a.purchasePrice * a.quantity; // in asset currency
-      const currentAbsolute = livePrice * a.quantity;
-      const invested = convert(investedAbsolute, a.currency, displayCurrency);
-      const current = convert(currentAbsolute, a.currency, displayCurrency);
-      const pnl = current - invested;
-      const pnlPct = invested ? (pnl / invested) * 100 : 0;
+      const investedDisp = convert(investedAbs, a.currency);
+      const currentDisp = convert(currentAbs, a.currency);
+      const pnl = currentDisp - investedDisp;
+      const pnlPct = investedDisp ? (pnl / investedDisp)*100 : 0;
       return {
         ...a,
-        livePrice,
-        invested,
-        current,
+        live,
+        investedDisp,
+        currentDisp,
         pnl,
-        pnlPct,
+        pnlPct
       };
     });
-  }, [portfolio, marketData, fxRates, displayCurrency]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portfolio, marketData, fx, displayCurrency]);
 
-  const totals = useMemo(() => {
-    const invested = portfolioWithLive.reduce((s, a) => s + (a.invested || 0), 0);
-    const current = portfolioWithLive.reduce((s, a) => s + (a.current || 0), 0);
+  const totals = useMemo(()=> {
+    const invested = portLive.reduce((s,a)=> s + (a.investedDisp||0), 0);
+    const current = portLive.reduce((s,a)=> s + (a.currentDisp||0), 0);
     const pnl = current - invested;
-    const pnlPct = invested ? (pnl / invested) * 100 : 0;
+    const pnlPct = invested ? (pnl / invested)*100 : 0;
     return { invested, current, pnl, pnlPct };
-  }, [portfolioWithLive]);
+  }, [portLive]);
 
-  /* -------------------------
-     UI actions: add/edit/remove
-     ------------------------- */
-  const openAdd = () => {
-    setEditing({ symbol: '', quantity: 0, purchasePrice: 0, currency: 'USD', date: '' });
-    setIsModalOpen(true);
-  };
-  const openEdit = (asset) => {
-    setEditing({ ...asset });
-    setIsModalOpen(true);
-  };
-  const closeModal = () => {
-    setEditing(null);
-    setIsModalOpen(false);
-    setSearchQuery('');
-    setSearchResults([]);
+  /* ---------------- UI actions ---------------- */
+  const openAdd = () => { setEditing(null); setIsModalOpen(true); setQ(''); setSuggestions([]); };
+  const openEdit = (asset) => { setEditing(asset); setIsModalOpen(true); setQ(''); setSuggestions([]); };
+  const removeAsset = async (id) => {
+    const next = portfolio.filter(p=>p.id !== id);
+    // unsubscribe ws if open
+    try {
+      const ws = wsRef.current;
+      const removed = portfolio.find(p=>p.id===id);
+      if (ws && ws.readyState === WebSocket.OPEN && removed) {
+        ws.send(JSON.stringify({ type: 'unsubscribe', symbol: removed.symbol }));
+        subscribedRef.current.delete(removed.symbol);
+      }
+    } catch {}
+    await persist(next);
   };
 
   const submitAsset = async (payload) => {
-    // payload: { id?, symbol, quantity, purchasePrice, currency, date, note }
     const cleaned = {
-      ...payload,
-      symbol: payload.symbol.trim().toUpperCase(),
-      quantity: Number(payload.quantity) || 0,
-      purchasePrice: Number(payload.purchasePrice) || 0,
+      id: payload.id || Date.now(),
+      symbol: (payload.symbol || '').toString().trim().toUpperCase(),
+      qty: Number(payload.qty || payload.quantity || payload.qty === 0 ? payload.qty : payload.quantity) || Number(payload.quantity) || 0,
+      purchasePrice: Number(payload.purchasePrice || payload.avg || payload.price) || 0,
       currency: payload.currency || 'USD',
-      date: payload.date || '',
-      note: payload.note || '',
+      date: payload.date || ''
     };
     if (!cleaned.symbol) return alert('Symbol required');
-    const exists = portfolio.find((p) => p.id === cleaned.id);
+    const exists = portfolio.find(p=>p.id === cleaned.id);
     let next;
-    if (exists) {
-      next = portfolio.map((p) => (p.id === cleaned.id ? { ...p, ...cleaned } : p));
-    } else {
-      next = [...portfolio, { ...cleaned, id: Date.now() }];
-      // ensure WS subscribes quickly by sending subscribe if ws open
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(JSON.stringify({ type: 'subscribe', symbol: cleaned.symbol }));
-        } catch {}
-      }
-    }
-    await persistPortfolio(next);
-    closeModal();
-  };
+    if (exists) next = portfolio.map(p => p.id===cleaned.id ? {...p, ...cleaned} : p);
+    else next = [...portfolio, cleaned];
 
-  const deleteAsset = async (id) => {
-    const next = portfolio.filter((p) => p.id !== id);
-    // unsubscribe ws
+    // subscribe WS immediately if new
     try {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        const removed = portfolio.find((p) => p.id === id);
-        if (removed) wsRef.current.send(JSON.stringify({ type: 'unsubscribe', symbol: removed.symbol }));
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN && !subscribedRef.current.has(cleaned.symbol)) {
+        ws.send(JSON.stringify({ type: 'subscribe', symbol: cleaned.symbol }));
+        subscribedRef.current.add(cleaned.symbol);
       }
     } catch {}
-    await persistPortfolio(next);
+
+    await persist(next);
+    setIsModalOpen(false);
+    setEditing(null);
   };
 
-  /* -------------------------
-     Responsive minimal UI rendering
-     ------------------------- */
+  /* ---------------- Render ---------------- */
   return (
     <div className="min-h-screen bg-black text-zinc-100 p-4">
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto">
 
-        {/* Top bar */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        {/* Top summary */}
+        <div className="flex flex-col sm:flex-row justify-between gap-4 mb-5 items-start sm:items-center">
           <div>
-            <h1 className="text-2xl font-semibold">Portfolio</h1>
-            <p className="text-sm text-zinc-500">Realtime prices • Live FX • Minimal & clear</p>
+            <div className="text-xs text-zinc-400">PORTFOLIO</div>
+            <div className="text-2xl font-semibold">My Portfolio</div>
+            <div className="text-xs text-zinc-500 mt-1">{portfolio.length} assets • live prices</div>
           </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm">
-              <label className="text-xs text-zinc-400 mr-2">Currency</label>
-              <select
-                value={displayCurrency}
-                onChange={(e) => setDisplayCurrency(e.target.value)}
-                className="bg-transparent outline-none text-zinc-100"
-              >
-                {/* include USD and top FX from rates */}
-                <option value="USD">USD</option>
-                <option value="IDR">IDR</option>
-                <option value="EUR">EUR</option>
-              </select>
+          <div className="flex gap-3 items-center">
+            <div className="text-right">
+              <div className="text-xs text-zinc-400">Invested</div>
+              <div className="font-medium text-lg">{fmtIDR(totals.invested)}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-zinc-400">Market</div>
+              <div className="font-medium text-lg">{fmtIDR(totals.current)}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-zinc-400">P&amp;L</div>
+              <div className={`font-medium text-lg ${totals.pnl >=0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {totals.pnl >= 0 ? '+' : ''}{fmtIDR(totals.pnl)} <span className="text-xs text-zinc-400">({totals.pnlPct?.toFixed(2)}%)</span>
+              </div>
             </div>
 
-            <button
-              onClick={openAdd}
-              className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-medium hover:bg-emerald-500"
-            >
-              <Plus size={16} /> Add Asset
+            <button onClick={openAdd} className="ml-2 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-xl text-sm">
+              <Plus size={16}/> Add
             </button>
           </div>
         </div>
 
-        {/* Summary */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
-            <div className="text-xs text-zinc-400">Invested</div>
-            <div className="text-lg font-semibold">{fmt(totals.invested, displayCurrency)}</div>
-          </div>
-          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
-            <div className="text-xs text-zinc-400">Current Value</div>
-            <div className="text-lg font-semibold">{fmt(totals.current, displayCurrency)}</div>
-          </div>
-          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
-            <div className="text-xs text-zinc-400">P&L</div>
-            <div className={`text-lg font-semibold ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {fmt(totals.pnl, displayCurrency)} <span className="text-sm text-zinc-400">({totals.pnlPct?.toFixed(2)}%)</span>
+        {/* Table */}
+        <div className="bg-zinc-950 border border-zinc-900 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-zinc-900 flex items-center justify-between">
+            <div className="text-sm font-medium text-zinc-300">Code</div>
+            <div className="hidden sm:flex gap-6 text-xs text-zinc-500">
+              <div className="w-20 text-right">Invested</div>
+              <div className="w-20 text-right">Market</div>
+              <div className="w-28 text-right">P&amp;L</div>
+              <div className="w-12" />
             </div>
+          </div>
+
+          <div className="divide-y divide-zinc-900">
+            {portLive.length === 0 ? (
+              <div className="px-4 py-8 text-center text-zinc-500">Belum ada asset. Tekan Add untuk menambah.</div>
+            ) : portLive.map((a) => (
+              <div key={a.id} className="px-4 py-4 flex items-center justify-between hover:bg-zinc-900">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3">
+                    <div className="font-semibold text-sm">{a.symbol}</div>
+                    <div className="text-xs text-zinc-500">{a.qty} Lot</div>
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-1">
+                    {fmtIDR(a.investedDisp)} • <span className="text-zinc-400">{fmtNum(a.purchasePrice)}</span>
+                  </div>
+                </div>
+
+                <div className="hidden sm:flex items-center gap-6 text-right">
+                  <div className="w-20">{fmtIDR(a.investedDisp)}</div>
+                  <div className="w-20">
+                    <div className="text-sm font-medium text-emerald-400">{fmtIDR(a.currentDisp)}</div>
+                    <div className="text-xs text-zinc-400">{fmtNum(a.live || 0)}</div>
+                  </div>
+                  <div className="w-28 text-right">
+                    <div className={`${a.pnl>=0?'text-emerald-400':'text-red-400'} font-medium`}>{a.pnl >= 0 ? '+' : ''}{fmtIDR(a.pnl)}</div>
+                    <div className="text-xs text-zinc-400">{a.pnlPct?.toFixed(2)}%</div>
+                  </div>
+                  <div className="w-12 flex gap-2 justify-end">
+                    <button onClick={()=>openEdit(a)} className="text-zinc-300 hover:text-white"><Edit3 size={16}/></button>
+                    <button onClick={()=>removeAsset(a.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16}/></button>
+                  </div>
+                </div>
+
+                {/* mobile condensed */}
+                <div className="sm:hidden flex items-center gap-3">
+                  <div className={`${a.pnl>=0?'text-emerald-400':'text-red-400'} font-medium`}>{a.pnl >= 0 ? '+' : ''}{fmtIDR(a.pnl)}</div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>openEdit(a)} className="text-zinc-300 hover:text-white"><Edit3 size={16}/></button>
+                    <button onClick={()=>removeAsset(a.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16}/></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* bottom row: allocation simple */}
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
+            <div className="text-sm text-zinc-300 mb-2">Allocation</div>
+            <div className="h-40">
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={portLive.map(p=>({name:p.symbol, value: p.currentDisp}))} dataKey="value" nameKey="name" outerRadius={70}>
+                    {portLive.map((_,i)=>(<Cell key={i} fill={COLORS[i % COLORS.length]} />))}
+                  </Pie>
+                  <Tooltip formatter={(v)=>fmtIDR(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
+            <div className="text-sm text-zinc-300 mb-2">FX (USD base)</div>
+            <div className="text-xs text-zinc-400 mb-2">Rates updated ~60s</div>
+            <div className="text-sm"><div className="flex justify-between"><div>IDR</div><div className="font-medium">{fx?.IDR || '—'}</div></div></div>
           </div>
         </div>
 
-        {/* Main grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-          {/* Left: table (2/3) */}
-          <div className="lg:col-span-2 space-y-4">
-            <div className="bg-zinc-950 border border-zinc-900 rounded-2xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-zinc-900 flex items-center justify-between">
-                <div className="text-sm font-medium text-zinc-300">Assets</div>
-                <div className="text-xs text-zinc-500">Live prices via Finnhub</div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-xs text-zinc-400 bg-zinc-900">
-                    <tr>
-                      <th className="text-left px-4 py-3">Asset</th>
-                      <th className="text-right px-4 py-3">Qty</th>
-                      <th className="text-right px-4 py-3">Buy (orig)</th>
-                      <th className="text-right px-4 py-3">Live Price</th>
-                      <th className="text-right px-4 py-3">Invested ({displayCurrency})</th>
-                      <th className="text-right px-4 py-3">Value ({displayCurrency})</th>
-                      <th className="text-right px-4 py-3">P&L</th>
-                      <th className="px-4 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {portfolioWithLive.length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="px-4 py-8 text-center text-zinc-500">No assets — click “Add Asset” to start tracking.</td>
-                      </tr>
-                    )}
-
-                    {portfolioWithLive.map((a) => (
-                      <tr key={a.id} className="border-t border-zinc-900 hover:bg-zinc-950">
-                        <td className="px-4 py-3">
-                          <div className="font-medium">{a.symbol}</div>
-                          <div className="text-xs text-zinc-500">{a.currency} • {a.date || '-'}</div>
-                        </td>
-
-                        <td className="px-4 py-3 text-right">{a.quantity}</td>
-                        <td className="px-4 py-3 text-right">{fmt(a.purchasePrice, a.currency)}</td>
-                        <td className="px-4 py-3 text-right">{fmt(a.livePrice, a.currency)}</td>
-                        <td className="px-4 py-3 text-right">{fmt(a.invested, displayCurrency)}</td>
-                        <td className="px-4 py-3 text-right">{fmt(a.current, displayCurrency)}</td>
-                        <td className={`px-4 py-3 text-right ${a.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {fmt(a.pnl, displayCurrency)} <div className="text-xs text-zinc-500">({a.pnlPct?.toFixed(2)}%)</div>
-                        </td>
-
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button title="Edit" onClick={() => openEdit(a)} className="text-zinc-300 hover:text-white">
-                              <Edit3 size={14} />
-                            </button>
-                            <button title="Delete" onClick={() => deleteAsset(a.id)} className="text-red-400 hover:text-red-500">
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="px-4 py-3 border-t border-zinc-900 text-xs text-zinc-500 flex items-center justify-between">
-                <div>{portfolioWithLive.length} assets</div>
-                <div>{isSaving ? 'Saving...' : 'Saved'}</div>
-              </div>
-            </div>
-
-            {/* PnL by asset (simple horizontal bars for clarity) */}
-            <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-medium text-zinc-300">PnL per asset</div>
-                <div className="text-xs text-zinc-500">Realtime</div>
-              </div>
-              <div className="space-y-3">
-                {portfolioWithLive.map((a) => {
-                  // normalized width
-                  const magnitude = Math.abs(a.pnl) || 0;
-                  const max = Math.max(...portfolioWithLive.map(x=>Math.abs(x.pnl)) , 1);
-                  const pct = Math.min(100, (magnitude / max) * 100);
-                  return (
-                    <div key={a.id} className="flex items-center gap-3">
-                      <div className="w-28 text-sm">{a.symbol}</div>
-                      <div className="flex-1 h-3 bg-zinc-900 rounded-full overflow-hidden">
-                        <div className={`${a.pnl >= 0 ? 'bg-emerald-500' : 'bg-red-500'} h-full`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <div className={`w-36 text-right text-sm ${a.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {fmt(a.pnl, displayCurrency)}
-                      </div>
-                    </div>
-                  );
-                })}
-                {portfolioWithLive.length === 0 && <div className="text-zinc-500 text-sm">No data</div>}
-              </div>
-            </div>
-          </div>
-
-          {/* Right: allocation + fx editor (1/3) */}
-          <div className="space-y-4">
-            <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-medium text-zinc-300">Allocation</div>
-                <div className="text-xs text-zinc-500">Live</div>
-              </div>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={portfolioWithLive.map(p => ({ name: p.symbol, value: p.current }))}
-                      dataKey="value"
-                      nameKey="name"
-                      outerRadius={90}
-                    >
-                      {portfolioWithLive.map((_, i) => (
-                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => fmt(value, displayCurrency)} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-medium text-zinc-300">FX (USD base)</div>
-                <div className="text-xs text-zinc-500">Updated ~60s</div>
-              </div>
-              <div className="text-xs text-zinc-400 mb-2">Rates (USD → )</div>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between"><div>IDR</div><div className="font-medium">{(fxRates.rates?.IDR || '—')}</div></div>
-                <div className="flex items-center justify-between"><div>EUR</div><div className="font-medium">{(fxRates.rates?.EUR || '—')}</div></div>
-                <div className="flex items-center justify-between"><div>JPY</div><div className="font-medium">{(fxRates.rates?.JPY || '—')}</div></div>
-              </div>
-              <div className="mt-3 text-xs text-zinc-500">Tip: Currency selector converts totals to chosen currency.</div>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Modal: Add/Edit with Typeahead search */}
+      {/* Modal: Add / Edit */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md bg-zinc-950 border border-zinc-900 rounded-2xl p-6">
+          <div className="w-full max-w-md bg-zinc-950 border border-zinc-900 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold">{editing?.id ? 'Edit Asset' : 'Add Asset'}</h3>
-              <button onClick={closeModal} className="text-zinc-400 hover:text-zinc-200"><X size={18} /></button>
+              <div className="text-lg font-semibold">{editing ? 'Edit Asset' : 'Add Asset'}</div>
+              <button onClick={()=>{ setIsModalOpen(false); setEditing(null); setQ(''); setSuggestions([]); }} className="text-zinc-400">Close</button>
             </div>
 
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const fd = new FormData(e.target);
-              submitAsset({
-                id: editing?.id,
-                symbol: (fd.get('symbol') || '').toString(),
-                quantity: Number(fd.get('quantity') || 0),
-                purchasePrice: Number(fd.get('purchasePrice') || 0),
-                currency: (fd.get('currency') || 'USD').toString(),
-                date: (fd.get('date') || '').toString(),
-                note: (fd.get('note') || '').toString(),
-              });
-            }} className="space-y-3">
+            <form onSubmit={(e)=>{ e.preventDefault();
+                const fd = new FormData(e.target);
+                submitAsset({ id: editing?.id, symbol: fd.get('symbol'), qty: fd.get('qty'), purchasePrice: fd.get('price'), currency: fd.get('currency'), date: fd.get('date') });
+              }} className="space-y-3">
 
-              {/* Typeahead */}
               <div>
-                <label className="text-xs text-zinc-400">Search Symbol</label>
+                <label className="text-xs text-zinc-400">Symbol</label>
                 <input
                   name="symbol"
-                  value={editing?.symbol ?? searchQuery}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setSearchQuery(v);
-                    // keep editing.symbol updated for instant preview
-                    setEditing((ed) => ({ ...(ed || {}), symbol: v }));
+                  value={editing?.symbol ?? q}
+                  onChange={(ev)=> {
+                    const v = ev.target.value;
+                    setQ(v);
+                    setEditing(ed => ({ ...(ed||{}), symbol: v }));
                   }}
-                  placeholder="Search symbol (AAPL, TSLA, BINANCE:BTCUSDT, OANDA:USD_IDR...)"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100"
+                  placeholder="Search symbol..."
                   autoComplete="off"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm"
                 />
-                {searchQuery && (
-                  <div className="max-h-44 overflow-auto mt-1 bg-zinc-900 border border-zinc-800 rounded-md">
-                    {loadingSearch ? (
-                      <div className="p-2 text-xs text-zinc-500">Searching…</div>
-                    ) : (
-                      <SearchSuggestions
-                        query={searchQuery}
-                        onPick={(sym) => {
-                          setEditing((ed) => ({ ...(ed || {}), symbol: sym }));
-                          setSearchQuery('');
-                          setSearchResults([]);
-                        }}
-                        results={searchResults}
-                        setSearchResults={setSearchResults}
-                      />
-                    )}
+                {/* suggestions */}
+                { (q && (suggestions.length>0 || loadingSearch)) && (
+                  <div className="mt-1 max-h-44 overflow-auto bg-zinc-900 border border-zinc-800 rounded-md">
+                    {loadingSearch ? <div className="p-2 text-xs text-zinc-500">Searching…</div> : suggestions.map(s=>(
+                      <button key={s.symbol} type="button"
+                        onClick={()=> { setEditing(ed=> ({ ...(ed||{}), symbol: s.symbol })); setQ(''); setSuggestions([]); }}
+                        className="w-full text-left px-3 py-2 hover:bg-zinc-800 flex items-center justify-between text-sm"
+                      >
+                        <div>
+                          <div className="font-medium">{s.symbol}</div>
+                          <div className="text-xs text-zinc-500">{s.desc}</div>
+                        </div>
+                        <div className="text-xs text-zinc-400">pick</div>
+                      </button>
+                    )) }
                   </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-zinc-400">Quantity</label>
-                  <input name="quantity" defaultValue={editing?.quantity ?? 0} type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
+                  <label className="text-xs text-zinc-400">Qty</label>
+                  <input name="qty" defaultValue={editing?.qty || editing?.quantity || ''} type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
                 </div>
                 <div>
                   <label className="text-xs text-zinc-400">Currency</label>
@@ -667,27 +496,23 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-zinc-400">Purchase Price</label>
-                  <input name="purchasePrice" defaultValue={editing?.purchasePrice ?? 0} type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
+                  <label className="text-xs text-zinc-400">Buy Price</label>
+                  <input name="price" defaultValue={editing?.purchasePrice || editing?.avg || ''} type="number" step="any" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
                 </div>
                 <div>
                   <label className="text-xs text-zinc-400">Date</label>
-                  <input name="date" defaultValue={editing?.date ?? ''} type="date" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
+                  <input name="date" defaultValue={editing?.date || ''} type="date" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs text-zinc-400">Note (optional)</label>
-                <input name="note" defaultValue={editing?.note ?? ''} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm" />
-              </div>
-
-              <div className="flex items-center justify-end gap-2">
-                <button type="button" onClick={closeModal} className="px-3 py-2 rounded-xl bg-zinc-800 text-sm">Cancel</button>
-                <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm">Save</button>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={()=>{ setIsModalOpen(false); setEditing(null); setQ(''); setSuggestions([]); }} className="px-3 py-2 rounded-xl bg-zinc-800">Cancel</button>
+                <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600">Save</button>
               </div>
             </form>
+
           </div>
         </div>
       )}
@@ -696,40 +521,4 @@ export default function DashboardPage() {
   );
 }
 
-/* ===========================
-   Search Suggestions component
-   - uses the searchQuery-driven results in parent
-   - fallback to dynamic fetch when clicking to pick
-   =========================== */
-function SearchSuggestions({ query, results, onPick, setSearchResults }) {
-  // if parent fed results, show them; otherwise show empty
-  // clicking a suggestion triggers pick
-  if (!results || results.length === 0) {
-    return <div className="p-2 text-xs text-zinc-500">No results</div>;
-  }
-  return (
-    <div>
-      {results.map((r) => (
-        <button
-          key={r.symbol}
-          onClick={() => onPick(r.symbol)}
-          className="w-full text-left px-3 py-2 hover:bg-zinc-800 flex items-center justify-between"
-        >
-          <div>
-            <div className="font-medium">{r.symbol}</div>
-            <div className="text-xs text-zinc-500">{r.description}</div>
-          </div>
-          <div className="text-xs text-zinc-400">{r.type || ''}</div>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/* ===========================
-   Side effects: search debounce wiring (top-level)
-   - we keep search results in state; parent triggers doSearch
-   =========================== */
-// place doSearch outside to reuse previous debounce and FINNHUB_KEY
-// but we used useMemo in top-level to create it; ensure top-level sets searchResults
-// The top-level uses `doSearch` defined earlier (in DashboardPage) - it's okay.
+/* ----------------- End ----------------- */
