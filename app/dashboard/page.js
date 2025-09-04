@@ -5,13 +5,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 /** ========= CONFIG ========= **/
 const FINNHUB_KEY =
   process.env.NEXT_PUBLIC_FINNHUB_API_KEY || process.env.FINNHUB_API_KEY; // fallback
-const WS_URL = `wss://ws.finnhub.io?token=${FINNHUB_KEY}`;
+const WS_URL = FINNHUB_KEY ? `wss://ws.finnhub.io?token=${FINNHUB_KEY}` : null;
 const SEARCH_URL = (q) =>
   `https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${FINNHUB_KEY}`;
+const QUOTE_URL = (sym) =>
+  `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${FINNHUB_KEY}`;
 
-/** ========= UTILS ========= **/
+/** ========= HELPERS ========= **/
 const number = (v) => (isNaN(+v) ? 0 : +v);
-
 function useDebouncedValue(value, delay = 300) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -20,37 +21,58 @@ function useDebouncedValue(value, delay = 300) {
   }, [value, delay]);
   return debounced;
 }
-
 function fmtCurrency(val, ccy = "USD") {
   const n = Number(val || 0);
   const locale = ccy === "IDR" ? "id-ID" : "en-US";
-  const style = "currency";
-  const currency = ccy;
-  return new Intl.NumberFormat(locale, { style, currency, maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat(locale, { style: "currency", currency: ccy, maximumFractionDigits: 2 }).format(n);
 }
-
-// Kasar: tebak currency harga dari simbol
 function priceCurrencyFromSymbol(sym) {
   if (!sym) return "USD";
   if (sym.startsWith("IDX:") || sym.includes("IDR")) return "IDR";
-  // crypto USDT dianggap USD
   if (sym.includes("USDT")) return "USD";
   return "USD";
 }
-
-// Convert harga saat ini ke USD
 function toUSDFromQuote(price, quoteCcy, usdIdr) {
-  if (quoteCcy === "IDR") return price / usdIdr;
-  return price; // USD already
+  if (quoteCcy === "IDR") return price / (usdIdr || 1);
+  return price;
 }
-
-// Convert USD -> tampilan user (USD/IDR)
 function fromUSDForDisplay(usd, displayCcy, usdIdr) {
-  return displayCcy === "IDR" ? usd * usdIdr : usd;
+  return displayCcy === "IDR" ? usd * (usdIdr || 1) : usd;
 }
 
-/** ========= MAIN PAGE ========= **/
+/** ========= SVG DONUT (simple) ========= **/
+function Donut({ items = [], size = 140 }) {
+  const total = items.reduce((s, x) => s + Math.max(0, x.value), 0) || 1;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = (size / 2) - 6;
+  let startAngle = -90;
+  const COLORS = ["#16a34a", "#0891b2", "#f59e0b", "#ef4444", "#7c3aed", "#06b6d4"];
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {items.map((it, i) => {
+        const portion = Math.max(0, it.value) / total;
+        const angle = portion * 360;
+        const endAngle = startAngle + angle;
+        const large = angle > 180 ? 1 : 0;
+        const startRad = (Math.PI * startAngle) / 180;
+        const endRad = (Math.PI * endAngle) / 180;
+        const x1 = cx + r * Math.cos(startRad);
+        const y1 = cy + r * Math.sin(startRad);
+        const x2 = cx + r * Math.cos(endRad);
+        const y2 = cy + r * Math.sin(endRad);
+        const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+        startAngle = endAngle;
+        return <path key={i} d={path} fill={COLORS[i % COLORS.length]} stroke="#000" strokeWidth="0.2" />;
+      })}
+      <circle cx={cx} cy={cy} r={r * 0.55} fill="#070707" />
+    </svg>
+  );
+}
+
+/** ========= MAIN ========= **/
 export default function DashboardPage() {
+  // persisted portfolio
   const [assets, setAssets] = useState(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -59,6 +81,7 @@ export default function DashboardPage() {
       return [];
     }
   });
+
   const [realizedUSD, setRealizedUSD] = useState(() => {
     if (typeof window === "undefined") return 0;
     try {
@@ -68,45 +91,40 @@ export default function DashboardPage() {
     }
   });
 
-  const [displayCcy, setDisplayCcy] = useState("USD"); // dropdown USD/IDR
-  const [usdIdr, setUsdIdr] = useState(16000); // live dari websocket OANDA:USD_IDR
-  const [prices, setPrices] = useState({}); // live last price per symbol
+  const [displayCcy, setDisplayCcy] = useState("USD");
+  const [usdIdr, setUsdIdr] = useState(16000);
+  const [prices, setPrices] = useState({});
   const [lastTickTs, setLastTickTs] = useState(null);
 
-  // --- Add Asset form (inline, minimal) ---
+  // add/search UI
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebouncedValue(search, 350);
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSym, setSelectedSym] = useState("");
   const [qty, setQty] = useState("");
   const [avg, setAvg] = useState("");
-  const [avgCcy, setAvgCcy] = useState("USD"); // price input ccy
+  const [avgCcy, setAvgCcy] = useState("USD");
 
-  // Inline edit state per row
+  // edit state
   const [editingId, setEditingId] = useState(null);
   const [editQty, setEditQty] = useState("");
   const [editAvg, setEditAvg] = useState("");
   const [editAvgCcy, setEditAvgCcy] = useState("USD");
 
-  // WS ref
+  // WS
   const wsRef = useRef(null);
-  const subscribedRef = useRef(new Set()); // symbols subscribed
+  const subscribedRef = useRef(new Set());
 
-  /** ========= EFFECT: Persist ========= **/
+  // persist
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("bb_assets", JSON.stringify(assets));
-    }
+    if (typeof window !== "undefined") localStorage.setItem("bb_assets", JSON.stringify(assets));
   }, [assets]);
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("bb_realized_usd", String(realizedUSD));
-    }
+    if (typeof window !== "undefined") localStorage.setItem("bb_realized_usd", String(realizedUSD));
   }, [realizedUSD]);
 
-  /** ========= EFFECT: Search Typeahead Finnhub ========= **/
+  /** ========= SEARCH typeahead (robust) ========= **/
   useEffect(() => {
-    // improved: abortable, checks response.ok, defensive against empty results and rate-limit
     if (!FINNHUB_KEY) {
       setSuggestions([]);
       return;
@@ -115,24 +133,19 @@ export default function DashboardPage() {
       setSuggestions([]);
       return;
     }
-
     const ac = new AbortController();
     let mounted = true;
-
     (async () => {
       try {
-        const url = SEARCH_URL(debouncedSearch);
-        const res = await fetch(url, { signal: ac.signal });
+        const res = await fetch(SEARCH_URL(debouncedSearch), { signal: ac.signal });
         if (!mounted) return;
         if (!res.ok) {
-          // server returned non-200 (rate-limited or bad key) -> clear suggestions
-          console.warn("Finnhub search returned", res.status);
+          // no suggestions if bad key or rate-limited
           setSuggestions([]);
           return;
         }
         const json = await res.json();
         const list = Array.isArray(json?.result) ? json.result : json?.result ? json.result : [];
-        // some responses might include displaySymbol/description
         const filtered = (list || [])
           .filter((r) => (r.symbol || r.displaySymbol) && (r.description || r.displaySymbol))
           .slice(0, 12)
@@ -142,36 +155,32 @@ export default function DashboardPage() {
           }));
         setSuggestions(filtered);
       } catch (err) {
-        if (err.name === "AbortError") {
-          // aborted - ignore
-          return;
+        if (err.name !== "AbortError") {
+          console.error("Search error", err);
+          setSuggestions([]);
         }
-        console.error("Search fetch error", err);
-        setSuggestions([]);
       }
     })();
-
     return () => {
       mounted = false;
       ac.abort();
     };
   }, [debouncedSearch]);
 
-  /** ========= EFFECT: WebSocket Finnhub ========= **/
+  /** ========= Finnhub WebSocket realtime ========= **/
   useEffect(() => {
-    if (!FINNHUB_KEY) return;
+    if (!WS_URL) return;
 
-    // open ws once
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      // subscribe USD/IDR kurs
+      // subscribe USD/IDR
       try {
         ws.send(JSON.stringify({ type: "subscribe", symbol: "OANDA:USD_IDR" }));
         subscribedRef.current.add("OANDA:USD_IDR");
       } catch {}
-      // subscribe semua asset
+      // subscribe all currently in portfolio
       assets.forEach((a) => {
         try {
           ws.send(JSON.stringify({ type: "subscribe", symbol: a.symbol }));
@@ -184,7 +193,7 @@ export default function DashboardPage() {
       try {
         const msg = JSON.parse(ev.data);
         if (msg.type === "trade" && Array.isArray(msg.data)) {
-          let fx = usdIdr;
+          let fx = null;
           const updates = {};
           msg.data.forEach((t) => {
             const s = t.s;
@@ -196,50 +205,91 @@ export default function DashboardPage() {
               updates[s] = p;
             }
           });
-          if (Object.keys(updates).length) {
-            setPrices((prev) => ({ ...prev, ...updates }));
-          }
-          if (fx && fx !== usdIdr) setUsdIdr(fx);
+          if (Object.keys(updates).length) setPrices((prev) => ({ ...prev, ...updates }));
+          if (fx != null && fx !== usdIdr) setUsdIdr(fx);
         }
-      } catch {}
+      } catch (e) {
+        console.error("ws parse err", e);
+      }
     };
 
-    ws.onerror = () => {};
-    ws.onclose = () => {};
+    ws.onerror = (e) => {
+      console.warn("ws error", e);
+    };
+    ws.onclose = () => {
+      // will try reconnect on next effect run
+    };
 
     return () => {
-      try {
-        ws.close();
-      } catch {}
+      try { ws.close(); } catch {}
       subscribedRef.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [FINNHUB_KEY]);
+  }, [WS_URL]);
 
-  // Re-subscribe when assets change (if ws already open)
+  // ensure newly added assets get subscribed
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== 1) return;
-    const subscribed = subscribedRef.current;
+    const sub = subscribedRef.current;
     assets.forEach((a) => {
-      if (!subscribed.has(a.symbol)) {
+      if (!sub.has(a.symbol)) {
         try {
           ws.send(JSON.stringify({ type: "subscribe", symbol: a.symbol }));
-          subscribed.add(a.symbol);
+          sub.add(a.symbol);
         } catch {}
       }
     });
   }, [assets]);
 
-  /** ========= COMPUTATIONS ========= **/
+  // fallback polling for FX (Coingecko) if usdIdr not updated by WS
+  useEffect(() => {
+    let mounted = true;
+    async function fetchFx() {
+      try {
+        const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=idr");
+        const j = await r.json();
+        if (!mounted) return;
+        if (j?.tether?.idr) {
+          // only update if ws hasn't already provided a very recent tick
+          setUsdIdr((prev) => {
+            if (!prev || prev === 16000) return j.tether.idr;
+            return prev;
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    fetchFx();
+    const iid = setInterval(fetchFx, 60000);
+    return () => { mounted = false; clearInterval(iid); };
+  }, []);
+
+  /** ========= helper: fetch initial quote for symbol ========= **/
+  async function fetchInitialQuote(sym) {
+    if (!FINNHUB_KEY) return null;
+    try {
+      const res = await fetch(QUOTE_URL(sym));
+      if (!res.ok) return null;
+      const j = await res.json();
+      // Finnhub returns { c: current, o, h, l, pc }
+      if (j && (typeof j.c === "number")) return j.c;
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** ========= COMPUTE rows & totals ========= **/
   const rows = useMemo(() => {
     return assets.map((a) => {
       const quoteCcy = priceCurrencyFromSymbol(a.symbol);
-      const live = prices[a.symbol]; // undefined kalau belum ada tick
-      const lastPrice = number(live ?? a.lastKnownPrice ?? a.avgUSD); // fallback
+      const live = prices[a.symbol];
+      const lastPrice = number(live ?? a.lastKnownPrice ?? a.avgUSD);
       const priceUSD = toUSDFromQuote(lastPrice, quoteCcy, usdIdr);
-      const marketUSD = priceUSD * a.qty;
-      const investedUSD = a.avgUSD * a.qty;
+      const marketUSD = priceUSD * (a.qty || 0);
+      const investedUSD = (a.avgUSD || 0) * (a.qty || 0);
       const pnlUSD = marketUSD - investedUSD;
       const pnlPct = investedUSD > 0 ? (pnlUSD / investedUSD) * 100 : 0;
 
@@ -263,7 +313,6 @@ export default function DashboardPage() {
         displayPnl,
       };
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assets, prices, usdIdr, displayCcy]);
 
   const totals = useMemo(() => {
@@ -282,22 +331,27 @@ export default function DashboardPage() {
     realized: fromUSDForDisplay(realizedUSD, displayCcy, usdIdr),
   };
 
-  /** ========= ACTIONS ========= **/
+  /** ========= ACTIONS: select suggestion, add asset, edit, buy, sell, remove ========= **/
   function selectSuggestion(s) {
     setSelectedSym(s.symbol);
     setSearch(s.symbol);
     setSuggestions([]);
   }
 
-  function addAsset() {
+  async function addAsset() {
     const sym = (selectedSym || search || "").trim().toUpperCase();
     const q = number(qty);
     const a = number(avg);
-    if (!sym || q <= 0 || a <= 0) return;
+    if (!sym || q <= 0 || a <= 0) {
+      alert("Symbol, qty, avg are required");
+      return;
+    }
 
     // convert avg to USD
-    const thisUsdIdr = usdIdr || 16000;
-    const avgUSD = avgCcy === "IDR" ? a / thisUsdIdr : a;
+    const avgUSD = avgCcy === "IDR" ? a / (usdIdr || 1) : a;
+
+    // fetch initial quote to show currentPrice ASAP
+    const initialPrice = await fetchInitialQuote(sym);
 
     const newAsset = {
       id: Date.now(),
@@ -306,9 +360,19 @@ export default function DashboardPage() {
       avgUSD,
       avgOriginal: a,
       avgOriginalCcy: avgCcy,
-      lastKnownPrice: undefined,
+      lastKnownPrice: initialPrice ?? undefined,
     };
+
     setAssets((prev) => [...prev, newAsset]);
+
+    // subscribe WS if open
+    try {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "subscribe", symbol: sym }));
+        subscribedRef.current.add(sym);
+      }
+    } catch {}
 
     // reset form
     setSelectedSym("");
@@ -332,16 +396,8 @@ export default function DashboardPage() {
       setEditingId(null);
       return;
     }
-    const thisUsdIdr = usdIdr || 16000;
-    const avgUSD = editAvgCcy === "IDR" ? a / thisUsdIdr : a;
-
-    setAssets((prev) =>
-      prev.map((x) =>
-        x.id === id
-          ? { ...x, qty: q, avgUSD, avgOriginal: a, avgOriginalCcy: editAvgCcy }
-          : x
-      )
-    );
+    const avgUSD = editAvgCcy === "IDR" ? a / (usdIdr || 1) : a;
+    setAssets((prev) => prev.map((x) => x.id === id ? { ...x, qty: q, avgUSD, avgOriginal: a, avgOriginalCcy: editAvgCcy } : x));
     setEditingId(null);
   }
 
@@ -350,10 +406,17 @@ export default function DashboardPage() {
   }
 
   function removeAsset(id) {
+    const target = assets.find((x) => x.id === id);
     setAssets((prev) => prev.filter((x) => x.id !== id));
+    try {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === 1 && target) {
+        ws.send(JSON.stringify({ type: "unsubscribe", symbol: target.symbol }));
+        subscribedRef.current.delete(target.symbol);
+      }
+    } catch {}
   }
 
-  // Weighted average buy
   function buyMore(row) {
     const qtyStr = prompt(`Buy quantity for ${row.symbol}:`, "0");
     if (!qtyStr) return;
@@ -363,46 +426,42 @@ export default function DashboardPage() {
     const bp = number(priceStr);
     const curr = (ccy || "USD").toUpperCase() === "IDR" ? "IDR" : "USD";
     if (bq <= 0 || bp <= 0) return;
-    const thisUsdIdr = usdIdr || 16000;
-    const bpUSD = curr === "IDR" ? bp / thisUsdIdr : bp;
+    const bpUSD = curr === "IDR" ? bp / (usdIdr || 1) : bp;
 
     const oldQty = row.qty;
     const newQty = oldQty + bq;
     const newAvgUSD = (row.avgUSD * oldQty + bpUSD * bq) / newQty;
 
-    setAssets((prev) =>
-      prev.map((x) =>
-        x.id === row.id ? { ...x, qty: newQty, avgUSD: newAvgUSD } : x
-      )
-    );
+    setAssets((prev) => prev.map((x) => x.id === row.id ? { ...x, qty: newQty, avgUSD: newAvgUSD } : x));
   }
 
-  // Realize PnL by selling
   function sellSome(row) {
     const qtyStr = prompt(`Sell quantity for ${row.symbol}:`, "0");
     const sq = number(qtyStr);
     if (sq <= 0 || sq > row.qty) return;
-
-    const priceUSD = row.priceUSD; // sell at current market USD
-    const realized = (priceUSD - row.avgUSD) * sq; // USD
+    const priceUSD = row.priceUSD ?? (row.avgUSD || 0);
+    const realized = (priceUSD - row.avgUSD) * sq;
     setRealizedUSD((r) => r + realized);
-
     const remain = row.qty - sq;
     if (remain === 0) {
-      // remove asset
-      setAssets((prev) => prev.filter((x) => x.id !== row.id));
+      removeAsset(row.id);
     } else {
-      setAssets((prev) =>
-        prev.map((x) => (x.id === row.id ? { ...x, qty: remain } : x))
-      );
+      setAssets((prev) => prev.map((x) => x.id === row.id ? { ...x, qty: remain } : x));
     }
   }
+
+  /** ========= DONUT data ========= **/
+  const pieItems = useMemo(() => {
+    return rows
+      .map((r) => ({ name: r.symbol, value: Math.max(0, r.marketUSD) }))
+      .filter((x) => x.value > 0);
+  }, [rows]);
 
   /** ========= RENDER ========= **/
   return (
     <div className="min-h-screen w-full bg-black text-gray-200">
       <div className="mx-auto max-w-7xl px-4 py-6">
-        {/* TOP SUMMARY (tanpa card) */}
+        {/* TOP */}
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
@@ -413,6 +472,7 @@ export default function DashboardPage() {
               </span>
             </p>
           </div>
+
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-400">Portfolio Value</span>
             <span className="text-lg font-semibold">
@@ -429,48 +489,37 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* KPI Bar */}
+        {/* KPI */}
         <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-4">
-          <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-gray-900 to-gray-950 px-3 py-2 ring-1 ring-gray-800">
+          <div className="flex items-center justify-between rounded-md px-3 py-2">
             <span className="text-gray-400">Invested</span>
             <span className="font-medium">{fmtCurrency(displayTotals.invested, displayCcy)}</span>
           </div>
-          <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-gray-900 to-gray-950 px-3 py-2 ring-1 ring-gray-800">
+          <div className="flex items-center justify-between rounded-md px-3 py-2">
             <span className="text-gray-400">Market</span>
             <span className="font-medium">{fmtCurrency(displayTotals.market, displayCcy)}</span>
           </div>
-          <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-gray-900 to-gray-950 px-3 py-2 ring-1 ring-gray-800">
+          <div className="flex items-center justify-between rounded-md px-3 py-2">
             <span className="text-gray-400">Unrealized P&amp;L</span>
-            <span
-              className={`font-semibold ${
-                displayTotals.pnl >= 0 ? "text-green-400" : "text-red-400"
-              }`}
-            >
+            <span className={`font-semibold ${displayTotals.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
               {fmtCurrency(displayTotals.pnl, displayCcy)} ({displayTotals.pnlPct.toFixed(2)}%)
             </span>
           </div>
-          <div className="flex items-center justify-between rounded-md bg-gradient-to-r from-gray-900 to-gray-950 px-3 py-2 ring-1 ring-gray-800">
+          <div className="flex items-center justify-between rounded-md px-3 py-2">
             <span className="text-gray-400">Realized P&amp;L</span>
-            <span
-              className={`font-semibold ${
-                displayTotals.realized >= 0 ? "text-green-400" : "text-red-400"
-              }`}
-            >
+            <span className={`font-semibold ${displayTotals.realized >= 0 ? "text-green-400" : "text-red-400"}`}>
               {fmtCurrency(displayTotals.realized, displayCcy)}
             </span>
           </div>
         </div>
 
-        {/* ADD ASSET BAR (typeahead + qty + avg + ccy) */}
+        {/* ADD ASSET */}
         <div className="mt-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="relative w-full sm:max-w-sm">
               <input
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setSelectedSym("");
-                }}
+                onChange={(e) => { setSearch(e.target.value); setSelectedSym(""); }}
                 placeholder="Search symbol… e.g. AAPL, BINANCE:BTCUSDT, IDX:BBCA"
                 className="w-full rounded-md bg-gray-950 px-3 py-2 text-sm outline-none ring-1 ring-gray-800 placeholder:text-gray-600 focus:ring-gray-600"
               />
@@ -707,36 +756,16 @@ export default function DashboardPage() {
           </table>
         </div>
 
-        {/* Allocation Bar (clean, tanpa chart lib) */}
-        {rows.length > 0 && (
-          <div className="mt-6">
-            <div className="mb-2 text-xs uppercase tracking-wider text-gray-500">
-              Allocation by Market Value
-            </div>
-            <div className="flex h-3 overflow-hidden rounded bg-gray-900 ring-1 ring-gray-800">
-              {rows.map((r) => {
-                const w = totals.market > 0 ? (r.marketUSD / totals.market) * 100 : 0;
+        {/* Allocation Donut */}
+        {pieItems.length > 0 && (
+          <div className="mt-6 flex items-center gap-6">
+            <div><Donut items={pieItems} size={140} /></div>
+            <div className="flex flex-col gap-2">
+              {pieItems.map((p) => {
+                const pct = totals.market > 0 ? (p.value / totals.market) * 100 : 0;
                 return (
-                  <div
-                    key={r.id}
-                    style={{ width: `${w}%` }}
-                    className="h-full"
-                    title={`${r.symbol} ${w.toFixed(1)}%`}
-                  >
-                    {/* gunakan gradient hijau berbeda via opacity */}
-                    <div className="h-full w-full bg-green-600/70 hover:bg-green-500/90 transition-colors"></div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
-              {rows.map((r) => {
-                const w = totals.market > 0 ? (r.marketUSD / totals.market) * 100 : 0;
-                return (
-                  <div key={`legend-${r.id}`} className="flex items-center gap-1">
-                    <span className="inline-block h-2 w-2 rounded bg-green-600/70"></span>
-                    <span className="text-gray-300">{r.symbol}</span>
-                    <span>• {w.toFixed(1)}%</span>
+                  <div key={p.name} className="text-sm text-gray-300">
+                    <span className="font-semibold text-gray-100">{p.name}</span> — {pct.toFixed(1)}%
                   </div>
                 );
               })}
