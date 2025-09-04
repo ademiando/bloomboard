@@ -3,21 +3,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- Final Dashboard Page (single-file)
- - Requires server proxies:
+ Final dashboard (single file)
+ - Dependencies: server proxies:
     /api/yahoo/search?q=...
     /api/yahoo/quote?symbols=SYM1,SYM2
- - Polls quotes every 5s, includes USDIDR=X
- - Search + fallback suggestions (IDX .JK, crypto -USD/USDT)
- - Add/Edit/Delete/Buy/Sell
- - Donut allocation + sparkline per asset
- - All math on USD base, display USD/IDR via live USDIDR
+ - Polls quotes every 5s, includes USDIDR=X for FX
+ - Initial sync spinner only during first successful quote fetch attempt
+ - Robust search suggestions (Yahoo results + smart fallbacks)
+ - Add/Edit/Delete/Buy/Sell working with correct USD math
+ - All displayed numbers convert via live USD->IDR rate
+ - Minimal dark UI, responsive table, donut allocation, sparklines
+ NOTE: keep API_PROXY files deployed in same app.
 */
 
-// API endpoints (server-side proxies)
 const API_SEARCH = "/api/yahoo/search?q=";
 const API_QUOTE = "/api/yahoo/quote?symbols=";
-const USDIDR = "USDIDR=X";
+const USDIDR_SYMBOL = "USDIDR=X";
 
 const toNum = (v) => (isNaN(+v) ? 0 : +v);
 
@@ -33,33 +34,13 @@ function useDebounced(value, delay = 300) {
 function fmtMoney(val, ccy = "USD") {
   const n = Number(val || 0);
   if (ccy === "IDR") {
+    // show no decimal for IDR by default
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Math.round(n));
   }
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
 }
 
-/* Small reusable sparkline */
-function Sparkline({ data = [], w = 72, h = 28 }) {
-  if (!data || data.length === 0) return <svg width={w} height={h} />;
-  const pts = data.slice(-40);
-  const min = Math.min(...pts);
-  const max = Math.max(...pts);
-  const range = max - min || 1;
-  const step = w / Math.max(1, pts.length - 1);
-  let path = "";
-  pts.forEach((v, i) => {
-    const x = i * step;
-    const y = h - ((v - min) / range) * (h - 4) - 2;
-    path += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
-  });
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <path d={path} fill="none" stroke="#16a34a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/* Simple donut svg */
+/* Simple donut SVG */
 function Donut({ data = [], size = 140, inner = 60 }) {
   const total = Math.max(1, data.reduce((s, d) => s + Math.max(0, d.value || 0), 0));
   const cx = size / 2, cy = size / 2, r = size / 2 - 6;
@@ -87,25 +68,45 @@ function Donut({ data = [], size = 140, inner = 60 }) {
   );
 }
 
+/* Sparkline */
+function Sparkline({ data = [], w = 80, h = 28 }) {
+  if (!data || data.length === 0) return <svg width={w} height={h} />;
+  const pts = data.slice(-40);
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const range = max - min || 1;
+  const step = w / Math.max(1, pts.length - 1);
+  const d = pts.map((v, i) => {
+    const x = i * step;
+    const y = h - ((v - min) / range) * (h - 4) - 2;
+    return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+  }).join(" ");
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+      <path d={d} fill="none" stroke="#16a34a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function DashboardPage() {
-  // Persisted portfolio
+  // persisted portfolio
   const [assets, setAssets] = useState(() => {
-    try { const raw = localStorage.getItem("bb_assets_v3"); return raw ? JSON.parse(raw) : []; } catch { return []; }
+    try { const raw = localStorage.getItem("bb_assets_final"); return raw ? JSON.parse(raw) : []; } catch { return []; }
   });
   const [realizedUSD, setRealizedUSD] = useState(() => {
-    try { return Number(localStorage.getItem("bb_realized_v3") || "0"); } catch { return 0; }
+    try { return Number(localStorage.getItem("bb_realized_final") || "0"); } catch { return 0; }
   });
 
-  // display currency & FX (USD -> IDR)
+  // display & FX
   const [displayCcy, setDisplayCcy] = useState("IDR");
-  const [usdIdr, setUsdIdr] = useState(16000);
+  const [usdIdr, setUsdIdr] = useState(null); // null until we sync
+  const [isFirstSync, setIsFirstSync] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // quotes and history
+  // quotes & history
   const [quotes, setQuotes] = useState({}); // symbol -> quote object
   const priceHistoryRef = useRef({});
   const [priceHistoryState, setPriceHistoryState] = useState({});
-  const [isFirstSync, setIsFirstSync] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
   const pollRef = useRef(null);
 
   // search UI
@@ -120,102 +121,99 @@ export default function DashboardPage() {
   const [avgInput, setAvgInput] = useState("");
   const [avgCcy, setAvgCcy] = useState("USD");
 
-  // edit state
+  // edit
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({}); // id -> {qty, avgInput, inputCurrency}
 
-  // persist changes
+  // persist to localStorage
   useEffect(() => {
-    try { localStorage.setItem("bb_assets_v3", JSON.stringify(assets)); } catch {}
+    try { localStorage.setItem("bb_assets_final", JSON.stringify(assets)); } catch {}
   }, [assets]);
   useEffect(() => {
-    try { localStorage.setItem("bb_realized_v3", String(realizedUSD)); } catch {}
+    try { localStorage.setItem("bb_realized_final", String(realizedUSD)); } catch {}
   }, [realizedUSD]);
 
-  /* SEARCH (Yahoo via server proxy) + fallback quick suggestions for IDX/crypto */
+  // Search (Yahoo via proxy) + fallbacks
   useEffect(() => {
-    let alive = true;
+    let active = true;
     if (!debQuery || debQuery.length < 1) {
       setSuggestions([]);
       setSuggestLoading(false);
       return;
     }
     setSuggestLoading(true);
+
+    const ac = new AbortController();
     (async () => {
       try {
-        // main search via proxy
-        const res = await fetch(API_SEARCH + encodeURIComponent(debQuery));
-        if (!alive) return;
+        const res = await fetch(API_SEARCH + encodeURIComponent(debQuery), { signal: ac.signal });
+        if (!active) return;
         if (!res.ok) {
-          setSuggestions([]);
+          // fallback suggestions (generate guesses)
+          const q = debQuery.toUpperCase();
+          const fallbacks = generateFallbacks(q);
+          setSuggestions(fallbacks);
           setSuggestLoading(false);
           return;
         }
         const json = await res.json();
-        const list = Array.isArray(json?.quotes) ? json.quotes : [];
-        const mapped = list.map((it) => ({
+        const arr = Array.isArray(json?.quotes) ? json.quotes : [];
+        let mapped = arr.map(it => ({
           symbol: it.symbol,
           display: it.shortname || it.longname || it.symbol,
           exchange: it.exchange || "",
         }));
-        // If Yahoo returned none, create quick fallback suggestions: add .JK, -USD, USDT
         if (mapped.length === 0) {
-          const q = debQuery.toUpperCase();
-          const fallbacks = [];
-          // IDX guess
-          if (/^[A-Z]{2,6}$/.test(q)) fallbacks.push({ symbol: `${q}.JK`, display: `${q}.JK (IDX guess)` });
-          // US tickers fallback
-          fallbacks.push({ symbol: q, display: `${q} (ticker)` });
-          // crypto guesses
-          fallbacks.push({ symbol: `${q}-USD`, display: `${q}-USD (crypto guess)` });
-          fallbacks.push({ symbol: `${q}USDT`, display: `${q}USDT (crypto guess)` });
-          setSuggestions(fallbacks);
-        } else {
-          setSuggestions(mapped.slice(0, 30));
+          // generate smart fallbacks
+          mapped = generateFallbacks(debQuery.toUpperCase());
         }
-      } catch (e) {
-        console.warn("search error", e);
-        setSuggestions([]);
+        setSuggestions(mapped.slice(0, 40));
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.warn("search error", err);
+          setSuggestions(generateFallbacks(debQuery.toUpperCase()));
+        }
       } finally {
-        if (alive) setSuggestLoading(false);
+        if (active) setSuggestLoading(false);
       }
     })();
-    return () => { alive = false; };
+
+    return () => { active = false; ac.abort(); };
   }, [debQuery]);
 
-  /* POLL quotes (includes USDIDR) every 5s */
+  // Poll quotes every 5s (initial sync included) - includes USDIDR
   useEffect(() => {
     let mounted = true;
-    async function poll() {
+    async function pollOnce() {
       try {
         setIsSyncing(true);
-        // collect symbols we need to fetch (assets + USDIDR)
-        const symbols = Array.from(new Set([...assets.map(a => a.symbol), USDIDR])).filter(Boolean);
-        if (symbols.length === 0) {
-          // still fetch USDIDR to get FX
-          try {
-            const rfx = await fetch(API_QUOTE + encodeURIComponent(USDIDR));
-            if (!mounted) return;
-            if (rfx.ok) {
-              const j = await rfx.json();
-              const fx = j?.quoteResponse?.result?.[0];
-              if (fx && fx.regularMarketPrice != null) {
-                // normalize format (Yahoo sometimes returns 15.6 vs 15500)
-                const raw = fx.regularMarketPrice;
-                const norm = raw > 1000 ? Math.round(raw) : Math.round(raw * 1000);
-                setUsdIdr(prev => (!prev || Math.abs(prev - norm) / norm > 0.0005 ? norm : prev));
-                setQuotes(prev => ({ ...prev, [USDIDR]: fx }));
-              }
+        // always ensure we request USDIDR symbol
+        const unique = Array.from(new Set([...assets.map(a => a.symbol), USDIDR_SYMBOL])).filter(Boolean);
+        if (unique.length === 0) {
+          // still fetch USDIDR only
+          const rfx = await fetch(API_QUOTE + encodeURIComponent(USDIDR_SYMBOL));
+          if (!mounted) return;
+          if (rfx.ok) {
+            const j = await rfx.json();
+            const fx = j?.quoteResponse?.result?.[0];
+            if (fx && fx.regularMarketPrice != null) {
+              const normalized = normalizeUsdIdr(fx.regularMarketPrice);
+              if (normalized) setUsdIdr(prev => useNewFx(prev, normalized));
+              setQuotes(prev => ({ ...prev, [USDIDR_SYMBOL]: fx }));
             }
-          } catch {}
+          }
           setIsSyncing(false);
           return;
         }
-        const res = await fetch(API_QUOTE + encodeURIComponent(symbols.join(",")));
+
+        const res = await fetch(API_QUOTE + encodeURIComponent(unique.join(",")));
         if (!mounted) return;
-        if (!res.ok) { setIsSyncing(false); return; }
-        const json = await res.json();
-        const arr = Array.isArray(json?.quoteResponse?.result) ? json.quoteResponse.result : [];
+        if (!res.ok) {
+          setIsSyncing(false);
+          return;
+        }
+        const j = await res.json();
+        const arr = Array.isArray(j?.quoteResponse?.result) ? j.quoteResponse.result : [];
         const map = {};
         arr.forEach(q => {
           if (!q || !q.symbol) return;
@@ -230,45 +228,86 @@ export default function DashboardPage() {
         });
         setQuotes(prev => ({ ...prev, ...map }));
         setPriceHistoryState({ ...priceHistoryRef.current });
-        // update USDIDR if present
-        if (map[USDIDR] && map[USDIDR].regularMarketPrice != null) {
-          const raw = map[USDIDR].regularMarketPrice;
-          const norm = raw > 1000 ? Math.round(raw) : Math.round(raw * 1000);
-          setUsdIdr(prev => (!prev || Math.abs(prev - norm) / norm > 0.0005 ? norm : prev));
+        // update fx if present
+        if (map[USDIDR_SYMBOL] && map[USDIDR_SYMBOL].regularMarketPrice != null) {
+          const norm = normalizeUsdIdr(map[USDIDR_SYMBOL].regularMarketPrice);
+          if (norm) setUsdIdr(prev => useNewFx(prev, norm));
         }
       } catch (e) {
-        // ignore network errors
+        // network error - ignore but keep spinner off after first attempt
+        console.warn("poll err", e);
       } finally {
         if (!mounted) return;
         setIsSyncing(false);
         if (isFirstSync) setIsFirstSync(false);
       }
     }
-    // initial poll + interval
-    poll();
-    pollRef.current = setInterval(poll, 5000);
+
+    pollOnce();
+    pollRef.current = setInterval(pollOnce, 5000);
     return () => { mounted = false; if (pollRef.current) clearInterval(pollRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assets]);
 
-  /* Helper: fetch single via proxy */
-  async function fetchSingle(sym) {
-    try {
-      const r = await fetch(API_QUOTE + encodeURIComponent(sym));
-      if (!r.ok) return null;
-      const j = await r.json();
-      return j?.quoteResponse?.result?.[0] ?? null;
-    } catch { return null; }
+  // Helpers
+  function generateFallbacks(q) {
+    const res = [];
+    if (!q) return res;
+    // If looks like IDX ticker (letters, 2-5 chars)
+    if (/^[A-Z]{2,6}$/.test(q)) {
+      res.push({ symbol: `${q}.JK`, display: `${q}.JK (IDX guess)` });
+    }
+    // direct ticker
+    res.push({ symbol: q, display: `${q} (ticker)` });
+    // crypto guessed pairs
+    res.push({ symbol: `${q}-USD`, display: `${q}-USD (crypto guess)` });
+    res.push({ symbol: `${q}USDT`, display: `${q}USDT (crypto guess)` });
+    res.push({ symbol: `${q}USD`, display: `${q}USD (crypto guess)` });
+    return res;
   }
 
-  /* Computation rows & totals (USD base) */
+  function normalizeUsdIdr(raw) {
+    if (raw == null) return null;
+    const v = Number(raw);
+    if (Number.isNaN(v)) return null;
+    // Yahoo sometimes returns 15.6 (-> 15.6 * 1000 = 15,600)
+    if (v < 1000) {
+      // if v looks like 15.6, scale to 15599 etc (closest)
+      return Math.round(v * 1000);
+    }
+    return Math.round(v);
+  }
+
+  function useNewFx(prev, candidate) {
+    if (!prev) return candidate;
+    // only update if change significant (>0.05%)
+    if (Math.abs(prev - candidate) / candidate > 0.0005) return candidate;
+    return prev;
+  }
+
+  async function fetchSingleQuote(sym) {
+    try {
+      const res = await fetch(API_QUOTE + encodeURIComponent(sym));
+      if (!res.ok) return null;
+      const j = await res.json();
+      return j?.quoteResponse?.result?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Computation rows (all USD math)
   const rows = useMemo(() => {
     return assets.map(a => {
       const qobj = quotes[a.symbol];
-      const native = a.lastKnownNative ?? (qobj?.regularMarketPrice ?? null);
-      const quoteCcy = qobj?.currency ? String(qobj.currency).toUpperCase() : (a.quoteCurrency || (String(a.symbol || "").endsWith(".JK") ? "IDR" : "USD"));
+      const nativeLast = a.lastKnownNative ?? (qobj?.regularMarketPrice ?? null);
+      const quoteCurrency = qobj?.currency ? String(qobj.currency).toUpperCase() : (a.symbol?.endsWith(".JK") ? "IDR" : "USD");
       let priceUSD = 0;
-      if (quoteCcy === "IDR") priceUSD = toNum(native) / (usdIdr || 1);
-      else priceUSD = toNum(native);
+      if (quoteCurrency === "IDR") {
+        priceUSD = toNum(nativeLast) / (usdIdr || 1);
+      } else {
+        priceUSD = toNum(nativeLast);
+      }
       const investedUSD = toNum(a.avgUSD) * toNum(a.qty);
       const marketUSD = priceUSD * toNum(a.qty);
       const pnlUSD = marketUSD - investedUSD;
@@ -278,7 +317,7 @@ export default function DashboardPage() {
       const displayMarket = displayCcy === "IDR" ? marketUSD * (usdIdr || 1) : marketUSD;
       const displayPnl = displayCcy === "IDR" ? pnlUSD * (usdIdr || 1) : pnlUSD;
       const hist = priceHistoryState[a.symbol] || [];
-      return { ...a, nativeLast: native, quoteCcy, priceUSD, investedUSD, marketUSD, pnlUSD, pnlPct, displayPrice, displayInvested, displayMarket, displayPnl, hist };
+      return { ...a, nativeLast, quoteCurrency, priceUSD, investedUSD, marketUSD, pnlUSD, pnlPct, displayPrice, displayInvested, displayMarket, displayPnl, hist };
     });
   }, [assets, quotes, priceHistoryState, usdIdr, displayCcy]);
 
@@ -300,31 +339,53 @@ export default function DashboardPage() {
 
   const pieData = useMemo(() => rows.map(r => ({ name: r.symbol, value: Math.max(0, r.marketUSD || 0) })).filter(x => x.value > 0), [rows]);
 
-  /* ACTIONS */
+  /* Actions */
+
   function pickSuggestion(it) {
     setSelected(it);
-    setQuery(`${it.symbol} — ${it.display}`);
+    // show selected symbol in input (short)
+    setQuery(it.symbol);
     setSuggestions([]);
   }
 
   async function addAsset() {
+    // require fx if avgCcy is IDR
+    if (avgCcy === "IDR" && !usdIdr) {
+      alert("Waiting for USD/IDR rate sync. Please wait a moment.");
+      return;
+    }
     let pick = selected;
     if (!pick && query) {
       const typed = query.split("—")[0].trim();
       if (typed) pick = { symbol: typed, display: typed };
     }
-    if (!pick) { alert("Pilih asset dari suggestion atau ketik symbol lengkap (AAPL, BBCA.JK, BTC-USD)."); return; }
+    if (!pick) {
+      alert("Please pick an asset from suggestions or type a full symbol (e.g. AAPL, BBCA.JK, BTC-USD).");
+      return;
+    }
     const q = toNum(qtyInput);
     const a = toNum(avgInput);
-    if (q <= 0 || a <= 0) { alert("Qty & Avg harus > 0"); return; }
+    if (q <= 0 || a <= 0) {
+      alert("Qty and Avg must be > 0");
+      return;
+    }
     const avgUSD = avgCcy === "IDR" ? a / (usdIdr || 1) : a;
-    const base = { id: Date.now(), symbol: pick.symbol, displayName: pick.display || "", qty: q, avgInput: a, inputCurrency: avgCcy, avgUSD, createdAt: Date.now() };
-    // best-effort initial quote
+    const base = {
+      id: Date.now(),
+      symbol: pick.symbol,
+      displayName: pick.display || "",
+      qty: q,
+      avgInput: a,
+      inputCurrency: avgCcy,
+      avgUSD,
+      createdAt: Date.now(),
+    };
+    // quick initial price fetch
     try {
-      const qobj = await fetchSingle(pick.symbol);
+      const qobj = await fetchSingleQuote(pick.symbol);
       if (qobj) {
         base.lastKnownNative = qobj.regularMarketPrice ?? undefined;
-        setQuotes(p => ({ ...p, [pick.symbol]: qobj }));
+        setQuotes(prev => ({ ...prev, [pick.symbol]: qobj }));
         if (qobj.regularMarketPrice != null) {
           const arr = priceHistoryRef.current[pick.symbol] ? [...priceHistoryRef.current[pick.symbol]] : [];
           arr.push(Number(qobj.regularMarketPrice));
@@ -333,33 +394,40 @@ export default function DashboardPage() {
         }
       }
     } catch {}
-    setAssets(p => [...p, base]);
-    setSelected(null); setQuery(""); setQtyInput(""); setAvgInput(""); setAvgCcy("USD");
+    setAssets(prev => [...prev, base]);
+    setSelected(null);
+    setQuery("");
+    setQtyInput("");
+    setAvgInput("");
+    setAvgCcy("USD");
   }
 
   function beginEdit(a) {
     setEditingId(a.id);
-    setEditDraft(p => ({ ...p, [a.id]: { qty: String(a.qty), avgInput: String(a.avgInput ?? a.avgUSD ?? ""), inputCurrency: a.inputCurrency || "USD" } }));
+    setEditDraft(prev => ({ ...prev, [a.id]: { qty: String(a.qty), avgInput: String(a.avgInput ?? a.avgUSD ?? ""), inputCurrency: a.inputCurrency || "USD" } }));
   }
 
   function saveEdit(id) {
     const d = editDraft[id];
     if (!d) { setEditingId(null); return; }
-    const q = toNum(d.qty), a = toNum(d.avgInput), ccy = d.inputCurrency || "USD";
-    if (q <= 0 || a <= 0) { alert("Qty & Avg harus > 0"); setEditingId(null); return; }
+    const q = toNum(d.qty);
+    const a = toNum(d.avgInput);
+    const ccy = d.inputCurrency || "USD";
+    if (q <= 0 || a <= 0) { alert("Qty & Avg must be > 0"); setEditingId(null); return; }
     const avgUSD = ccy === "IDR" ? a / (usdIdr || 1) : a;
-    setAssets(p => p.map(x => x.id === id ? { ...x, qty: q, avgInput: a, inputCurrency: ccy, avgUSD } : x));
+    setAssets(prev => prev.map(x => x.id === id ? { ...x, qty: q, avgInput: a, inputCurrency: ccy, avgUSD } : x));
     setEditingId(null);
-    setEditDraft(p => { const cp = { ...p }; delete cp[id]; return cp; });
+    setEditDraft(prev => { const cp = { ...prev }; delete cp[id]; return cp; });
   }
 
   function cancelEdit(id) {
     setEditingId(null);
-    setEditDraft(p => { const cp = { ...p }; delete cp[id]; return cp; });
+    setEditDraft(prev => { const cp = { ...prev }; delete cp[id]; return cp; });
   }
 
   function removeAsset(id) {
-    setAssets(p => p.filter(x => x.id !== id));
+    setAssets(prev => prev.filter(x => x.id !== id));
+    // prune price history
     priceHistoryRef.current = Object.keys(priceHistoryRef.current).reduce((acc, k) => {
       const keep = assets.some(a => a.id !== id && a.symbol === k);
       if (keep) acc[k] = priceHistoryRef.current[k];
@@ -373,35 +441,40 @@ export default function DashboardPage() {
     if (!qtyStr) return;
     const priceStr = prompt(`Price per unit (in ${a.inputCurrency || "USD"}):`, String(a.avgInput || a.avgUSD || ""));
     const ccy = prompt("Currency (USD/IDR):", a.inputCurrency || "USD");
-    const bq = toNum(qtyStr); const bp = toNum(priceStr);
+    const bq = toNum(qtyStr);
+    const bp = toNum(priceStr);
     const curr = (ccy || "USD").toUpperCase() === "IDR" ? "IDR" : "USD";
     if (bq <= 0 || bp <= 0) return;
     const bpUSD = curr === "IDR" ? bp / (usdIdr || 1) : bp;
-    const oldQty = a.qty; const newQty = oldQty + bq;
+    const oldQty = a.qty;
+    const newQty = oldQty + bq;
     const newAvgUSD = (a.avgUSD * oldQty + bpUSD * bq) / newQty;
-    setAssets(p => p.map(x => x.id === a.id ? { ...x, qty: newQty, avgUSD: newAvgUSD, avgInput: curr === "IDR" ? newAvgUSD * (usdIdr || 1) : newAvgUSD, inputCurrency: curr } : x));
+    setAssets(prev => prev.map(x => x.id === a.id ? { ...x, qty: newQty, avgUSD: newAvgUSD, avgInput: curr === "IDR" ? newAvgUSD * (usdIdr || 1) : newAvgUSD, inputCurrency: curr } : x));
   }
 
   function sellSome(a) {
     const qtyStr = prompt(`Sell qty for ${a.symbol}:`, "0");
     const sq = toNum(qtyStr);
     if (sq <= 0 || sq > a.qty) return;
+    // use most recent priceUSD
     const priceUSD = a.priceUSD ?? a.avgUSD ?? 0;
     const realized = (priceUSD - a.avgUSD) * sq;
-    setRealizedUSD(p => p + realized);
+    setRealizedUSD(prev => prev + realized);
     const remain = a.qty - sq;
     if (remain <= 0) removeAsset(a.id);
-    else setAssets(p => p.map(x => x.id === a.id ? { ...x, qty: remain } : x));
+    else setAssets(prev => prev.map(x => x.id === a.id ? { ...x, qty: remain } : x));
   }
 
   function openTradingView(r) {
     let tv = r.symbol;
-    if (tv?.endsWith(".JK")) tv = `IDX:${tv.replace(".JK","")}`;
+    // map .JK to IDX:
+    if (tv?.endsWith(".JK")) tv = `IDX:${tv.replace(".JK", "")}`;
+    // if looks like plain ticker, assume NASDAQ (best-effort)
     if (!tv.includes(":") && /^[A-Z0-9._-]{1,10}$/.test(tv)) tv = `NASDAQ:${tv}`;
     window.open(`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tv)}`, "_blank");
   }
 
-  // UI render
+  // Render UI
   return (
     <div className="min-h-screen bg-black text-gray-200 antialiased">
       <div className="max-w-6xl mx-auto px-4 py-6">
@@ -415,7 +488,7 @@ export default function DashboardPage() {
               ) : (
                 <span>{isSyncing ? "syncing…" : `Last: ${new Date().toLocaleTimeString()}`}</span>
               )}
-              {" "}• USD/IDR: <span className="text-green-400 font-medium">{usdIdr ? Number(usdIdr).toLocaleString("id-ID") : "-"}</span>
+              {" "}• USD/IDR: <span className="text-green-400 font-medium">{usdIdr ? Number(usdIdr).toLocaleString("id-ID") : "—"}</span>
             </p>
           </div>
 
@@ -437,12 +510,13 @@ export default function DashboardPage() {
           <div className="flex justify-between text-gray-400"><div>Realized P&L</div><div className={`font-semibold ${displayTotals.realized >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(displayTotals.realized, "IDR") : fmtMoney(displayTotals.realized, "USD")}</div></div>
         </div>
 
-        {/* Add bar */}
+        {/* ADD BAR */}
         <div className="mt-6">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="relative w-full sm:max-w-md">
               <input value={query} onChange={(e) => { setQuery(e.target.value); setSelected(null); }} placeholder="Search symbol (AAPL, BBCA.JK, BTC-USD, BNBUSDT, etc)" className="w-full rounded-md bg-gray-950 px-3 py-2 text-sm outline-none border border-gray-800" />
               <div className="absolute right-3 top-1/2 -translate-y-1/2">{suggestLoading ? <div className="w-4 h-4 rounded-full border-2 border-t-transparent border-gray-400 animate-spin" /> : null}</div>
+
               {suggestions.length > 0 && (
                 <div className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-60 overflow-auto">
                   {suggestions.map((s, i) => (
@@ -469,7 +543,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* TABLE */}
         <div className="mt-6 overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="text-gray-400 border-b border-gray-800">
@@ -558,7 +632,7 @@ export default function DashboardPage() {
           <div className="mt-6 flex gap-6 flex-col sm:flex-row items-start">
             <div className="w-40 h-40"><Donut data={pieData} size={140} inner={60} /></div>
             <div>
-              {pieData.map((p,i) => {
+              {pieData.map((p, i) => {
                 const pct = totals.market > 0 ? (p.value / totals.market) * 100 : 0;
                 const color = ["#16a34a","#06b6d4","#f59e0b","#ef4444","#7c3aed","#84cc16"][i % 6];
                 return (
