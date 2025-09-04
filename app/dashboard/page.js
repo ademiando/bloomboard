@@ -3,40 +3,38 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- Final single-file dashboard:
- - Finnhub (stocks/FX WS + search) + CoinGecko (crypto search + price polling)
- - Realtime-ish prices (WS for Finnhub ticks, polling for CoinGecko)
- - Add/Edit/Delete/Buy/Sell, localStorage persistence
- - Dark, compact UI like screenshots; donut allocation; responsive
- - Fixes: edit clickable, currency dropdown applies everywhere, scrollable search
+  Final Dashboard (single-file)
+  - Yahoo Finance (search + quotes polling)
+  - CoinGecko (crypto search + price polling + USD/IDR fallback)
+  - TradingView for chart (open new tab)
+  - Add/Edit/Delete/Buy/Sell, LocalStorage persistence
+  - Dark minimalist UI, donut allocation, portfolio currency dropdown (USD/IDR)
 */
 
-/* ===== CONFIG ===== */
-const FINNHUB_KEY =
-  typeof process !== "undefined"
-    ? process.env.NEXT_PUBLIC_FINNHUB_API_KEY || process.env.FINNHUB_API_KEY || ""
-    : "";
-const FINNHUB_WS = FINNHUB_KEY ? `wss://ws.finnhub.io?token=${FINNHUB_KEY}` : null;
-const FINNHUB_SEARCH = (q) => `https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${FINNHUB_KEY}`;
-const FINNHUB_QUOTE = (sym) => `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${FINNHUB_KEY}`;
-const COINGECKO_SEARCH = (q) => `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(q)}`;
-const COINGECKO_PRICE = (ids, vs = "usd") =>
-  `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=${vs}`;
+/* ------------------ CONFIG ------------------ */
+// Yahoo endpoints (no key)
+const YAHOO_SEARCH = (q) => `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
+const YAHOO_QUOTE = (symbols) => `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(","))}`;
 
-/* ===== Helpers ===== */
+// CoinGecko
+const COINGECKO_SEARCH = (q) => `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(q)}`;
+const COINGECKO_PRICE = (ids) => `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
+const COINGECKO_USD_IDR = `https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=idr`;
+
+/* ------------------ HELPERS ------------------ */
 const isBrowser = typeof window !== "undefined";
-const number = (v) => (isNaN(+v) ? 0 : +v);
+const toNumber = (v) => (isNaN(+v) ? 0 : +v);
 
 function useDebounced(value, delay = 300) {
-  const [val, setVal] = useState(value);
+  const [v, setV] = useState(value);
   useEffect(() => {
-    const t = setTimeout(() => setVal(value), delay);
+    const t = setTimeout(() => setV(value), delay);
     return () => clearTimeout(t);
   }, [value, delay]);
-  return val;
+  return v;
 }
 
-function fmtCurrency(val, ccy = "USD") {
+function fmtMoney(val, ccy = "USD") {
   const n = Number(val || 0);
   if (ccy === "IDR") {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
@@ -44,31 +42,34 @@ function fmtCurrency(val, ccy = "USD") {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
 }
 
-function symbolQuoteCurrency(symbol) {
+/* try guess quote currency from symbol (best-effort) */
+function guessQuoteCurrency(symbol, yahooQuoteCurrency) {
+  if (yahooQuoteCurrency) return yahooQuoteCurrency;
   if (!symbol) return "USD";
-  if (typeof symbol === "string" && (symbol.startsWith("IDX:") || symbol.includes("IDR"))) return "IDR";
-  if (typeof symbol === "string" && /USDT|USD/i.test(symbol)) return "USD";
+  if (symbol.includes(".JK") || symbol.startsWith("IDX:") || symbol.includes("IDR")) return "IDR";
+  if (/USDT|USD/i.test(symbol)) return "USD";
   return "USD";
 }
 
-function normalizeUsdIdr(v) {
-  const n = Number(v);
+/* normalize coinGecko returned idr (sometimes small) */
+function normalizeIdr(val) {
+  const n = Number(val);
   if (!n || Number.isNaN(n)) return null;
   if (n > 1000) return Math.round(n);
   return Math.round(n * 1000);
 }
 
-/* ===== Donut SVG ===== */
+/* Donut SVG */
 function Donut({ items = [], size = 140, inner = 60 }) {
-  const total = items.reduce((s, i) => s + Math.max(0, i.value || 0), 0) || 1;
+  const total = items.reduce((s, it) => s + Math.max(0, it.value || 0), 0) || 1;
   const cx = size / 2;
   const cy = size / 2;
   const r = size / 2 - 6;
   let start = -90;
-  const colors = ["#16a34a", "#06b6d4", "#f59e0b", "#ef4444", "#7c3aed", "#84cc16"];
+  const palette = ["#16a34a", "#06b6d4", "#f59e0b", "#ef4444", "#7c3aed", "#84cc16"];
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {items.map((it, idx) => {
+      {items.map((it, i) => {
         const portion = Math.max(0, it.value || 0) / total;
         const angle = portion * 360;
         const end = start + angle;
@@ -81,48 +82,43 @@ function Donut({ items = [], size = 140, inner = 60 }) {
         const y2 = cy + r * Math.sin(eRad);
         const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
         start = end;
-        return <path key={idx} d={d} fill={colors[idx % colors.length]} stroke="rgba(0,0,0,0.08)" strokeWidth="0.3" />;
+        return <path key={i} d={d} fill={palette[i % palette.length]} stroke="rgba(0,0,0,0.08)" strokeWidth="0.2" />;
       })}
       <circle cx={cx} cy={cy} r={inner} fill="#070707" />
     </svg>
   );
 }
 
-/* ===== MAIN PAGE ===== */
+/* ------------------ COMPONENT ------------------ */
 export default function DashboardPage() {
-  /* persisted */
+  /* persisted portfolio */
   const [assets, setAssets] = useState(() => {
     try {
       if (!isBrowser) return [];
-      return JSON.parse(localStorage.getItem("bb_assets_final_v4") || "[]");
-    } catch {
-      return [];
-    }
+      return JSON.parse(localStorage.getItem("bb_portfolio_v_yahoo") || "[]");
+    } catch { return []; }
   });
   const [realizedUSD, setRealizedUSD] = useState(() => {
     try {
       if (!isBrowser) return 0;
-      return Number(localStorage.getItem("bb_realized_usd_final_v4") || "0");
-    } catch {
-      return 0;
-    }
+      return Number(localStorage.getItem("bb_realized_usd_v_yahoo") || "0");
+    } catch { return 0; }
   });
 
-  /* UI + rates */
+  /* display currency + FX */
   const [displayCcy, setDisplayCcy] = useState("IDR");
   const [usdIdr, setUsdIdr] = useState(16000);
 
-  /* realtime stores */
-  const [stockPrices, setStockPrices] = useState({}); // key: finnhub symbol -> price (native quote)
-  const [cryptoPricesUSD, setCryptoPricesUSD] = useState({}); // key: coingecko id -> {usd: ...}
-  const [lastTickTs, setLastTickTs] = useState(null);
+  /* realtime price stores */
+  const [yahooQuotes, setYahooQuotes] = useState({}); // symbol -> { regularMarketPrice, currency, ... }
+  const [cryptoPrices, setCryptoPrices] = useState({}); // coingeckoId -> { usd: ... }
+  const [lastTick, setLastTick] = useState(null);
 
-  /* search */
+  /* search UI */
   const [query, setQuery] = useState("");
-  const debQuery = useDebounced(query, 300);
+  const debQuery = useDebounced(query.trim(), 300);
   const [suggestions, setSuggestions] = useState([]);
   const [selected, setSelected] = useState(null);
-  const [finnhubAvailable, setFinnhubAvailable] = useState(Boolean(FINNHUB_KEY));
 
   /* add/edit inputs */
   const [qtyInput, setQtyInput] = useState("");
@@ -134,18 +130,19 @@ export default function DashboardPage() {
   const [editAvg, setEditAvg] = useState("");
   const [editAvgCcy, setEditAvgCcy] = useState("USD");
 
-  /* ws & subs */
-  const wsRef = useRef(null);
-  const subscribed = useRef(new Set());
+  /* polling refs */
+  const pollRef = useRef(null);
+  const pollCryptoRef = useRef(null);
+  const pollFxRef = useRef(null);
 
-  /* persist effects */
-  useEffect(() => { try { localStorage.setItem("bb_assets_final_v4", JSON.stringify(assets)); } catch {} }, [assets]);
-  useEffect(() => { try { localStorage.setItem("bb_realized_usd_final_v4", String(realizedUSD)); } catch {} }, [realizedUSD]);
+  /* persist on change */
+  useEffect(() => { try { localStorage.setItem("bb_portfolio_v_yahoo", JSON.stringify(assets)); } catch {} }, [assets]);
+  useEffect(() => { try { localStorage.setItem("bb_realized_usd_v_yahoo", String(realizedUSD)); } catch {} }, [realizedUSD]);
 
-  /* ---- SEARCH: FINNHUB + COINGECKO ---- */
+  /* ------------------ SEARCH (Yahoo + CoinGecko) ------------------ */
   useEffect(() => {
     let cancelled = false;
-    if (!debQuery || debQuery.length < 2) {
+    if (!debQuery || debQuery.length < 1) {
       setSuggestions([]);
       return;
     }
@@ -153,182 +150,128 @@ export default function DashboardPage() {
     (async () => {
       try {
         const q = debQuery;
-        // finnHub (if available) + coingecko in parallel
-        const fhPromise = FINNHUB_KEY
-          ? fetch(FINNHUB_SEARCH(q), { signal: ac.signal }).then(r => r.ok ? r.json() : null).catch(() => null)
-          : Promise.resolve(null);
+        // Yahoo search
+        const yahooPromise = fetch(YAHOO_SEARCH(q), { signal: ac.signal }).then(r => r.ok ? r.json() : null).catch(() => null);
         const cgPromise = fetch(COINGECKO_SEARCH(q), { signal: ac.signal }).then(r => r.ok ? r.json() : null).catch(() => null);
-
-        const [fh, cg] = await Promise.all([fhPromise, cgPromise]);
+        const [yh, cg] = await Promise.all([yahooPromise, cgPromise]);
         if (cancelled) return;
 
-        // Prepare lists
-        const fhList = fh && Array.isArray(fh.result) ? fh.result.slice(0, 10).map(i => ({
-          source: "finnhub",
-          symbol: i.symbol,
-          display: i.description || i.displaySymbol || i.symbol,
+        const yhList = (yh && yh.quotes && Array.isArray(yh.quotes)) ? yh.quotes.slice(0, 12).map(it => ({
+          source: "yahoo",
+          symbol: it.symbol,
+          display: it.shortname || it.longname || it.symbol,
+          currency: it.currency || it.exchange || null,
         })) : [];
 
-        const cgList = cg && Array.isArray(cg.coins) ? cg.coins.slice(0, 10).map(i => ({
+        const cgList = (cg && cg.coins && Array.isArray(cg.coins)) ? cg.coins.slice(0, 10).map(it => ({
           source: "coingecko",
-          coingeckoId: i.id,
-          symbol: i.symbol.toUpperCase(),
-          display: i.name,
+          coingeckoId: it.id,
+          symbol: it.symbol.toUpperCase(),
+          display: it.name,
         })) : [];
 
-        // merge: coins first (crypto often desired), then fh
+        // Merge: put crypto first, then yahoo
         const merged = [];
         const seen = new Set();
         cgList.forEach(c => { const k = `cg:${c.coingeckoId}`; if (!seen.has(k)) { merged.push(c); seen.add(k); }});
-        fhList.forEach(f => { const k = `fh:${f.symbol}`; if (!seen.has(k)) { merged.push(f); seen.add(k); }});
-
-        setSuggestions(merged.slice(0, 12));
-        setFinnhubAvailable(Boolean(FINNHUB_KEY && fh));
+        yhList.forEach(y => { const k = `yh:${y.symbol}`; if (!seen.has(k)) { merged.push(y); seen.add(k); }});
+        setSuggestions(merged.slice(0, 14));
       } catch (e) {
         if (e.name === "AbortError") return;
-        console.warn("search error", e);
+        console.warn("search err", e);
         setSuggestions([]);
       }
     })();
     return () => { cancelled = true; ac.abort(); };
   }, [debQuery]);
 
-  /* ---- FINNHUB WS: subscribe ticks + USD_IDR ---- */
-  useEffect(() => {
-    if (!FINNHUB_WS) return; // no key -> skip WS
-    let ws;
-    try {
-      ws = new WebSocket(FINNHUB_WS);
-    } catch (e) {
-      console.warn("WS init failed", e);
-      return;
-    }
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      try {
-        ws.send(JSON.stringify({ type: "subscribe", symbol: "OANDA:USD_IDR" }));
-        subscribed.current.add("OANDA:USD_IDR");
-      } catch {}
-      // subscribe existing
-      assets.forEach(a => {
-        if (a.source === "finnhub" && a.symbol) {
-          try { ws.send(JSON.stringify({ type: "subscribe", symbol: a.symbol })); subscribed.current.add(a.symbol); } catch {}
-        }
-      });
-    };
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        if (msg?.type === "trade" && Array.isArray(msg.data)) {
-          const updates = {};
-          let fxCandidate = null;
-          msg.data.forEach(t => {
-            if (!t) return;
-            const s = t.s;
-            const p = t.p;
-            if (s === "OANDA:USD_IDR") {
-              fxCandidate = normalizeUsdIdr(p);
-            } else {
-              updates[s] = p;
-            }
-            setLastTickTs(t.ts || Date.now());
-          });
-          if (Object.keys(updates).length) setStockPrices(prev => ({ ...prev, ...updates }));
-          if (fxCandidate) setUsdIdr(prev => {
-            if (!prev || Math.abs(prev - fxCandidate) / fxCandidate > 0.0005) return fxCandidate;
-            return prev;
-          });
-        }
-      } catch (e) {
-        console.warn("ws parse err", e);
-      }
-    };
-    ws.onerror = (e) => console.warn("ws err", e);
-    ws.onclose = () => {/*noop*/};
-
-    return () => { try { ws.close(); } catch {} wsRef.current = null; subscribed.current.clear(); };
-  }, []);
-
-  /* subscribe newly added finnhub assets when ws ready */
-  useEffect(() => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== 1) return;
-    assets.forEach(a => {
-      if (a.source === "finnhub" && a.symbol && !subscribed.current.has(a.symbol)) {
-        try { ws.send(JSON.stringify({ type: "subscribe", symbol: a.symbol })); subscribed.current.add(a.symbol); } catch {}
-      }
-    });
-  }, [assets]);
-
-  /* ---- COINGECKO polling for crypto (6s) ---- */
+  /* ------------------ POLL QUOTES (Yahoo) every 5s ------------------ */
   useEffect(() => {
     let mounted = true;
-    let iid = null;
-    async function fetchCG() {
+    async function poll() {
       try {
-        const ids = assets.filter(a => a.source === "coingecko" && a.coingeckoId).map(a => a.coingeckoId);
-        if (ids.length === 0) return;
-        const uniq = Array.from(new Set(ids)).join(",");
-        const res = await fetch(COINGECKO_PRICE(uniq, "usd"));
+        const yahooSymbols = Array.from(new Set(assets.filter(a => a.source === "yahoo").map(a => a.symbol))).slice(0, 50);
+        if (yahooSymbols.length === 0) return;
+        const res = await fetch(YAHOO_QUOTE(yahooSymbols));
         if (!mounted || !res.ok) return;
         const j = await res.json();
-        setCryptoPricesUSD(prev => ({ ...prev, ...j }));
+        if (!j || !j.quoteResponse || !Array.isArray(j.quoteResponse.result)) return;
+        const map = {};
+        j.quoteResponse.result.forEach(q => {
+          if (q && q.symbol) map[q.symbol] = q;
+        });
+        setYahooQuotes(prev => ({ ...prev, ...map }));
+        setLastTick(Date.now());
+      } catch (e) {
+        // ignore
+      }
+    }
+    // initial poll + interval
+    poll();
+    pollRef.current = setInterval(poll, 5000);
+    return () => { mounted = false; if (pollRef.current) clearInterval(pollRef.current); };
+  }, [assets]);
+
+  /* ------------------ POLL COINGECKO for crypto prices (6s) ------------------ */
+  useEffect(() => {
+    let mounted = true;
+    async function pollCG() {
+      try {
+        const cgIds = Array.from(new Set(assets.filter(a => a.source === "coingecko").map(a => a.coingeckoId))).slice(0, 100);
+        if (cgIds.length === 0) return;
+        const res = await fetch(COINGECKO_PRICE(cgIds.join(",")));
+        if (!mounted || !res.ok) return;
+        const j = await res.json();
+        setCryptoPrices(prev => ({ ...prev, ...j }));
+        setLastTick(Date.now());
       } catch (e) {}
     }
-    fetchCG();
-    iid = setInterval(fetchCG, 6000);
-    return () => { mounted = false; if (iid) clearInterval(iid); };
+    pollCG();
+    pollCryptoRef.current = setInterval(pollCG, 6000);
+    return () => { mounted = false; if (pollCryptoRef.current) clearInterval(pollCryptoRef.current); };
   }, [assets]);
 
-  /* ---- FX fallback via Coingecko every 60s ---- */
+  /* ------------------ POLL FX (USD/IDR) fallback (Coingecko) every 60s ------------------ */
   useEffect(() => {
     let mounted = true;
-    let iid = null;
     async function fetchFx() {
       try {
-        const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=idr");
+        const res = await fetch(COINGECKO_USD_IDR);
         if (!mounted || !res.ok) return;
         const j = await res.json();
-        const idr = j?.tether?.idr ? normalizeUsdIdr(j.tether.idr) : null;
-        if (idr) setUsdIdr(prev => (!prev || Math.abs(prev - idr) / idr > 0.0005 ? idr : prev));
+        const raw = j?.tether?.idr;
+        const n = normalizeIdr(raw);
+        if (n) setUsdIdr(prev => (!prev || Math.abs(prev - n) / n > 0.0005 ? n : prev));
       } catch (e) {}
     }
     fetchFx();
-    iid = setInterval(fetchFx, 60_000);
-    return () => { mounted = false; if (iid) clearInterval(iid); };
+    pollFxRef.current = setInterval(fetchFx, 60_000);
+    return () => { mounted = false; if (pollFxRef.current) clearInterval(pollFxRef.current); };
   }, []);
 
-  /* helper: initial quote fetch for finnhub symbol */
-  async function fetchFinnhubQuote(sym) {
-    if (!FINNHUB_KEY) return null;
-    try {
-      const res = await fetch(FINNHUB_QUOTE(sym));
-      if (!res.ok) return null;
-      const j = await res.json();
-      if (typeof j.c === "number") return j.c;
-      return null;
-    } catch { return null; }
-  }
-
-  /* ---- COMPUTE rows & totals (USD base for math) ---- */
+  /* ------------------ COMPUTE rows, totals, pie ------------------ */
   const rows = useMemo(() => {
     return assets.map(a => {
-      let nativeLast = a.lastKnownNative ?? null;
-      if (a.source === "finnhub" && stockPrices[a.symbol] != null) nativeLast = stockPrices[a.symbol];
-      if (a.source === "coingecko" && cryptoPricesUSD[a.coingeckoId] && cryptoPricesUSD[a.coingeckoId].usd != null) nativeLast = cryptoPricesUSD[a.coingeckoId].usd;
-
-      const quoteCcy = a.source === "coingecko" ? "USD" : symbolQuoteCurrency(a.symbol);
-      let priceUSD = 0;
-      if (a.source === "coingecko") priceUSD = number(nativeLast);
-      else {
-        if (quoteCcy === "IDR") priceUSD = number(nativeLast) / (usdIdr || 1);
-        else priceUSD = number(nativeLast);
+      // determine native last price
+      let native = a.lastKnownNative ?? null;
+      if (a.source === "yahoo" && yahooQuotes[a.symbol] && yahooQuotes[a.symbol].regularMarketPrice != null) {
+        native = yahooQuotes[a.symbol].regularMarketPrice;
+      }
+      if (a.source === "coingecko" && cryptoPrices[a.coingeckoId] && cryptoPrices[a.coingeckoId].usd != null) {
+        native = cryptoPrices[a.coingeckoId].usd;
       }
 
-      const investedUSD = number(a.avgUSD) * number(a.qty);
-      const marketUSD = priceUSD * number(a.qty);
+      const quoteCcy = a.source === "coingecko" ? "USD" : guessQuoteCurrency(a.symbol, yahooQuotes[a.symbol]?.currency);
+      // price in USD
+      let priceUSD = 0;
+      if (a.source === "coingecko") priceUSD = toNumber(native);
+      else {
+        if (quoteCcy === "IDR") priceUSD = toNumber(native) / (usdIdr || 1);
+        else priceUSD = toNumber(native);
+      }
+
+      const investedUSD = toNumber(a.avgUSD) * toNumber(a.qty);
+      const marketUSD = priceUSD * toNumber(a.qty);
       const pnlUSD = marketUSD - investedUSD;
       const pnlPct = investedUSD > 0 ? (pnlUSD / investedUSD) * 100 : 0;
 
@@ -337,9 +280,22 @@ export default function DashboardPage() {
       const displayMarket = displayCcy === "IDR" ? marketUSD * (usdIdr || 1) : marketUSD;
       const displayPnl = displayCcy === "IDR" ? pnlUSD * (usdIdr || 1) : pnlUSD;
 
-      return { ...a, nativeLast, quoteCcy, priceUSD, investedUSD, marketUSD, pnlUSD, pnlPct, displayPrice, displayInvested, displayMarket, displayPnl };
+      return {
+        ...a,
+        native,
+        quoteCcy,
+        priceUSD,
+        investedUSD,
+        marketUSD,
+        pnlUSD,
+        pnlPct,
+        displayPrice,
+        displayInvested,
+        displayMarket,
+        displayPnl,
+      };
     });
-  }, [assets, stockPrices, cryptoPricesUSD, usdIdr, displayCcy]);
+  }, [assets, yahooQuotes, cryptoPrices, usdIdr, displayCcy]);
 
   const totals = useMemo(() => {
     const invested = rows.reduce((s, r) => s + (r.investedUSD || 0), 0);
@@ -357,65 +313,73 @@ export default function DashboardPage() {
     realized: displayCcy === "IDR" ? realizedUSD * (usdIdr || 1) : realizedUSD,
   };
 
-  const pieData = useMemo(() =>
-    rows.map(r => ({ name: r.symbol || r.displayName || "?", value: Math.max(0, r.marketUSD || 0) })).filter(x => x.value > 0),
-  [rows]);
+  const pieItems = useMemo(() => rows.map(r => ({ name: r.symbol || r.displayName || "?", value: Math.max(0, r.marketUSD || 0) })).filter(i => i.value > 0), [rows]);
 
-  /* ===== ACTIONS: select suggestion, add, edit, buy, sell, delete ===== */
+  /* ------------------ ACTIONS ------------------ */
   function selectSuggestion(item) {
     setSelected(item);
-    if (item.source === "coingecko") setQuery(`${item.symbol.toUpperCase()} — ${item.display}`);
+    if (item.source === "coingecko") setQuery(`${item.symbol} — ${item.display}`);
     else setQuery(`${item.symbol} — ${item.display}`);
-    setSuggestions([]); // hide
+    setSuggestions([]);
   }
 
   async function addAsset() {
     let pick = selected;
     if (!pick && query) {
-      // if typed symbol with colon, treat as finnhub symbol (manual)
-      if (query.includes(":")) pick = { source: "finnhub", symbol: query.trim(), display: query.trim() };
+      // allow typed yahoo symbol (e.g. AAPL or BBCA.JK)
+      if (query.includes(":") || query.includes(".") || /^[A-Z0-9-_.]{1,12}$/.test(query.split(" — ")[0].trim())) {
+        const symbol = query.split(" — ")[0].trim();
+        pick = { source: "yahoo", symbol, display: symbol };
+      }
     }
-    if (!pick) {
-      alert("Pilih asset dari suggestions (atau ketik symbol lengkap, mis. IDX:BBCA).");
-      return;
-    }
-    const q = number(qtyInput);
-    const a = number(avgInput);
-    if (q <= 0 || a <= 0) { alert("Qty & Avg harus > 0"); return; }
+    if (!pick) { alert("Pilih asset dari suggestions atau ketik symbol lengkap."); return; }
+
+    const q = toNumber(qtyInput);
+    const a = toNumber(avgInput);
+    if (q <= 0 || a <= 0) { alert("Qty dan Avg harus > 0"); return; }
 
     const avgUSD = avgCcyInput === "IDR" ? a / (usdIdr || 1) : a;
-    const base = { id: Date.now(), source: pick.source, createdAt: Date.now(), qty: q, avgInput: a, inputCurrency: avgCcyInput, avgUSD, lastKnownNative: undefined, displayName: pick.display || pick.name || "" };
+    const base = {
+      id: Date.now(),
+      source: pick.source,
+      symbol: pick.source === "coingecko" ? (pick.symbol || pick.coingeckoId) : pick.symbol,
+      coingeckoId: pick.source === "coingecko" ? pick.coingeckoId : undefined,
+      displayName: pick.display,
+      qty: q,
+      avgInput: a,
+      inputCurrency: avgCcyInput,
+      avgUSD,
+      lastKnownNative: undefined,
+      createdAt: Date.now(),
+    };
 
-    if (pick.source === "coingecko") {
-      base.coingeckoId = pick.coingeckoId;
-      base.symbol = pick.symbol.toUpperCase();
+    // fetch initial price
+    if (base.source === "coingecko" && base.coingeckoId) {
       try {
-        const res = await fetch(COINGECKO_PRICE(pick.coingeckoId, "usd"));
+        const res = await fetch(COINGECKO_PRICE(base.coingeckoId));
         if (res.ok) {
           const j = await res.json();
-          if (j && j[pick.coingeckoId] && typeof j[pick.coingeckoId].usd === "number") {
-            base.lastKnownNative = j[pick.coingeckoId].usd;
-            setCryptoPricesUSD(prev => ({ ...prev, [pick.coingeckoId]: { usd: j[pick.coingeckoId].usd } }));
+          if (j && j[base.coingeckoId] && typeof j[base.coingeckoId].usd === "number") {
+            base.lastKnownNative = j[base.coingeckoId].usd;
+            setCryptoPrices(prev => ({ ...prev, [base.coingeckoId]: j[base.coingeckoId] }));
           }
         }
       } catch {}
-    } else {
-      base.symbol = pick.symbol;
+    } else if (base.source === "yahoo" && base.symbol) {
       try {
-        const p = await fetchFinnhubQuote(pick.symbol);
-        if (p != null) { base.lastKnownNative = p; setStockPrices(prev => ({ ...prev, [pick.symbol]: p })); }
+        const res = await fetch(YAHOO_QUOTE([base.symbol]));
+        if (res.ok) {
+          const j = await res.json();
+          if (j?.quoteResponse?.result && j.quoteResponse.result[0]) {
+            const qobj = j.quoteResponse.result[0];
+            base.lastKnownNative = qobj.regularMarketPrice ?? undefined;
+            setYahooQuotes(prev => ({ ...prev, [base.symbol]: qobj }));
+          }
+        }
       } catch {}
     }
 
     setAssets(prev => [...prev, base]);
-
-    // subscribe ws if finnhub
-    try {
-      if (base.source === "finnhub" && wsRef.current && wsRef.current.readyState === 1) {
-        wsRef.current.send(JSON.stringify({ type: "subscribe", symbol: base.symbol }));
-        subscribed.current.add(base.symbol);
-      }
-    } catch {}
 
     // reset
     setSelected(null); setQuery(""); setQtyInput(""); setAvgInput(""); setAvgCcyInput("USD");
@@ -428,30 +392,26 @@ export default function DashboardPage() {
     setEditAvgCcy(a.inputCurrency || "USD");
   }
   function saveEdit(id) {
-    const q = number(editQty);
-    const aVal = number(editAvg);
-    if (q <= 0 || aVal <= 0) { setEditingId(null); return; }
-    const avgUSD = editAvgCcy === "IDR" ? aVal / (usdIdr || 1) : aVal;
-    setAssets(prev => prev.map(x => x.id === id ? { ...x, qty: q, avgInput: aVal, inputCurrency: editAvgCcy, avgUSD } : x));
+    const q = toNumber(editQty);
+    const a = toNumber(editAvg);
+    if (q <= 0 || a <= 0) { setEditingId(null); return; }
+    const avgUSD = editAvgCcy === "IDR" ? a / (usdIdr || 1) : a;
+    setAssets(prev => prev.map(x => x.id === id ? { ...x, qty: q, avgInput: a, inputCurrency: editAvgCcy, avgUSD } : x));
     setEditingId(null);
   }
   function cancelEdit() { setEditingId(null); }
 
   function removeAsset(id) {
-    const t = assets.find(a => a.id === id);
     setAssets(prev => prev.filter(a => a.id !== id));
-    if (t && t.source === "finnhub" && wsRef.current && wsRef.current.readyState === 1) {
-      try { wsRef.current.send(JSON.stringify({ type: "unsubscribe", symbol: t.symbol })); subscribed.current.delete(t.symbol); } catch {}
-    }
   }
 
   function buyMore(a) {
     const qtyStr = prompt(`Buy qty for ${a.symbol || a.displayName}:`, "0");
     if (!qtyStr) return;
-    const priceStr = prompt(`Price per unit (in ${a.inputCurrency || "USD"}):`, String(a.avgInput || ""));
+    const priceStr = prompt(`Buy price (in ${a.inputCurrency || "USD"}):`, String(a.avgInput || ""));
     const ccy = prompt("Currency (USD/IDR):", a.inputCurrency || "USD");
-    const bq = number(qtyStr);
-    const bp = number(priceStr);
+    const bq = toNumber(qtyStr);
+    const bp = toNumber(priceStr);
     const curr = (ccy || "USD").toUpperCase() === "IDR" ? "IDR" : "USD";
     if (bq <= 0 || bp <= 0) return;
     const bpUSD = curr === "IDR" ? bp / (usdIdr || 1) : bp;
@@ -463,7 +423,7 @@ export default function DashboardPage() {
 
   function sellSome(a) {
     const qtyStr = prompt(`Sell qty for ${a.symbol || a.displayName}:`, "0");
-    const sq = number(qtyStr);
+    const sq = toNumber(qtyStr);
     if (sq <= 0 || sq > a.qty) return;
     const priceUSD = a.priceUSD ?? a.avgUSD ?? 0;
     const realized = (priceUSD - a.avgUSD) * sq;
@@ -473,26 +433,42 @@ export default function DashboardPage() {
     else setAssets(prev => prev.map(x => x.id === a.id ? { ...x, qty: remain } : x));
   }
 
-  /* Render */
+  /* open TradingView chart in new tab; attempt to map symbol to TradingView format */
+  function openTradingView(r) {
+    // If yahoo symbol contains exchange suffix (e.g., .JK) try map:
+    let tvSymbol = r.symbol;
+    if (!tvSymbol && r.coingeckoId) {
+      // TradingView uses BINANCE:BTCUSDT usually; we can't map cg id reliably — open search page
+      window.open(`https://www.tradingview.com/symbols/${encodeURIComponent(r.coingeckoId)}/`, "_blank");
+      return;
+    }
+    // crude mapping: .JK -> IDX:CODE (remove .JK)
+    if (tvSymbol?.endsWith(".JK")) {
+      const code = tvSymbol.replace(".JK", "");
+      tvSymbol = `IDX:${code}`;
+    }
+    // US stocks likely need exchange prefix — try NASDAQ by default
+    if (!tvSymbol.includes(":") && /^[A-Z0-9.]{1,10}$/.test(tvSymbol)) {
+      // try NASDAQ first
+      tvSymbol = `NASDAQ:${tvSymbol}`;
+    }
+    window.open(`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol)}`, "_blank");
+  }
+
+  /* ------------------ UI ------------------ */
   return (
     <div className="min-h-screen bg-black text-gray-200 antialiased">
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* warning if Finnhub missing */}
-        {!FINNHUB_KEY && (
-          <div className="mb-4 rounded px-3 py-2 bg-yellow-900 text-yellow-200 text-sm">
-            Finnhub API key not found. Stocks/IDX search & realtime WS won't be available. Set NEXT_PUBLIC_FINNHUB_API_KEY in env to enable.
-          </div>
-        )}
-
+      <div className="max-w-5xl mx-auto px-4 py-6">
+        {/* header */}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">Portfolio</h1>
-            <p className="text-xs text-gray-500">Live tick: {lastTickTs ? new Date(lastTickTs).toLocaleTimeString() : "-"} • FX USD/IDR: <span className="text-green-400 font-medium">{usdIdr ? Number(usdIdr).toLocaleString("id-ID") : "-"}</span></p>
+            <p className="text-xs text-gray-500">Last update: {lastTick ? new Date(lastTick).toLocaleTimeString() : "-"} • USD/IDR ≈ <span className="text-green-400 font-medium">{usdIdr ? Number(usdIdr).toLocaleString("id-ID") : "-"}</span></p>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-400">Portfolio Value</div>
-            <div className="text-lg font-semibold">{displayCcy === "IDR" ? fmtCurrency(displayTotals.market, "IDR") : fmtCurrency(displayTotals.market, "USD")}</div>
+            <div className="text-lg font-semibold">{displayCcy === "IDR" ? fmtMoney(displayTotals.market, "IDR") : fmtMoney(displayTotals.market, "USD")}</div>
             <select value={displayCcy} onChange={(e) => setDisplayCcy(e.target.value)} className="ml-3 bg-gray-900 border border-gray-800 rounded px-3 py-2 text-sm">
               <option value="IDR">IDR</option>
               <option value="USD">USD</option>
@@ -500,32 +476,26 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* KPI */}
+        {/* KPIs */}
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm">
-          <div className="flex justify-between text-gray-400"><div>Invested</div><div className="font-medium">{displayCcy === "IDR" ? fmtCurrency(displayTotals.invested, "IDR") : fmtCurrency(displayTotals.invested, "USD")}</div></div>
-          <div className="flex justify-between text-gray-400"><div>Market</div><div className="font-medium">{displayCcy === "IDR" ? fmtCurrency(displayTotals.market, "IDR") : fmtCurrency(displayTotals.market, "USD")}</div></div>
-          <div className="flex justify-between text-gray-400"><div>Unrealized P&L</div><div className={`font-semibold ${displayTotals.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtCurrency(displayTotals.pnl, "IDR") : fmtCurrency(displayTotals.pnl, "USD")} ({displayTotals.pnlPct?.toFixed?.(2) || "0.00"}%)</div></div>
-          <div className="flex justify-between text-gray-400"><div>Realized P&L</div><div className={`font-semibold ${displayTotals.realized >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtCurrency(displayTotals.realized, "IDR") : fmtCurrency(displayTotals.realized, "USD")}</div></div>
+          <div className="flex justify-between text-gray-400"><div>Invested</div><div className="font-medium">{displayCcy === "IDR" ? fmtMoney(displayTotals.invested, "IDR") : fmtMoney(displayTotals.invested, "USD")}</div></div>
+          <div className="flex justify-between text-gray-400"><div>Market</div><div className="font-medium">{displayCcy === "IDR" ? fmtMoney(displayTotals.market, "IDR") : fmtMoney(displayTotals.market, "USD")}</div></div>
+          <div className="flex justify-between text-gray-400"><div>Unrealized P&L</div><div className={`font-semibold ${displayTotals.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(displayTotals.pnl, "IDR") : fmtMoney(displayTotals.pnl, "USD")} ({displayTotals.pnlPct?.toFixed?.(2) || "0.00"}%)</div></div>
+          <div className="flex justify-between text-gray-400"><div>Realized P&L</div><div className={`font-semibold ${displayTotals.realized >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(displayTotals.realized, "IDR") : fmtMoney(displayTotals.realized, "USD")}</div></div>
         </div>
 
-        {/* Add Bar */}
+        {/* SEARCH & ADD */}
         <div className="mt-6">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="relative w-full sm:max-w-md">
-              <input
-                value={query}
-                onChange={(e) => { setQuery(e.target.value); setSelected(null); }}
-                placeholder="Search: AAPL | IDX:BBCA | BINANCE:BTCUSDT | BTC"
-                className="w-full rounded-md bg-gray-950 px-3 py-2 text-sm outline-none border border-gray-800"
-                aria-label="search-symbol"
-              />
+              <input value={query} onChange={(e) => { setQuery(e.target.value); setSelected(null); }} placeholder="Search: AAPL, BBCA.JK, BTC, BINANCE:BTCUSDT..." className="w-full rounded-md bg-gray-950 px-3 py-2 text-sm outline-none border border-gray-800" />
               {suggestions.length > 0 && (
-                <div style={{ zIndex: 60 }} className="absolute mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
+                <div className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
                   {suggestions.map((s, i) => (
-                    <button key={i} onClick={() => selectSuggestion(s)} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between items-center">
+                    <button key={i} onClick={() => selectSuggestion(s)} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
                       <div>
                         <div className="font-medium text-gray-100">{s.source === "coingecko" ? `${s.symbol} • ${s.display}` : `${s.symbol} • ${s.display}`}</div>
-                        <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto (CoinGecko)" : "Stock/FX (Finnhub)"}</div>
+                        <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto (CoinGecko)" : "Stock/ETF/FX (Yahoo)"}</div>
                       </div>
                       <div className="text-xs text-gray-400">{s.source === "coingecko" ? "" : ""}</div>
                     </button>
@@ -536,7 +506,7 @@ export default function DashboardPage() {
 
             <input value={qtyInput} onChange={(e) => setQtyInput(e.target.value)} placeholder="Qty" className="rounded-md bg-gray-950 px-3 py-2 text-sm border border-gray-800 w-full sm:w-28" />
             <div className="flex items-center gap-2">
-              <input value={avgInput} onChange={(e) => setAvgInput(e.target.value)} placeholder="Avg" className="rounded-md bg-gray-950 px-3 py-2 text-sm border border-gray-800 w-28" />
+              <input value={avgInput} onChange={(e) => setAvgInput(e.target.value)} placeholder="Avg Price" className="rounded-md bg-gray-950 px-3 py-2 text-sm border border-gray-800 w-28" />
               <select value={avgCcyInput} onChange={(e) => setAvgCcyInput(e.target.value)} className="rounded-md bg-gray-950 px-2 py-2 text-sm border border-gray-800">
                 <option value="USD">USD</option>
                 <option value="IDR">IDR</option>
@@ -547,7 +517,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Table compact (Stockbit-like) */}
+        {/* TABLE */}
         <div className="mt-6 overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="text-gray-400 border-b border-gray-800">
@@ -561,45 +531,43 @@ export default function DashboardPage() {
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={5} className="py-8 text-center text-gray-500">Add assets to track your portfolio</td></tr>
+                <tr><td colSpan={5} className="py-8 text-center text-gray-500">No assets — add one above</td></tr>
               ) : rows.map(r => {
-                const isEditing = editingId === r.id;
+                const editing = editingId === r.id;
                 return (
                   <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
-                    <td className="px-3 py-3">
-                      <button
-                        onClick={() => window.open(`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.source === "finnhub" ? r.symbol : (r.symbol || r.coingeckoId))}`, "_blank")}
-                        className="font-semibold text-gray-100 hover:text-green-400"
-                      >
-                        {(r.symbol || r.displayName || "").replace?.("BINANCE:","")}
-                      </button>
+                    <td className="px-3 py-4">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => openTradingView(r)} className="font-semibold text-gray-100 hover:text-green-400">
+                          {String(r.symbol || r.displayName || "").replace?.("BINANCE:","")}
+                        </button>
+                      </div>
                       <div className="text-xs text-gray-500">{r.qty}</div>
                     </td>
 
-                    <td className="px-3 py-3 text-right tabular-nums">
-                      <div className="font-medium">{displayCcy === "IDR" ? fmtCurrency(r.displayInvested, "IDR") : fmtCurrency(r.displayInvested, "USD")}</div>
-                      <div className="text-xs text-gray-500">{r.inputCurrency === "IDR" ? fmtCurrency(r.avgInput, "IDR") : fmtCurrency(r.avgUSD, "USD")}</div>
+                    <td className="px-3 py-4 text-right tabular-nums">
+                      <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.displayInvested, "IDR") : fmtMoney(r.displayInvested, "USD")}</div>
+                      <div className="text-xs text-gray-500">{r.inputCurrency === "IDR" ? fmtMoney(r.avgInput, "IDR") : fmtMoney(r.avgUSD, "USD")}</div>
                     </td>
 
-                    <td className="px-3 py-3 text-right tabular-nums">
-                      <div className="font-medium">{r.displayPrice != null ? (displayCcy === "IDR" ? fmtCurrency(r.displayPrice, "IDR") : fmtCurrency(r.displayPrice, "USD")) : "-"}</div>
-                      <div className="text-xs text-gray-500">{r.nativeLast ? (r.quoteCcy || symbolQuoteCurrency(r.symbol)) : ""}</div>
+                    <td className="px-3 py-4 text-right tabular-nums">
+                      <div className="font-medium">{r.displayPrice != null ? (displayCcy === "IDR" ? fmtMoney(r.displayPrice, "IDR") : fmtMoney(r.displayPrice, "USD")) : "-"}</div>
+                      <div className="text-xs text-gray-500">{r.native ? `${r.quoteCcy}` : ""}</div>
                     </td>
 
-                    <td className="px-3 py-3 text-right tabular-nums">
-                      <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtCurrency(r.displayPnl, "IDR") : fmtCurrency(r.displayPnl, "USD")}</div>
+                    <td className="px-3 py-4 text-right tabular-nums">
+                      <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(r.displayPnl, "IDR") : fmtMoney(r.displayPnl, "USD")}</div>
                       <div className={`text-xs ${r.pnlUSD >= 0 ? "text-green-400" : "text-red-400"}`}>{isFinite(r.pnlPct) ? `${r.pnlPct.toFixed(2)}%` : "0.00%"}</div>
                     </td>
 
-                    <td className="px-3 py-3 text-right">
-                      {isEditing ? (
+                    <td className="px-3 py-4 text-right">
+                      {editing ? (
                         <div className="flex items-center justify-end gap-2">
                           <button onClick={() => saveEdit(r.id)} className="bg-green-600 px-3 py-1 rounded text-xs font-semibold text-black">Save</button>
                           <button onClick={() => cancelEdit()} className="bg-gray-800 px-3 py-1 rounded text-xs">Cancel</button>
                         </div>
                       ) : (
                         <div className="flex items-center justify-end gap-2">
-                          {/* All action buttons are standard buttons so clickable */}
                           <button onClick={() => beginEdit(r)} className="bg-gray-800 px-2 py-1 rounded text-xs">Edit</button>
                           <button onClick={() => buyMore(r)} className="bg-gray-800 px-2 py-1 rounded text-xs">Buy</button>
                           <button onClick={() => sellSome(r)} className="bg-gray-800 px-2 py-1 rounded text-xs">Sell</button>
@@ -614,12 +582,12 @@ export default function DashboardPage() {
           </table>
         </div>
 
-        {/* Donut */}
-        {pieData.length > 0 && (
+        {/* Donut + legend */}
+        {pieItems.length > 0 && (
           <div className="mt-6 flex gap-6 flex-col sm:flex-row items-start">
-            <div className="w-40 h-40"><Donut items={pieData} size={140} inner={60} /></div>
+            <div className="w-40 h-40"><Donut items={pieItems} size={140} inner={60} /></div>
             <div>
-              {pieData.map((p, i) => {
+              {pieItems.map((p, i) => {
                 const pct = totals.market > 0 ? (p.value / totals.market) * 100 : 0;
                 const color = ["#16a34a","#06b6d4","#f59e0b","#ef4444","#7c3aed","#84cc16"][i % 6];
                 return (
@@ -633,7 +601,6 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-
       </div>
     </div>
   );
