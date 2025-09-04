@@ -3,47 +3,68 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- Final single-file dashboard page.
- Requires two server-side proxy routes (place in app/api/...):
-  - /api/yahoo/search?q=...
-  - /api/yahoo/quote?symbols=SYM1,SYM2
- These proxies avoid CORS and are included in earlier messages.
+ Final Dashboard Page (single-file)
+ - Requires server proxies:
+    /api/yahoo/search?q=...
+    /api/yahoo/quote?symbols=SYM1,SYM2
+ - Polls quotes every 5s, includes USDIDR=X
+ - Search + fallback suggestions (IDX .JK, crypto -USD/USDT)
+ - Add/Edit/Delete/Buy/Sell
+ - Donut allocation + sparkline per asset
+ - All math on USD base, display USD/IDR via live USDIDR
 */
 
+// API endpoints (server-side proxies)
 const API_SEARCH = "/api/yahoo/search?q=";
 const API_QUOTE = "/api/yahoo/quote?symbols=";
-const USDIDR_SYMBOL = "USDIDR=X";
+const USDIDR = "USDIDR=X";
 
 const toNum = (v) => (isNaN(+v) ? 0 : +v);
 
-function useDebounced(v, ms = 350) {
-  const [val, setVal] = useState(v);
+function useDebounced(value, delay = 300) {
+  const [v, setV] = useState(value);
   useEffect(() => {
-    const t = setTimeout(() => setVal(v), ms);
+    const t = setTimeout(() => setV(value), delay);
     return () => clearTimeout(t);
-  }, [v, ms]);
-  return val;
+  }, [value, delay]);
+  return v;
 }
 
-function fmtMoney(n, ccy = "USD") {
-  const num = Number(n || 0);
-  if (ccy === "IDR")
-    return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(
-      Math.round(num)
-    );
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(
-    num
+function fmtMoney(val, ccy = "USD") {
+  const n = Number(val || 0);
+  if (ccy === "IDR") {
+    return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Math.round(n));
+  }
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
+}
+
+/* Small reusable sparkline */
+function Sparkline({ data = [], w = 72, h = 28 }) {
+  if (!data || data.length === 0) return <svg width={w} height={h} />;
+  const pts = data.slice(-40);
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const range = max - min || 1;
+  const step = w / Math.max(1, pts.length - 1);
+  let path = "";
+  pts.forEach((v, i) => {
+    const x = i * step;
+    const y = h - ((v - min) / range) * (h - 4) - 2;
+    path += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+  });
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+      <path d={path} fill="none" stroke="#16a34a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
-/* Donut simple */
+/* Simple donut svg */
 function Donut({ data = [], size = 140, inner = 60 }) {
   const total = Math.max(1, data.reduce((s, d) => s + Math.max(0, d.value || 0), 0));
-  const cx = size / 2,
-    cy = size / 2,
-    r = size / 2 - 6;
+  const cx = size / 2, cy = size / 2, r = size / 2 - 6;
   let start = -90;
-  const colors = ["#16a34a", "#06b6d4", "#f59e0b", "#ef4444", "#7c3aed", "#84cc16"];
+  const colors = ["#16a34a","#06b6d4","#f59e0b","#ef4444","#7c3aed","#84cc16"];
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {data.map((d, i) => {
@@ -66,63 +87,30 @@ function Donut({ data = [], size = 140, inner = 60 }) {
   );
 }
 
-/* Sparkline simple */
-function Sparkline({ data = [], w = 80, h = 28 }) {
-  if (!data || data.length === 0) {
-    return <svg width={w} height={h} />;
-  }
-  const pts = data.slice(-40);
-  const min = Math.min(...pts);
-  const max = Math.max(...pts);
-  const range = max - min || 1;
-  const step = w / Math.max(1, pts.length - 1);
-  const path = pts
-    .map((v, i) => {
-      const x = i * step;
-      const y = h - ((v - min) / range) * (h - 4) - 2;
-      return `${i === 0 ? "M" : "L"} ${x} ${y}`;
-    })
-    .join(" ");
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <path d={path} fill="none" stroke="#16a34a" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export default function DashboardPage() {
-  // persisted assets
+  // Persisted portfolio
   const [assets, setAssets] = useState(() => {
-    try {
-      const raw = localStorage.getItem("bb_assets_final_v1");
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+    try { const raw = localStorage.getItem("bb_assets_v3"); return raw ? JSON.parse(raw) : []; } catch { return []; }
   });
   const [realizedUSD, setRealizedUSD] = useState(() => {
-    try {
-      return Number(localStorage.getItem("bb_realized_final_v1") || "0");
-    } catch {
-      return 0;
-    }
+    try { return Number(localStorage.getItem("bb_realized_v3") || "0"); } catch { return 0; }
   });
 
-  // display & fx
+  // display currency & FX (USD -> IDR)
   const [displayCcy, setDisplayCcy] = useState("IDR");
   const [usdIdr, setUsdIdr] = useState(16000);
 
-  // quotes + history
-  const [quotes, setQuotes] = useState({}); // symbol -> quote obj
+  // quotes and history
+  const [quotes, setQuotes] = useState({}); // symbol -> quote object
   const priceHistoryRef = useRef({});
   const [priceHistoryState, setPriceHistoryState] = useState({});
   const [isFirstSync, setIsFirstSync] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const pollRef = useRef(null);
 
-  // search
+  // search UI
   const [query, setQuery] = useState("");
-  const debQuery = useDebounced(query, 300);
+  const debQuery = useDebounced(query.trim(), 300);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -132,26 +120,22 @@ export default function DashboardPage() {
   const [avgInput, setAvgInput] = useState("");
   const [avgCcy, setAvgCcy] = useState("USD");
 
-  // edit
+  // edit state
   const [editingId, setEditingId] = useState(null);
-  const [editDraft, setEditDraft] = useState({}); // id -> { qty, avgInput, inputCurrency }
+  const [editDraft, setEditDraft] = useState({}); // id -> {qty, avgInput, inputCurrency}
 
-  // persist
+  // persist changes
   useEffect(() => {
-    try {
-      localStorage.setItem("bb_assets_final_v1", JSON.stringify(assets));
-    } catch {}
+    try { localStorage.setItem("bb_assets_v3", JSON.stringify(assets)); } catch {}
   }, [assets]);
   useEffect(() => {
-    try {
-      localStorage.setItem("bb_realized_final_v1", String(realizedUSD));
-    } catch {}
+    try { localStorage.setItem("bb_realized_v3", String(realizedUSD)); } catch {}
   }, [realizedUSD]);
 
-  // SEARCH (server-side proxy)
+  /* SEARCH (Yahoo via server proxy) + fallback quick suggestions for IDX/crypto */
   useEffect(() => {
     let alive = true;
-    if (!debQuery || debQuery.trim().length < 1) {
+    if (!debQuery || debQuery.length < 1) {
       setSuggestions([]);
       setSuggestLoading(false);
       return;
@@ -159,6 +143,7 @@ export default function DashboardPage() {
     setSuggestLoading(true);
     (async () => {
       try {
+        // main search via proxy
         const res = await fetch(API_SEARCH + encodeURIComponent(debQuery));
         if (!alive) return;
         if (!res.ok) {
@@ -173,112 +158,117 @@ export default function DashboardPage() {
           display: it.shortname || it.longname || it.symbol,
           exchange: it.exchange || "",
         }));
-        setSuggestions(mapped.slice(0, 30));
+        // If Yahoo returned none, create quick fallback suggestions: add .JK, -USD, USDT
+        if (mapped.length === 0) {
+          const q = debQuery.toUpperCase();
+          const fallbacks = [];
+          // IDX guess
+          if (/^[A-Z]{2,6}$/.test(q)) fallbacks.push({ symbol: `${q}.JK`, display: `${q}.JK (IDX guess)` });
+          // US tickers fallback
+          fallbacks.push({ symbol: q, display: `${q} (ticker)` });
+          // crypto guesses
+          fallbacks.push({ symbol: `${q}-USD`, display: `${q}-USD (crypto guess)` });
+          fallbacks.push({ symbol: `${q}USDT`, display: `${q}USDT (crypto guess)` });
+          setSuggestions(fallbacks);
+        } else {
+          setSuggestions(mapped.slice(0, 30));
+        }
       } catch (e) {
-        console.warn("search err", e);
+        console.warn("search error", e);
         setSuggestions([]);
       } finally {
         if (alive) setSuggestLoading(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [debQuery]);
 
-  // QUOTE POLLING (initial sync then interval)
+  /* POLL quotes (includes USDIDR) every 5s */
   useEffect(() => {
     let mounted = true;
     async function poll() {
       try {
         setIsSyncing(true);
-        // symbols tracked + USDIDR
-        const syms = Array.from(new Set([...assets.map((a) => a.symbol), USDIDR_SYMBOL])).filter(Boolean);
-        // if none, still fetch USDIDR
-        if (syms.length === 0) {
-          const rfx = await fetch(API_QUOTE + encodeURIComponent(USDIDR_SYMBOL));
-          if (!mounted) return;
-          if (rfx.ok) {
-            const j = await rfx.json();
-            const fx = j?.quoteResponse?.result?.[0];
-            if (fx && fx.regularMarketPrice != null) {
-              const norm = fx.regularMarketPrice > 1000 ? Math.round(fx.regularMarketPrice) : Math.round(fx.regularMarketPrice * 1000);
-              setUsdIdr((prev) => (!prev || Math.abs(prev - norm) / norm > 0.0005 ? norm : prev));
-              setQuotes((p) => ({ ...p, [USDIDR_SYMBOL]: fx }));
+        // collect symbols we need to fetch (assets + USDIDR)
+        const symbols = Array.from(new Set([...assets.map(a => a.symbol), USDIDR])).filter(Boolean);
+        if (symbols.length === 0) {
+          // still fetch USDIDR to get FX
+          try {
+            const rfx = await fetch(API_QUOTE + encodeURIComponent(USDIDR));
+            if (!mounted) return;
+            if (rfx.ok) {
+              const j = await rfx.json();
+              const fx = j?.quoteResponse?.result?.[0];
+              if (fx && fx.regularMarketPrice != null) {
+                // normalize format (Yahoo sometimes returns 15.6 vs 15500)
+                const raw = fx.regularMarketPrice;
+                const norm = raw > 1000 ? Math.round(raw) : Math.round(raw * 1000);
+                setUsdIdr(prev => (!prev || Math.abs(prev - norm) / norm > 0.0005 ? norm : prev));
+                setQuotes(prev => ({ ...prev, [USDIDR]: fx }));
+              }
             }
-          }
+          } catch {}
           setIsSyncing(false);
           return;
         }
-
-        const r = await fetch(API_QUOTE + encodeURIComponent(syms.join(",")));
+        const res = await fetch(API_QUOTE + encodeURIComponent(symbols.join(",")));
         if (!mounted) return;
-        if (!r.ok) {
-          setIsSyncing(false);
-          return;
-        }
-        const j = await r.json();
-        const resArr = Array.isArray(j?.quoteResponse?.result) ? j.quoteResponse.result : [];
+        if (!res.ok) { setIsSyncing(false); return; }
+        const json = await res.json();
+        const arr = Array.isArray(json?.quoteResponse?.result) ? json.quoteResponse.result : [];
         const map = {};
-        resArr.forEach((q) => {
+        arr.forEach(q => {
           if (!q || !q.symbol) return;
           map[q.symbol] = q;
           const p = q.regularMarketPrice ?? null;
           if (p != null) {
-            const arr = priceHistoryRef.current[q.symbol] ? [...priceHistoryRef.current[q.symbol]] : [];
-            arr.push(Number(p));
-            if (arr.length > 120) arr.shift();
-            priceHistoryRef.current[q.symbol] = arr;
+            const hist = priceHistoryRef.current[q.symbol] ? [...priceHistoryRef.current[q.symbol]] : [];
+            hist.push(Number(p));
+            if (hist.length > 120) hist.shift();
+            priceHistoryRef.current[q.symbol] = hist;
           }
         });
-        // update states
-        setQuotes((prev) => ({ ...prev, ...map }));
+        setQuotes(prev => ({ ...prev, ...map }));
         setPriceHistoryState({ ...priceHistoryRef.current });
-        // USDIDR
-        if (map[USDIDR_SYMBOL] && map[USDIDR_SYMBOL].regularMarketPrice != null) {
-          const fxv = map[USDIDR_SYMBOL].regularMarketPrice;
-          const norm = fxv > 1000 ? Math.round(fxv) : Math.round(fxv * 1000);
-          setUsdIdr((prev) => (!prev || Math.abs(prev - norm) / norm > 0.0005 ? norm : prev));
+        // update USDIDR if present
+        if (map[USDIDR] && map[USDIDR].regularMarketPrice != null) {
+          const raw = map[USDIDR].regularMarketPrice;
+          const norm = raw > 1000 ? Math.round(raw) : Math.round(raw * 1000);
+          setUsdIdr(prev => (!prev || Math.abs(prev - norm) / norm > 0.0005 ? norm : prev));
         }
       } catch (e) {
-        // ignore network
+        // ignore network errors
       } finally {
         if (!mounted) return;
         setIsSyncing(false);
         if (isFirstSync) setIsFirstSync(false);
       }
     }
-    // initial poll then interval
+    // initial poll + interval
     poll();
     pollRef.current = setInterval(poll, 5000);
-    return () => {
-      mounted = false;
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { mounted = false; if (pollRef.current) clearInterval(pollRef.current); };
   }, [assets]);
 
-  // Helper: fetch single symbol quote
+  /* Helper: fetch single via proxy */
   async function fetchSingle(sym) {
     try {
       const r = await fetch(API_QUOTE + encodeURIComponent(sym));
       if (!r.ok) return null;
       const j = await r.json();
       return j?.quoteResponse?.result?.[0] ?? null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
 
-  // Computations: rows & totals
+  /* Computation rows & totals (USD base) */
   const rows = useMemo(() => {
-    return assets.map((a) => {
-      const qObj = quotes[a.symbol];
-      const nativeLast = a.lastKnownNative ?? (qObj?.regularMarketPrice ?? null);
-      const quoteCcy = qObj?.currency ? String(qObj.currency).toUpperCase() : (a.quoteCurrency || (a.symbol?.endsWith(".JK") ? "IDR" : "USD"));
+    return assets.map(a => {
+      const qobj = quotes[a.symbol];
+      const native = a.lastKnownNative ?? (qobj?.regularMarketPrice ?? null);
+      const quoteCcy = qobj?.currency ? String(qobj.currency).toUpperCase() : (a.quoteCurrency || (String(a.symbol || "").endsWith(".JK") ? "IDR" : "USD"));
       let priceUSD = 0;
-      if (quoteCcy === "IDR") priceUSD = toNum(nativeLast) / (usdIdr || 1);
-      else priceUSD = toNum(nativeLast);
+      if (quoteCcy === "IDR") priceUSD = toNum(native) / (usdIdr || 1);
+      else priceUSD = toNum(native);
       const investedUSD = toNum(a.avgUSD) * toNum(a.qty);
       const marketUSD = priceUSD * toNum(a.qty);
       const pnlUSD = marketUSD - investedUSD;
@@ -288,21 +278,7 @@ export default function DashboardPage() {
       const displayMarket = displayCcy === "IDR" ? marketUSD * (usdIdr || 1) : marketUSD;
       const displayPnl = displayCcy === "IDR" ? pnlUSD * (usdIdr || 1) : pnlUSD;
       const hist = priceHistoryState[a.symbol] || [];
-      return {
-        ...a,
-        nativeLast,
-        quoteCcy,
-        priceUSD,
-        investedUSD,
-        marketUSD,
-        pnlUSD,
-        pnlPct,
-        displayPrice,
-        displayInvested,
-        displayMarket,
-        displayPnl,
-        hist,
-      };
+      return { ...a, nativeLast: native, quoteCcy, priceUSD, investedUSD, marketUSD, pnlUSD, pnlPct, displayPrice, displayInvested, displayMarket, displayPnl, hist };
     });
   }, [assets, quotes, priceHistoryState, usdIdr, displayCcy]);
 
@@ -322,9 +298,9 @@ export default function DashboardPage() {
     realized: displayCcy === "IDR" ? realizedUSD * (usdIdr || 1) : realizedUSD,
   };
 
-  const pieData = useMemo(() => rows.map((r) => ({ name: r.symbol, value: Math.max(0, r.marketUSD || 0) })).filter(Boolean), [rows]);
+  const pieData = useMemo(() => rows.map(r => ({ name: r.symbol, value: Math.max(0, r.marketUSD || 0) })).filter(x => x.value > 0), [rows]);
 
-  // Actions
+  /* ACTIONS */
   function pickSuggestion(it) {
     setSelected(it);
     setQuery(`${it.symbol} — ${it.display}`);
@@ -337,33 +313,18 @@ export default function DashboardPage() {
       const typed = query.split("—")[0].trim();
       if (typed) pick = { symbol: typed, display: typed };
     }
-    if (!pick) {
-      alert("Pilih item dari suggestion atau ketik symbol lengkap (mis: AAPL, BBCA.JK, BTC-USD).");
-      return;
-    }
+    if (!pick) { alert("Pilih asset dari suggestion atau ketik symbol lengkap (AAPL, BBCA.JK, BTC-USD)."); return; }
     const q = toNum(qtyInput);
     const a = toNum(avgInput);
-    if (q <= 0 || a <= 0) {
-      alert("Qty & Avg harus > 0");
-      return;
-    }
+    if (q <= 0 || a <= 0) { alert("Qty & Avg harus > 0"); return; }
     const avgUSD = avgCcy === "IDR" ? a / (usdIdr || 1) : a;
-    const base = {
-      id: Date.now(),
-      symbol: pick.symbol,
-      displayName: pick.display || "",
-      qty: q,
-      avgInput: a,
-      inputCurrency: avgCcy,
-      avgUSD,
-      createdAt: Date.now(),
-    };
-    // initial quote fetch
+    const base = { id: Date.now(), symbol: pick.symbol, displayName: pick.display || "", qty: q, avgInput: a, inputCurrency: avgCcy, avgUSD, createdAt: Date.now() };
+    // best-effort initial quote
     try {
       const qobj = await fetchSingle(pick.symbol);
       if (qobj) {
         base.lastKnownNative = qobj.regularMarketPrice ?? undefined;
-        setQuotes((p) => ({ ...p, [pick.symbol]: qobj }));
+        setQuotes(p => ({ ...p, [pick.symbol]: qobj }));
         if (qobj.regularMarketPrice != null) {
           const arr = priceHistoryRef.current[pick.symbol] ? [...priceHistoryRef.current[pick.symbol]] : [];
           arr.push(Number(qobj.regularMarketPrice));
@@ -372,58 +333,35 @@ export default function DashboardPage() {
         }
       }
     } catch {}
-    setAssets((p) => [...p, base]);
-    // reset add form
-    setSelected(null);
-    setQuery("");
-    setQtyInput("");
-    setAvgInput("");
-    setAvgCcy("USD");
+    setAssets(p => [...p, base]);
+    setSelected(null); setQuery(""); setQtyInput(""); setAvgInput(""); setAvgCcy("USD");
   }
 
   function beginEdit(a) {
     setEditingId(a.id);
-    setEditDraft((p) => ({ ...p, [a.id]: { qty: String(a.qty), avgInput: String(a.avgInput ?? a.avgUSD ?? ""), inputCurrency: a.inputCurrency || "USD" } }));
+    setEditDraft(p => ({ ...p, [a.id]: { qty: String(a.qty), avgInput: String(a.avgInput ?? a.avgUSD ?? ""), inputCurrency: a.inputCurrency || "USD" } }));
   }
 
   function saveEdit(id) {
-    const draft = editDraft[id];
-    if (!draft) {
-      setEditingId(null);
-      return;
-    }
-    const q = toNum(draft.qty);
-    const a = toNum(draft.avgInput);
-    const ccy = draft.inputCurrency || "USD";
-    if (q <= 0 || a <= 0) {
-      alert("Qty & Avg harus > 0");
-      setEditingId(null);
-      return;
-    }
+    const d = editDraft[id];
+    if (!d) { setEditingId(null); return; }
+    const q = toNum(d.qty), a = toNum(d.avgInput), ccy = d.inputCurrency || "USD";
+    if (q <= 0 || a <= 0) { alert("Qty & Avg harus > 0"); setEditingId(null); return; }
     const avgUSD = ccy === "IDR" ? a / (usdIdr || 1) : a;
-    setAssets((p) => p.map((x) => (x.id === id ? { ...x, qty: q, avgInput: a, inputCurrency: ccy, avgUSD } : x)));
+    setAssets(p => p.map(x => x.id === id ? { ...x, qty: q, avgInput: a, inputCurrency: ccy, avgUSD } : x));
     setEditingId(null);
-    setEditDraft((p) => {
-      const cp = { ...p };
-      delete cp[id];
-      return cp;
-    });
+    setEditDraft(p => { const cp = { ...p }; delete cp[id]; return cp; });
   }
 
   function cancelEdit(id) {
     setEditingId(null);
-    setEditDraft((p) => {
-      const cp = { ...p };
-      delete cp[id];
-      return cp;
-    });
+    setEditDraft(p => { const cp = { ...p }; delete cp[id]; return cp; });
   }
 
   function removeAsset(id) {
-    setAssets((p) => p.filter((x) => x.id !== id));
-    // prune price history if no asset uses symbol
+    setAssets(p => p.filter(x => x.id !== id));
     priceHistoryRef.current = Object.keys(priceHistoryRef.current).reduce((acc, k) => {
-      const keep = assets.some((a) => a.id !== id && a.symbol === k);
+      const keep = assets.some(a => a.id !== id && a.symbol === k);
       if (keep) acc[k] = priceHistoryRef.current[k];
       return acc;
     }, {});
@@ -435,38 +373,35 @@ export default function DashboardPage() {
     if (!qtyStr) return;
     const priceStr = prompt(`Price per unit (in ${a.inputCurrency || "USD"}):`, String(a.avgInput || a.avgUSD || ""));
     const ccy = prompt("Currency (USD/IDR):", a.inputCurrency || "USD");
-    const bq = toNum(qtyStr);
-    const bp = toNum(priceStr);
+    const bq = toNum(qtyStr); const bp = toNum(priceStr);
     const curr = (ccy || "USD").toUpperCase() === "IDR" ? "IDR" : "USD";
     if (bq <= 0 || bp <= 0) return;
     const bpUSD = curr === "IDR" ? bp / (usdIdr || 1) : bp;
-    const oldQty = a.qty;
-    const newQty = oldQty + bq;
+    const oldQty = a.qty; const newQty = oldQty + bq;
     const newAvgUSD = (a.avgUSD * oldQty + bpUSD * bq) / newQty;
-    setAssets((p) => p.map((x) => (x.id === a.id ? { ...x, qty: newQty, avgUSD: newAvgUSD, avgInput: curr === "IDR" ? newAvgUSD * (usdIdr || 1) : newAvgUSD, inputCurrency: curr } : x)));
+    setAssets(p => p.map(x => x.id === a.id ? { ...x, qty: newQty, avgUSD: newAvgUSD, avgInput: curr === "IDR" ? newAvgUSD * (usdIdr || 1) : newAvgUSD, inputCurrency: curr } : x));
   }
 
   function sellSome(a) {
     const qtyStr = prompt(`Sell qty for ${a.symbol}:`, "0");
     const sq = toNum(qtyStr);
     if (sq <= 0 || sq > a.qty) return;
-    // use latest priceUSD
     const priceUSD = a.priceUSD ?? a.avgUSD ?? 0;
     const realized = (priceUSD - a.avgUSD) * sq;
-    setRealizedUSD((p) => p + realized);
+    setRealizedUSD(p => p + realized);
     const remain = a.qty - sq;
     if (remain <= 0) removeAsset(a.id);
-    else setAssets((p) => p.map((x) => (x.id === a.id ? { ...x, qty: remain } : x)));
+    else setAssets(p => p.map(x => x.id === a.id ? { ...x, qty: remain } : x));
   }
 
   function openTradingView(r) {
     let tv = r.symbol;
-    if (tv?.endsWith(".JK")) tv = `IDX:${tv.replace(".JK", "")}`;
+    if (tv?.endsWith(".JK")) tv = `IDX:${tv.replace(".JK","")}`;
     if (!tv.includes(":") && /^[A-Z0-9._-]{1,10}$/.test(tv)) tv = `NASDAQ:${tv}`;
     window.open(`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tv)}`, "_blank");
   }
 
-  // UI
+  // UI render
   return (
     <div className="min-h-screen bg-black text-gray-200 antialiased">
       <div className="max-w-6xl mx-auto px-4 py-6">
@@ -478,7 +413,7 @@ export default function DashboardPage() {
               {isFirstSync ? (
                 <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-full border-2 border-t-transparent border-gray-400 animate-spin" /> syncing initial prices…</span>
               ) : (
-                <span>Last sync: {isSyncing ? "syncing…" : new Date().toLocaleTimeString()}</span>
+                <span>{isSyncing ? "syncing…" : `Last: ${new Date().toLocaleTimeString()}`}</span>
               )}
               {" "}• USD/IDR: <span className="text-green-400 font-medium">{usdIdr ? Number(usdIdr).toLocaleString("id-ID") : "-"}</span>
             </p>
@@ -506,16 +441,8 @@ export default function DashboardPage() {
         <div className="mt-6">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="relative w-full sm:max-w-md">
-              <input
-                value={query}
-                onChange={(e) => { setQuery(e.target.value); setSelected(null); }}
-                placeholder="Search symbol (AAPL, BBCA.JK, BTC-USD, BTCUSDT, etc)..."
-                className="w-full rounded-md bg-gray-950 px-3 py-2 text-sm outline-none border border-gray-800"
-              />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                {suggestLoading ? <div className="w-4 h-4 rounded-full border-2 border-t-transparent border-gray-400 animate-spin" /> : null}
-              </div>
-
+              <input value={query} onChange={(e) => { setQuery(e.target.value); setSelected(null); }} placeholder="Search symbol (AAPL, BBCA.JK, BTC-USD, BNBUSDT, etc)" className="w-full rounded-md bg-gray-950 px-3 py-2 text-sm outline-none border border-gray-800" />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">{suggestLoading ? <div className="w-4 h-4 rounded-full border-2 border-t-transparent border-gray-400 animate-spin" /> : null}</div>
               {suggestions.length > 0 && (
                 <div className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-60 overflow-auto">
                   {suggestions.map((s, i) => (
@@ -561,7 +488,7 @@ export default function DashboardPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr><td colSpan={9} className="py-8 text-center text-gray-500">No assets — add via search above</td></tr>
-              ) : rows.map((r) => {
+              ) : rows.map(r => {
                 const editing = editingId === r.id;
                 const draft = editDraft[r.id] || {};
                 return (
@@ -631,7 +558,7 @@ export default function DashboardPage() {
           <div className="mt-6 flex gap-6 flex-col sm:flex-row items-start">
             <div className="w-40 h-40"><Donut data={pieData} size={140} inner={60} /></div>
             <div>
-              {pieData.map((p, i) => {
+              {pieData.map((p,i) => {
                 const pct = totals.market > 0 ? (p.value / totals.market) * 100 : 0;
                 const color = ["#16a34a","#06b6d4","#f59e0b","#ef4444","#7c3aed","#84cc16"][i % 6];
                 return (
@@ -648,26 +575,5 @@ export default function DashboardPage() {
 
       </div>
     </div>
-  );
-}
-
-/* minor export helper sparkline component declared after component to keep file tidy */
-function Sparkline({ data = [], w = 72, h = 28 }) {
-  if (!data || data.length === 0) return <svg width={w} height={h} />;
-  const pts = data.slice(-40);
-  const min = Math.min(...pts);
-  const max = Math.max(...pts);
-  const range = max - min || 1;
-  const step = w / Math.max(1, pts.length - 1);
-  let path = "";
-  pts.forEach((v, i) => {
-    const x = i * step;
-    const y = h - ((v - min) / range) * (h - 4) - 2;
-    path += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
-  });
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <path d={path} fill="none" stroke="#16a34a" strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
   );
 }
