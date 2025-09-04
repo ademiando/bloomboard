@@ -1,16 +1,21 @@
-// app/dashboard/page.js
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- Final dashboard (client)
- - Uses server-side proxies: /api/yahoo/search?q=... and /api/yahoo/quote?symbols=...
- - Polls quotes (every 5s). USDIDR always fetched and applied to conversions.
- - Loading spinner while syncing quotes or searching.
- - Add / Edit / Delete / Buy / Sell
- - Donut allocation (SVG)
- - Local persistence via localStorage
+ Final dashboard (client-side)
+ Expects server-side proxies:
+  - GET /api/yahoo/search?q=...
+  - GET /api/yahoo/quote?symbols=SYM1,SYM2,...
+ (we provided these earlier)
+ Features:
+  - Full Yahoo search (stocks IDX, US, crypto, forex, etc)
+  - USD/IDR (USDIDR=X) fetched and normalized on first sync (spinner shows only on first sync)
+  - Poll quotes every 5s, keep short history for sparklines
+  - Add / Edit / Delete / Buy / Sell
+  - Donut allocation
+  - TradingView open-on-click
+  - Display currency toggle USD / IDR that converts displayed numbers (math done in USD)
 */
 
 const API_SEARCH = "/api/yahoo/search?q=";
@@ -19,7 +24,7 @@ const USDIDR_SYMBOL = "USDIDR=X";
 
 const number = (v) => (isNaN(+v) ? 0 : +v);
 
-function useDebounced(value, delay = 300) {
+function useDebounced(value, delay = 350) {
   const [val, setVal] = useState(value);
   useEffect(() => {
     const t = setTimeout(() => setVal(value), delay);
@@ -28,42 +33,66 @@ function useDebounced(value, delay = 300) {
   return val;
 }
 
-function fmtMoney(v, ccy = "USD") {
-  const n = Number(v || 0);
-  if (ccy === "IDR")
+function fmtCurrency(value, ccy = "USD") {
+  const n = Number(value || 0);
+  if (ccy === "IDR") {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
+  }
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
 }
 
-/* small spinner using Tailwind classes (should be present in project) */
-function Spinner({ size = 4 }) {
-  return <div className={`inline-block w-${size} h-${size} rounded-full border-2 border-t-transparent border-gray-400 animate-spin`} style={{ width: `${size}px`, height: `${size}px` }} />;
+/* normalize USDIDR numeric representation: Yahoo sometimes returns 14.x (scale) */
+function normalizeUsdIdr(v) {
+  if (!v || Number.isNaN(Number(v))) return null;
+  const n = Number(v);
+  if (n > 1000) return Math.round(n);
+  // if small like 14.2 -> scale up to ~14200
+  return Math.round(n * 1000);
 }
 
-/* Simple donut SVG */
-function Donut({ data = [], size = 140, inner = 58 }) {
+/* small sparkline SVG */
+function Sparkline({ data = [], w = 84, h = 28 }) {
+  if (!data || data.length === 0) {
+    return <svg width={w} height={h} className="inline-block" />;
+  }
+  const pts = data.slice(-40);
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const range = max - min || 1;
+  const step = w / Math.max(1, pts.length - 1);
+  let d = "";
+  pts.forEach((v, i) => {
+    const x = i * step;
+    const y = h - ((v - min) / range) * (h - 4) - 2;
+    d += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+  });
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="inline-block">
+      <path d={d} fill="none" stroke="#16a34a" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/* donut svg */
+function Donut({ data = [], size = 140, inner = 60 }) {
   const total = data.reduce((s, i) => s + Math.max(0, i.value || 0), 0) || 1;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = size / 2 - 6;
+  const cx = size / 2, cy = size / 2, r = size / 2 - 6;
   let start = -90;
-  const colors = ["#16a34a", "#06b6d4", "#f59e0b", "#ef4444", "#7c3aed", "#84cc16"];
+  const colors = ["#16a34a","#06b6d4","#f59e0b","#ef4444","#7c3aed","#84cc16"];
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {data.map((d, idx) => {
+      {data.map((d, i) => {
         const portion = Math.max(0, d.value || 0) / total;
         const angle = portion * 360;
         const end = start + angle;
         const large = angle > 180 ? 1 : 0;
         const sRad = (Math.PI * start) / 180;
         const eRad = (Math.PI * end) / 180;
-        const x1 = cx + r * Math.cos(sRad);
-        const y1 = cy + r * Math.sin(sRad);
-        const x2 = cx + r * Math.cos(eRad);
-        const y2 = cy + r * Math.sin(eRad);
+        const x1 = cx + r * Math.cos(sRad), y1 = cy + r * Math.sin(sRad);
+        const x2 = cx + r * Math.cos(eRad), y2 = cy + r * Math.sin(eRad);
         const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
         start = end;
-        return <path key={idx} d={path} fill={colors[idx % colors.length]} stroke="rgba(0,0,0,0.06)" strokeWidth="0.4" />;
+        return <path key={i} d={path} fill={colors[i % colors.length]} stroke="rgba(0,0,0,0.06)" strokeWidth="0.4" />;
       })}
       <circle cx={cx} cy={cy} r={inner} fill="#070707" />
     </svg>
@@ -71,30 +100,24 @@ function Donut({ data = [], size = 140, inner = 58 }) {
 }
 
 export default function DashboardPage() {
-  // persisted assets
+  // persisted portfolio
   const [assets, setAssets] = useState(() => {
     try {
-      const raw = localStorage.getItem("bb_yf_assets_v2");
+      const raw = localStorage.getItem("bb_assets_v3");
       return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   });
   const [realizedUSD, setRealizedUSD] = useState(() => {
-    try {
-      return Number(localStorage.getItem("bb_yf_realized_v2") || "0");
-    } catch {
-      return 0;
-    }
+    try { return Number(localStorage.getItem("bb_realized_usd_v3") || "0"); } catch { return 0; }
   });
 
-  // UI state
+  // UI & display settings
   const [displayCcy, setDisplayCcy] = useState("IDR");
   const [usdIdr, setUsdIdr] = useState(16000);
 
-  // search
+  // search fields
   const [query, setQuery] = useState("");
-  const debQuery = useDebounced(query, 300);
+  const debQuery = useDebounced(query, 350);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -104,30 +127,27 @@ export default function DashboardPage() {
   const [avgInput, setAvgInput] = useState("");
   const [avgCcy, setAvgCcy] = useState("USD");
 
-  // quotes & polling
+  // quotes + history
   const [quotes, setQuotes] = useState({}); // symbol -> quote object
-  const [isSyncing, setIsSyncing] = useState(false);
-  const pollingRef = useRef(null);
-  const priceHistoryRef = useRef({}); // symbol -> [prices]
+  const priceHistoryRef = useRef({});
   const [priceHistoryState, setPriceHistoryState] = useState({});
+  const pollingRef = useRef(null);
 
-  // edit map
+  // syncing flags: initialSync true until we successfully fetch USDIDR at least once
+  const [initialSyncing, setInitialSyncing] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editMap, setEditMap] = useState({});
 
-  // persist to localStorage
+  // persist
   useEffect(() => {
-    try {
-      localStorage.setItem("bb_yf_assets_v2", JSON.stringify(assets));
-    } catch {}
+    try { localStorage.setItem("bb_assets_v3", JSON.stringify(assets)); } catch {}
   }, [assets]);
   useEffect(() => {
-    try {
-      localStorage.setItem("bb_yf_realized_v2", String(realizedUSD));
-    } catch {}
+    try { localStorage.setItem("bb_realized_usd_v3", String(realizedUSD)); } catch {}
   }, [realizedUSD]);
 
-  /* SEARCH -> call server proxy */
+  // SEARCH: server proxy to Yahoo search
   useEffect(() => {
     let alive = true;
     if (!debQuery || debQuery.trim().length < 1) {
@@ -146,82 +166,78 @@ export default function DashboardPage() {
           return;
         }
         const json = await res.json();
-        // Yahoo returns .quotes array; map to simple items
-        const qlist = Array.isArray(json.quotes) ? json.quotes : [];
-        const items = qlist.map((it) => ({
+        const raw = Array.isArray(json.quotes) ? json.quotes : [];
+        const items = raw.map((it) => ({
           symbol: it.symbol,
           display: it.shortname || it.longname || it.symbol,
-          exchange: it.exchange || it.exchangeTimezoneName || "",
+          exchange: it.exchange || "",
         }));
-        setSuggestions(items.slice(0, 18));
+        if (alive) {
+          setSuggestions(items.slice(0, 28));
+        }
       } catch (e) {
-        console.warn("search err", e);
-        setSuggestions([]);
+        if (alive) setSuggestions([]);
       } finally {
         if (alive) setSuggestLoading(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [debQuery]);
 
-  /* POLL quotes via server proxy every 5s (includes USDIDR) */
+  // POLL quotes every 5s via server proxy; always ensure USDIDR fetched
   useEffect(() => {
     let mounted = true;
     async function poll() {
       try {
         setIsSyncing(true);
-        const syms = Array.from(new Set([...assets.map((a) => a.symbol), USDIDR_SYMBOL])).filter(Boolean);
+        // collect unique symbols to fetch
+        const syms = Array.from(new Set([...assets.map(a => a.symbol), USDIDR_SYMBOL].filter(Boolean)));
         if (syms.length === 0) {
-          // still fetch USDIDR alone
-          const rfx = await fetch(API_QUOTE + encodeURIComponent(USDIDR_SYMBOL));
+          // still fetch USDIDR to initialize
+          const resFx = await fetch(API_QUOTE + encodeURIComponent(USDIDR_SYMBOL));
           if (!mounted) return;
-          if (rfx.ok) {
-            const j = await rfx.json();
+          if (resFx.ok) {
+            const j = await resFx.json();
             const fxObj = j?.quoteResponse?.result?.[0];
             if (fxObj && fxObj.regularMarketPrice != null) {
-              const norm = fxObj.regularMarketPrice;
-              // normalize small vs large format
-              const maybe = norm > 1000 ? Math.round(norm) : Math.round(norm * 1000);
-              setUsdIdr((prev) => (!prev || Math.abs(prev - maybe) / maybe > 0.0005 ? maybe : prev));
-              setQuotes((p) => ({ ...p, [USDIDR_SYMBOL]: fxObj }));
+              const norm = normalizeUsdIdr(fxObj.regularMarketPrice);
+              if (norm) {
+                setUsdIdr(prev => (!prev || Math.abs(prev - norm) / norm > 0.0005 ? norm : prev));
+              }
+              setQuotes(p => ({ ...p, [USDIDR_SYMBOL]: fxObj }));
+              setInitialSyncing(false);
             }
           }
           setIsSyncing(false);
           return;
         }
 
-        const res = await fetch(API_QUOTE + encodeURIComponent(syms.join(",")));
+        const r = await fetch(API_QUOTE + encodeURIComponent(syms.join(",")));
         if (!mounted) return;
-        if (!res.ok) {
-          setIsSyncing(false);
-          return;
-        }
-        const j = await res.json();
+        if (!r.ok) { setIsSyncing(false); return; }
+        const j = await r.json();
         const map = {};
-        (j?.quoteResponse?.result || []).forEach((q) => {
+        (j?.quoteResponse?.result || []).forEach(q => {
           if (!q || !q.symbol) return;
           map[q.symbol] = q;
-          // update history
           const p = q.regularMarketPrice ?? null;
           if (p != null) {
             const arr = priceHistoryRef.current[q.symbol] ? [...priceHistoryRef.current[q.symbol]] : [];
             arr.push(Number(p));
-            if (arr.length > 80) arr.shift();
+            if (arr.length > 120) arr.shift();
             priceHistoryRef.current[q.symbol] = arr;
           }
         });
-        setQuotes((prev) => ({ ...prev, ...map }));
-        // push history state
+        // update state
+        setQuotes(prev => ({ ...prev, ...map }));
         setPriceHistoryState({ ...priceHistoryRef.current });
 
-        // update USDIDR if present
+        // USDIDR normalization
         const fx = map[USDIDR_SYMBOL];
         if (fx && fx.regularMarketPrice != null) {
-          const norm = fx.regularMarketPrice;
-          const maybe = norm > 1000 ? Math.round(norm) : Math.round(norm * 1000);
-          setUsdIdr((prev) => (!prev || Math.abs(prev - maybe) / maybe > 0.0005 ? maybe : prev));
+          const maybe = normalizeUsdIdr(fx.regularMarketPrice);
+          if (maybe) setUsdIdr(prev => (!prev || Math.abs(prev - maybe) / maybe > 0.0005 ? maybe : prev));
+          setInitialSyncing(false);
         }
       } catch (e) {
         // ignore
@@ -230,6 +246,7 @@ export default function DashboardPage() {
       }
     }
 
+    // immediate poll then interval
     poll();
     pollingRef.current = setInterval(poll, 5000);
     return () => {
@@ -238,14 +255,24 @@ export default function DashboardPage() {
     };
   }, [assets]);
 
-  /* helper: compute rows with USD basis math */
+  // helper to fetch single quote (used on add)
+  async function fetchSingleQuote(sym) {
+    try {
+      const r = await fetch(API_QUOTE + encodeURIComponent(sym));
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j?.quoteResponse?.result?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // compute rows from assets + quotes; do math in USD base
   const rows = useMemo(() => {
-    return assets.map((a) => {
-      const quoteObj = quotes[a.symbol];
-      const nativeLast = a.lastKnownNative ?? (quoteObj?.regularMarketPrice ?? null);
-      // detect currency: prefer quoteObj.currency
-      const quoteCurrency = quoteObj?.currency ? String(quoteObj.currency).toUpperCase() : (a.quoteCurrency || (a.symbol?.endsWith(".JK") ? "IDR" : "USD"));
-      // price in USD
+    return assets.map(a => {
+      const qobj = quotes[a.symbol];
+      const nativeLast = a.lastKnownNative ?? (qobj?.regularMarketPrice ?? null);
+      const quoteCurrency = qobj?.currency ? String(qobj.currency).toUpperCase() : (a.quoteCurrency || (a.symbol?.endsWith(".JK") ? "IDR" : "USD"));
       let priceUSD = 0;
       if (quoteCurrency === "IDR") priceUSD = number(nativeLast) / (usdIdr || 1);
       else priceUSD = number(nativeLast);
@@ -292,7 +319,9 @@ export default function DashboardPage() {
     realized: displayCcy === "IDR" ? realizedUSD * (usdIdr || 1) : realizedUSD,
   };
 
-  /* Actions */
+  const pieData = useMemo(() => rows.map(r => ({ name: r.symbol, value: Math.max(0, r.marketUSD || 0) })).filter(x => x.value > 0), [rows]);
+
+  /* ACTIONS */
   function pickSuggestion(it) {
     setSelected(it);
     setQuery(`${it.symbol} — ${it.display}`);
@@ -300,6 +329,7 @@ export default function DashboardPage() {
   }
 
   async function addAsset() {
+    // allow manual typed symbol if user didn't pick suggestion
     let pick = selected;
     if (!pick && query) {
       const typed = query.split("—")[0].trim();
@@ -315,7 +345,7 @@ export default function DashboardPage() {
       alert("Qty & Avg harus > 0");
       return;
     }
-    // avg to USD
+    // convert avg to USD using current usdIdr if IDR input
     const avgUSD = avgCcy === "IDR" ? a / (usdIdr || 1) : a;
     const base = {
       id: Date.now(),
@@ -328,116 +358,102 @@ export default function DashboardPage() {
       avgUSD,
       createdAt: Date.now(),
     };
-    // fetch initial quote for this symbol (best-effort)
+    // fetch initial quote
     try {
-      const r = await fetch(API_QUOTE + encodeURIComponent(pick.symbol));
-      if (r.ok) {
-        const json = await r.json();
-        const qobj = json?.quoteResponse?.result?.[0];
-        if (qobj) {
-          base.lastKnownNative = qobj.regularMarketPrice ?? undefined;
-          setQuotes((p) => ({ ...p, [pick.symbol]: qobj }));
-          // history
-          if (qobj.regularMarketPrice != null) {
-            const arr = priceHistoryRef.current[pick.symbol] ? [...priceHistoryRef.current[pick.symbol]] : [];
-            arr.push(Number(qobj.regularMarketPrice));
-            priceHistoryRef.current[pick.symbol] = arr.slice(-80);
-            setPriceHistoryState({ ...priceHistoryRef.current });
-          }
+      const qobj = await fetchSingleQuote(pick.symbol);
+      if (qobj) {
+        base.lastKnownNative = qobj.regularMarketPrice ?? undefined;
+        setQuotes(prev => ({ ...prev, [pick.symbol]: qobj }));
+        if (qobj.regularMarketPrice != null) {
+          const arr = priceHistoryRef.current[pick.symbol] ? [...priceHistoryRef.current[pick.symbol]] : [];
+          arr.push(Number(qobj.regularMarketPrice));
+          priceHistoryRef.current[pick.symbol] = arr.slice(-120);
+          setPriceHistoryState({ ...priceHistoryRef.current });
         }
       }
     } catch {}
-    setAssets((p) => [...p, base]);
-
-    // reset
-    setSelected(null);
-    setQuery("");
-    setQtyInput("");
-    setAvgInput("");
-    setAvgCcy("USD");
+    setAssets(prev => [...prev, base]);
+    // reset form
+    setSelected(null); setQuery(""); setQtyInput(""); setAvgInput(""); setAvgCcy("USD");
   }
 
-  function beginEdit(a) {
-    setEditingId(a.id);
-    setEditMap((p) => ({ ...p, [a.id]: { qty: String(a.qty), avgInput: String(a.avgInput ?? a.avgUSD ?? ""), inputCurrency: a.inputCurrency || "USD" } }));
+  function beginEdit(row) {
+    setEditingId(row.id);
+    setEditMap(prev => ({ ...prev, [row.id]: { qty: String(row.qty), avgInput: String(row.avgInput ?? row.avgUSD ?? ""), inputCurrency: row.inputCurrency || "USD" } }));
   }
+
   function saveEdit(id) {
     const ef = editMap[id];
-    if (!ef) {
-      setEditingId(null);
-      return;
-    }
+    if (!ef) { setEditingId(null); return; }
     const q = number(ef.qty);
     const a = number(ef.avgInput);
     const ccy = ef.inputCurrency || "USD";
-    if (q <= 0 || a <= 0) {
-      alert("Qty & Avg harus > 0");
-      setEditingId(null);
-      return;
-    }
+    if (q <= 0 || a <= 0) { alert("Qty & Avg harus > 0"); setEditingId(null); return; }
     const avgUSD = ccy === "IDR" ? a / (usdIdr || 1) : a;
-    setAssets((p) => p.map((x) => (x.id === id ? { ...x, qty: q, avgInput: a, inputCurrency: ccy, avgUSD } : x)));
+    setAssets(prev => prev.map(x => x.id === id ? { ...x, qty: q, avgInput: a, inputCurrency: ccy, avgUSD } : x));
     setEditingId(null);
-    setEditMap((p) => {
-      const cp = { ...p }; delete cp[id]; return cp;
-    });
+    setEditMap(prev => { const cp = { ...prev }; delete cp[id]; return cp; });
   }
+
   function cancelEdit(id) {
     setEditingId(null);
-    setEditMap((p) => {
-      const cp = { ...p }; delete cp[id]; return cp;
-    });
+    setEditMap(prev => { const cp = {...prev}; delete cp[id]; return cp; });
   }
 
   function removeAsset(id) {
-    setAssets((p) => p.filter((x) => x.id !== id));
+    setAssets(prev => prev.filter(a => a.id !== id));
     // prune history
     priceHistoryRef.current = Object.keys(priceHistoryRef.current).reduce((acc, k) => {
-      const keep = assets.some((a) => a.id !== id && a.symbol === k);
+      const keep = assets.some(a => a.id !== id && a.symbol === k);
       if (keep) acc[k] = priceHistoryRef.current[k];
       return acc;
     }, {});
     setPriceHistoryState({ ...priceHistoryRef.current });
   }
 
-  function buyMore(a) {
-    const qtyStr = prompt(`Buy qty for ${a.symbol}:`, "0");
+  function buyMore(row) {
+    const qtyStr = prompt(`Buy qty for ${row.symbol}:`, "0");
     if (!qtyStr) return;
-    const priceStr = prompt(`Price per unit (in ${a.inputCurrency || "USD"}):`, String(a.avgInput || a.avgUSD || ""));
-    const ccy = prompt("Currency (USD/IDR):", a.inputCurrency || "USD");
+    const priceStr = prompt(`Price per unit (in ${row.inputCurrency || "USD"}):`, String(row.avgInput || row.avgUSD || ""));
+    const ccy = prompt("Currency (USD/IDR):", row.inputCurrency || "USD");
     const bq = number(qtyStr);
     const bp = number(priceStr);
     const curr = (ccy || "USD").toUpperCase() === "IDR" ? "IDR" : "USD";
     if (bq <= 0 || bp <= 0) return;
     const bpUSD = curr === "IDR" ? bp / (usdIdr || 1) : bp;
-    const oldQty = a.qty;
+    const oldQty = row.qty;
     const newQty = oldQty + bq;
-    const newAvgUSD = (a.avgUSD * oldQty + bpUSD * bq) / newQty;
-    setAssets((p) => p.map((x) => (x.id === a.id ? { ...x, qty: newQty, avgUSD: newAvgUSD, avgInput: curr === "IDR" ? newAvgUSD * (usdIdr || 1) : newAvgUSD, inputCurrency: curr } : x)));
+    const newAvgUSD = (row.avgUSD * oldQty + bpUSD * bq) / newQty;
+    setAssets(prev => prev.map(x => x.id === row.id ? { ...x, qty: newQty, avgUSD: newAvgUSD, avgInput: curr === "IDR" ? newAvgUSD * (usdIdr || 1) : newAvgUSD, inputCurrency: curr } : x));
   }
 
-  function sellSome(a) {
-    const qtyStr = prompt(`Sell qty for ${a.symbol}:`, "0");
+  function sellSome(row) {
+    const qtyStr = prompt(`Sell qty for ${row.symbol}:`, "0");
     const sq = number(qtyStr);
-    if (sq <= 0 || sq > a.qty) return;
-    const priceUSD = a.priceUSD ?? a.avgUSD ?? 0;
-    const realized = (priceUSD - a.avgUSD) * sq;
-    setRealizedUSD((p) => p + realized);
-    const remain = a.qty - sq;
-    if (remain <= 0) removeAsset(a.id);
-    else setAssets((p) => p.map((x) => (x.id === a.id ? { ...x, qty: remain } : x)));
+    if (sq <= 0 || sq > row.qty) return;
+    const priceUSD = row.priceUSD ?? row.avgUSD ?? 0;
+    const realized = (priceUSD - row.avgUSD) * sq;
+    setRealizedUSD(prev => prev + realized);
+    const remain = row.qty - sq;
+    if (remain <= 0) removeAsset(row.id);
+    else setAssets(prev => prev.map(x => x.id === row.id ? { ...x, qty: remain } : x));
   }
 
   function openTradingView(r) {
     let tv = r.symbol;
+    // mapping for .JK -> IDX:XXX
     if (tv?.endsWith(".JK")) tv = `IDX:${tv.replace(".JK", "")}`;
     if (!tv.includes(":") && /^[A-Z0-9._-]{1,10}$/.test(tv)) tv = `NASDAQ:${tv}`;
     window.open(`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tv)}`, "_blank");
   }
 
-  // pie data
-  const pieData = useMemo(() => rows.map(r => ({ name: r.symbol, value: Math.max(0, r.marketUSD || 0) })).filter(x => x.value > 0), [rows]);
+  // pie data mapping
+  const pieData = useMemo(() => pieDataFrom(rows), [rows]);
+  function pieDataFrom(rowsArr) {
+    return rowsArr.map(r => ({ name: r.symbol, value: Math.max(0, r.marketUSD || 0) })).filter(x => x.value > 0);
+  }
 
+  // render
   return (
     <div className="min-h-screen bg-black text-gray-200 antialiased">
       <div className="max-w-6xl mx-auto px-4 py-6">
@@ -446,34 +462,48 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-2xl font-semibold">Portfolio</h1>
             <p className="text-xs text-gray-500">
-              Updated: {isSyncing ? (<><span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-full border-2 border-t-transparent border-gray-400 animate-spin" /> syncing…</span></>) : (new Date().toLocaleTimeString())}
+              {initialSyncing ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full border-2 border-t-transparent border-gray-400 animate-spin" />
+                  syncing...
+                </span>
+              ) : (
+                <>Updated: {new Date().toLocaleTimeString()}</>
+              )}
               {" "} • USD/IDR: <span className="text-green-400 font-medium">{usdIdr ? Number(usdIdr).toLocaleString("id-ID") : "-"}</span>
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-400">Portfolio Value</div>
-            <div className="text-lg font-semibold">{displayCcy === "IDR" ? fmtMoney(displayTotals.market, "IDR") : fmtMoney(displayTotals.market, "USD")}</div>
-            <select value={displayCcy} onChange={(e) => setDisplayCcy(e.target.value)} className="ml-3 bg-gray-900 border border-gray-800 rounded px-3 py-2 text-sm">
+            <div className="text-lg font-semibold">
+              {displayCcy === "IDR" ? fmtCurrency(displayTotals.market, "IDR") : fmtCurrency(displayTotals.market, "USD")}
+            </div>
+            <select value={displayCcy} onChange={e => setDisplayCcy(e.target.value)} className="ml-3 bg-gray-900 border border-gray-800 rounded px-3 py-2 text-sm">
               <option value="IDR">IDR</option>
               <option value="USD">USD</option>
             </select>
           </div>
         </div>
 
-        {/* KPI */}
+        {/* KPIs */}
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm">
-          <div className="flex justify-between text-gray-400"><div>Invested</div><div className="font-medium">{displayCcy === "IDR" ? fmtMoney(displayTotals.invested, "IDR") : fmtMoney(displayTotals.invested, "USD")}</div></div>
-          <div className="flex justify-between text-gray-400"><div>Market</div><div className="font-medium">{displayCcy === "IDR" ? fmtMoney(displayTotals.market, "IDR") : fmtMoney(displayTotals.market, "USD")}</div></div>
-          <div className="flex justify-between text-gray-400"><div>Unrealized P&L</div><div className={`font-semibold ${displayTotals.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(displayTotals.pnl, "IDR") : fmtMoney(displayTotals.pnl, "USD")} ({displayTotals.pnlPct?.toFixed?.(2) || "0.00"}%)</div></div>
-          <div className="flex justify-between text-gray-400"><div>Realized P&L</div><div className={`font-semibold ${displayTotals.realized >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(displayTotals.realized, "IDR") : fmtMoney(displayTotals.realized, "USD")}</div></div>
+          <div className="flex justify-between text-gray-400"><div>Invested</div><div className="font-medium">{displayCcy === "IDR" ? fmtCurrency(displayTotals.invested, "IDR") : fmtCurrency(displayTotals.invested, "USD")}</div></div>
+          <div className="flex justify-between text-gray-400"><div>Market</div><div className="font-medium">{displayCcy === "IDR" ? fmtCurrency(displayTotals.market, "IDR") : fmtCurrency(displayTotals.market, "USD")}</div></div>
+          <div className="flex justify-between text-gray-400"><div>Unrealized P&L</div><div className={`font-semibold ${displayTotals.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtCurrency(displayTotals.pnl, "IDR") : fmtCurrency(displayTotals.pnl, "USD")} ({displayTotals.pnlPct?.toFixed?.(2) || "0.00"}%)</div></div>
+          <div className="flex justify-between text-gray-400"><div>Realized P&L</div><div className={`font-semibold ${displayTotals.realized >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtCurrency(displayTotals.realized, "IDR") : fmtCurrency(displayTotals.realized, "USD")}</div></div>
         </div>
 
         {/* Add bar */}
         <div className="mt-6">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="relative w-full sm:max-w-md">
-              <input value={query} onChange={(e) => { setQuery(e.target.value); setSelected(null); }} placeholder="Search symbol e.g. AAPL, BBCA.JK, BTC..." className="w-full rounded-md bg-gray-950 px-3 py-2 text-sm outline-none border border-gray-800" />
+              <input
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setSelected(null); }}
+                placeholder="Search symbol e.g. AAPL, BBCA.JK, BTC, USDIDR=X..."
+                className="w-full rounded-md bg-gray-950 px-3 py-2 text-sm outline-none border border-gray-800"
+              />
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
                 {suggestLoading ? <div className="w-4 h-4 rounded-full border-2 border-t-transparent border-gray-400 animate-spin" /> : null}
               </div>
@@ -523,7 +553,7 @@ export default function DashboardPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr><td colSpan={9} className="py-8 text-center text-gray-500">No assets — add via search above</td></tr>
-              ) : rows.map((r) => {
+              ) : rows.map(r => {
                 const editing = editingId === r.id;
                 const ef = editMap[r.id] || {};
                 return (
@@ -533,6 +563,9 @@ export default function DashboardPage() {
                         <div className="flex flex-col">
                           <button onClick={() => openTradingView(r)} className="font-semibold text-gray-100 hover:text-green-400">{r.symbol}</button>
                           <div className="text-xs text-gray-500">{r.displayName || ""}</div>
+                        </div>
+                        <div className="ml-2">
+                          <Sparkline data={r.hist} />
                         </div>
                       </div>
                     </td>
@@ -552,18 +585,18 @@ export default function DashboardPage() {
                         </div>
                       ) : (
                         <div>
-                          <div className="font-medium">{r.inputCurrency === "IDR" ? fmtMoney(r.avgInput, "IDR") : fmtMoney(r.avgUSD, "USD")}</div>
+                          <div className="font-medium">{r.inputCurrency === "IDR" ? fmtCurrency(r.avgInput, "IDR") : fmtCurrency(r.avgUSD, "USD")}</div>
                         </div>
                       )}
                     </td>
 
-                    <td className="px-3 py-3 text-right tabular-nums">{r.displayPrice != null ? (displayCcy === "IDR" ? fmtMoney(r.displayPrice, "IDR") : fmtMoney(r.displayPrice, "USD")) : "-"}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{r.displayPrice != null ? (displayCcy === "IDR" ? fmtCurrency(r.displayPrice, "IDR") : fmtCurrency(r.displayPrice, "USD")) : "-"}</td>
 
-                    <td className="px-3 py-3 text-right tabular-nums">{displayCcy === "IDR" ? fmtMoney(r.displayInvested, "IDR") : fmtMoney(r.displayInvested, "USD")}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{displayCcy === "IDR" ? fmtCurrency(r.displayInvested, "IDR") : fmtCurrency(r.displayInvested, "USD")}</td>
 
-                    <td className="px-3 py-3 text-right tabular-nums">{displayCcy === "IDR" ? fmtMoney(r.displayMarket, "IDR") : fmtMoney(r.displayMarket, "USD")}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{displayCcy === "IDR" ? fmtCurrency(r.displayMarket, "IDR") : fmtCurrency(r.displayMarket, "USD")}</td>
 
-                    <td className={`px-3 py-3 text-right tabular-nums font-semibold ${r.pnlUSD >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(r.displayPnl, "IDR") : fmtMoney(r.displayPnl, "USD")}</td>
+                    <td className={`px-3 py-3 text-right tabular-nums font-semibold ${r.pnlUSD >= 0 ? "text-green-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtCurrency(r.displayPnl, "IDR") : fmtCurrency(r.displayPnl, "USD")}</td>
 
                     <td className={`px-3 py-3 text-right tabular-nums ${r.pnlUSD >= 0 ? "text-green-400" : "text-red-400"}`}>{isFinite(r.pnlPct) ? r.pnlPct.toFixed(2) : "0.00"}%</td>
 
@@ -589,10 +622,10 @@ export default function DashboardPage() {
           </table>
         </div>
 
-        {/* Donut / allocation */}
+        {/* Donut + legend */}
         {pieData.length > 0 && (
           <div className="mt-6 flex gap-6 flex-col sm:flex-row items-start">
-            <div className="w-40 h-40"><Donut data={pieData} size={140} inner={58} /></div>
+            <div className="w-40 h-40"><Donut data={pieData} size={140} inner={60} /></div>
             <div>
               {pieData.map((p, i) => {
                 const pct = totals.market > 0 ? (p.value / totals.market) * 100 : 0;
