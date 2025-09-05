@@ -408,6 +408,23 @@ export default function PortfolioDashboard() {
     return { invested, market, pnl, pnlPct };
   }, [rows]);
 
+  /* ===================== Donut data & logic ===================== */
+  const donutData = useMemo(() => {
+    const sortedRows = rows.sort((a, b) => b.marketValueUSD - a.marketValueUSD);
+    const topFive = sortedRows.slice(0, 4);
+    const otherAssets = sortedRows.slice(4);
+
+    const otherTotalValue = otherAssets.reduce((sum, asset) => sum + (asset.marketValueUSD || 0), 0);
+    const otherSymbols = otherAssets.map(asset => asset.symbol);
+
+    const data = topFive.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
+
+    if (otherTotalValue > 0) {
+      data.push({ name: "Other", value: otherTotalValue, symbols: otherSymbols });
+    }
+    return data;
+  }, [rows]);
+
   /* ===================== small utilities for UI ===================== */
   function colorForIndex(i) {
     const palette = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#FF9CEE","#B28DFF","#FFB26B","#6BFFA0","#FF6BE5","#00C49F"];
@@ -572,17 +589,26 @@ export default function PortfolioDashboard() {
           <div className="mt-6 flex flex-col sm:flex-row gap-6 items-start">
             {/* PERBAIKAN: Ukuran Donut diubah menjadi 120px */}
             <div className="w-32 h-32 flex items-center justify-center">
-              <Donut data={rows.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }))} size={120} inner={40} />
+              <Donut data={donutData.map(d => ({ name: d.name, value: d.value }))} size={120} inner={40} />
             </div>
             <div className="flex-1">
-              {rows.map((r, i) => {
-                const pct = totals.market > 0 ? (r.marketValueUSD / totals.market) * 100 : 0;
+              {donutData.map((d, i) => {
+                const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
                 return (
-                  <div key={r.id} className="flex items-center gap-3 mb-2">
+                  <div key={d.name} className="flex items-center gap-3 mb-2">
                     <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-sm" />
                     <div>
-                      <div className="font-semibold text-gray-100">{r.symbol}</div>
-                      <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")} • {pct.toFixed(1)}%</div>
+                      <div className="font-semibold text-gray-100">{d.name}</div>
+                      {d.name === "Other" ? (
+                        <div className="text-xs text-gray-400">
+                          {d.symbols.join(', ')} <br/>
+                          {displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-400">
+                          {displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -648,14 +674,23 @@ function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr 
               </select>
             </div>
           </div>
-          <div className="text-sm text-gray-400">Total ≈ {fmtMoney(totalUSD, "USD")}</div>
-          <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="bg-gray-700 px-4 py-2 rounded font-semibold">Cancel</button>
-            <button type="submit" className={`px-4 py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-500 text-black'}`}>Confirm {mode}</button>
+          <div className="flex justify-between items-center mt-4 text-sm text-gray-400">
+            <div>Total Value</div>
+            <div className="font-semibold text-white">
+              {fmtMoney(totalUSD, "USD")}
+              {displayCcy === "IDR" && ` / ${fmtMoney(totalUSD * usdIdr, "IDR")}`}
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="submit" className={`px-4 py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-black'}`}>
+              Confirm {mode === 'buy' ? 'Buy' : 'Sell'}
+            </button>
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded font-semibold bg-gray-800">
+              Cancel
+            </button>
           </div>
         </form>
       </div>
     </div>
   );
 }
-
