@@ -717,7 +717,7 @@ export default function PortfolioDashboard() {
                 const pct = totals.market > 0 ? (r.marketValueUSD / totals.market) * 100 : 0;
                 return (
                   <div key={r.id} className="flex items-center gap-3 mb-2">
-                    <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-sm" />
+                    <div style={{ width: 8, height: 8, background: colorForIndex(i) }} className="rounded-sm" />
                     <div className="flex-1">
                       <div className="font-semibold text-gray-100">{r.symbol} <span className="text-xs text-gray-400">• {r.name}</span></div>
                       <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * (usdIdr || 1), "IDR") : fmtMoney(r.marketValueUSD, "USD")} • {pct.toFixed(1)}%</div>
