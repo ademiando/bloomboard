@@ -584,18 +584,18 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* DONUT + LEGEND */}
+        {/* DONUT + LEGEND (HORIZONTAL LAYOUT) */}
         {rows.length > 0 && (
-          <div className="mt-6 flex flex-col sm:flex-row gap-6 items-start">
-            {/* PERBAIKAN: Ukuran Donut diubah menjadi 120px */}
+          <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="w-32 h-32 flex items-center justify-center">
               <Donut data={donutData.map(d => ({ name: d.name, value: d.value }))} size={120} inner={40} />
             </div>
-            <div className="flex-1">
+            {/* Menggunakan grid untuk tata letak horizontal pada legend */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {donutData.map((d, i) => {
                 const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
                 return (
-                  <div key={d.name} className="flex items-center gap-3 mb-2">
+                  <div key={d.name} className="flex items-center gap-3">
                     <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-sm" />
                     <div>
                       <div className="font-semibold text-gray-100">{d.name}</div>
@@ -660,35 +660,37 @@ function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr 
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white">&times;</button>
         </div>
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label className="text-sm text-gray-400">Quantity</label>
-            <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="0.0" step="any" className="w-full mt-1 bg-gray-800 border border-gray-700 rounded px-3 py-2" autoFocus />
+        <form onSubmit={handleSubmit} className="mt-4">
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Quantity</label>
+            <input type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)}
+              className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
+              placeholder="0.00"
+            />
           </div>
-          <div>
-            <label className="text-sm text-gray-400">Price (per unit)</label>
-            <div className="flex items-center gap-2 mt-1">
-              <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.0" step="any" className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2" />
-              <select value={priceCcy} onChange={(e) => setPriceCcy(e.target.value)} className="bg-gray-800 border border-gray-700 rounded px-3 py-2">
-                <option value="USD">USD</option> <option value="IDR">IDR</option>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Price per unit</label>
+            <div className="flex rounded overflow-hidden">
+              <input type="number" step="any" value={price} onChange={(e) => setPrice(e.target.value)}
+                className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700 focus:outline-none focus:border-blue-500"
+                placeholder="0.00"
+              />
+              <select value={priceCcy} onChange={(e) => setPriceCcy(e.target.value)}
+                className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r focus:outline-none"
+              >
+                <option value="USD">USD</option>
+                <option value="IDR">IDR</option>
               </select>
             </div>
           </div>
-          <div className="flex justify-between items-center mt-4 text-sm text-gray-400">
-            <div>Total Value</div>
-            <div className="font-semibold text-white">
-              {fmtMoney(totalUSD, "USD")}
-              {displayCcy === "IDR" && ` / ${fmtMoney(totalUSD * usdIdr, "IDR")}`}
-            </div>
+          <div className="text-sm text-gray-400 text-right mb-4">
+            Total: {fmtMoney(totalUSD, "USD")}
           </div>
-          <div className="flex gap-2 justify-end">
-            <button type="submit" className={`px-4 py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-black'}`}>
-              Confirm {mode === 'buy' ? 'Buy' : 'Sell'}
-            </button>
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded font-semibold bg-gray-800">
-              Cancel
-            </button>
-          </div>
+          <button type="submit"
+            className={`w-full py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-white'}`}
+          >
+            {mode === 'buy' ? 'Confirm Buy' : 'Confirm Sell'}
+          </button>
         </form>
       </div>
     </div>
