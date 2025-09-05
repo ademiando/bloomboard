@@ -85,6 +85,16 @@ function Donut({ data = [], size = 140, inner = 60 }) {
   );
 }
 
+/* Loading spinner component */
+function LoadingSpinner({ size = "small" }) {
+  const spinnerSize = size === "small" ? "w-4 h-4" : "w-8 h-8";
+  return (
+    <div className={`inline-block ${spinnerSize} animate-spin rounded-full border-2 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]`} role="status">
+      <span className="!absolute !-m-px !h-px !w-px !overflow-hidden !whitespace-nowrap !border-0 !p-0 ![clip:rect(0,0,0,0)]">Loading...</span>
+    </div>
+  );
+}
+
 /* ====== MAIN ====== */
 export default function DashboardPage() {
   /* persisted data */
@@ -108,6 +118,7 @@ export default function DashboardPage() {
   /* display & FX */
   const [displayCcy, setDisplayCcy] = useState("IDR");
   const [usdIdr, setUsdIdr] = useState(16000);
+  const [fxLoading, setFxLoading] = useState(true);
 
   /* live prices stores */
   const [yahooQuotes, setYahooQuotes] = useState({}); // symbol -> quote object from yahoo
@@ -151,17 +162,20 @@ export default function DashboardPage() {
         const q = debQuery;
         const yahooP = fetch(YAHOO_SEARCH(q), { signal: ac.signal }).then(r => r.ok ? r.json() : null).catch(() => null);
         const cgP = fetch(COINGECKO_SEARCH(q), { signal: ac.signal }).then(r => r.ok ? r.json() : null).catch(() => null);
-        const [yh, cg] = await Promise.all([yahooP, cgP]);
+        const [yh, cg] = await Promise.allSettled([yahooP, cgP]);
         if (cancelled) return;
 
-        const yhList = (yh && Array.isArray(yh.quotes)) ? yh.quotes.slice(0, 12).map(it => ({
+        const yhResult = yh.status === 'fulfilled' ? await yh.value : null;
+        const cgResult = cg.status === 'fulfilled' ? await cg.value : null;
+
+        const yhList = (yhResult && Array.isArray(yhResult.quotes)) ? yhResult.quotes.slice(0, 12).map(it => ({
           source: "yahoo",
           symbol: it.symbol,
           display: it.shortname || it.longname || it.symbol,
           currency: it.currency || it.exchange || null,
         })) : [];
 
-        const cgList = (cg && Array.isArray(cg.coins)) ? cg.coins.slice(0, 10).map(it => ({
+        const cgList = (cgResult && Array.isArray(cgResult.coins)) ? cgResult.coins.slice(0, 10).map(it => ({
           source: "coingecko",
           coingeckoId: it.id,
           symbol: it.symbol.toUpperCase(),
@@ -232,13 +246,17 @@ export default function DashboardPage() {
     let mounted = true;
     async function fetchFx() {
       try {
+        setFxLoading(true);
         const res = await fetch(COINGECKO_USD_IDR);
         if (!mounted || !res.ok) return;
         const j = await res.json();
         const raw = j?.tether?.idr;
         const n = normalizeIdr(raw);
         if (n) setUsdIdr(prev => (!prev || Math.abs(prev - n) / n > 0.0005 ? n : prev));
-      } catch (e) {}
+      } catch (e) {
+      } finally {
+        if (mounted) setFxLoading(false);
+      }
     }
     fetchFx();
     pollFxRef.current = setInterval(fetchFx, 60_000);
@@ -451,7 +469,11 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">Portfolio</h1>
-            <p className="text-xs text-gray-500">Updated: {lastTick ? new Date(lastTick).toLocaleTimeString() : "-"} • USD/IDR ≈ <span className="text-green-400 font-medium">{usdIdr ? Number(usdIdr).toLocaleString("id-ID") : "-"}</span></p>
+            <p className="text-xs text-gray-500">Updated: {lastTick ? new Date(lastTick).toLocaleTimeString() : "-"} • USD/IDR ≈ 
+              <span className="text-green-400 font-medium ml-1">
+                {fxLoading ? <LoadingSpinner size="small" /> : (usdIdr ? Number(usdIdr).toLocaleString("id-ID") : "-")}
+              </span>
+            </p>
           </div>
 
           <div className="flex items-center gap-3">
