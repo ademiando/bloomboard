@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartContainerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function Home() {
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: "NASDAQ:NVDA",
+      symbol: "NASDAQ:NVDA", // Chart NVDA
       interval: "D",
       timezone: "Etc/UTC",
       theme: "dark",
