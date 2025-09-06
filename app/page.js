@@ -5,13 +5,16 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
-  const chartContainerRef = useRef(null);
-  const wrapperRef = useRef(null);
+  const chartContainerRef = useRef(null); // tempat tradingview mount
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // konstanta tinggi default chart (h-96 = 24rem = 384px)
+  const DEFAULT_CHART_HEIGHT_PX = 384;
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    // bersihkan dulu sebelum inject
     chartContainerRef.current.innerHTML = "";
 
     const script = document.createElement("script");
@@ -43,23 +46,65 @@ export default function Home() {
     };
   }, []);
 
-  const toggleFullscreen = async () => {
-    if (!wrapperRef.current) return;
+  useEffect(() => {
+    // handler untuk perubahan fullscreen (termasuk ketika user tekan Esc)
+    const onFull = () => {
+      const isFs = document.fullscreenElement === chartContainerRef.current;
+      setIsFullscreen(!!isFs);
 
-    if (!document.fullscreenElement) {
-      await wrapperRef.current.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      await document.exitFullscreen();
-      setIsFullscreen(false);
+      // sesuaikan tinggi chart saat masuk/keluar fullscreen
+      if (isFs) {
+        // pastikan elemen memenuhi layar
+        chartContainerRef.current.style.height = "100vh";
+        chartContainerRef.current.style.width = "100%";
+      } else {
+        // kembalikan ke tinggi default
+        chartContainerRef.current.style.height = `${DEFAULT_CHART_HEIGHT_PX}px`;
+        chartContainerRef.current.style.width = "100%";
+      }
+    };
+
+    document.addEventListener("fullscreenchange", onFull);
+    return () => document.removeEventListener("fullscreenchange", onFull);
+  }, []);
+
+  const enterFullscreen = async () => {
+    if (!chartContainerRef.current) return;
+    try {
+      // sebelum request, set height agar tidak "melebar" sementara
+      chartContainerRef.current.style.height = "100vh";
+      chartContainerRef.current.style.width = "100%";
+      await chartContainerRef.current.requestFullscreen();
+      // setIsFullscreen akan di-handle oleh event fullscreenchange
+    } catch (err) {
+      // jika gagal, kembalikan tampilan
+      chartContainerRef.current.style.height = `${DEFAULT_CHART_HEIGHT_PX}px`;
+      chartContainerRef.current.style.width = "100%";
     }
+  };
+
+  const exitFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        // perubahan height dikembalikan oleh fullscreenchange handler
+      }
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!chartContainerRef.current) return;
+    if (!document.fullscreenElement) enterFullscreen();
+    else exitFullscreen();
   };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
         <div>
-          {/* Judul & Subjudul */}
+          {/* Judul & Subjudul (tidak diubah selain styling) */}
           <h1 className="text-4xl font-bold text-white">
             Bloomboard — Portfolio Management & Trading Lab
           </h1>
@@ -110,47 +155,62 @@ export default function Home() {
         </div>
 
         {/* Chart + Gambar */}
-        <div
-          ref={wrapperRef}
-          className="flex flex-col items-center justify-center w-full"
-        >
-          {/* TradingView chart */}
-          <div className="relative w-full h-96 rounded-lg overflow-hidden border border-gray-800">
+        <div className="flex flex-col items-center justify-center w-full">
+          {/* TradingView chart container (hanya elemen ini yang fullscreen) */}
+          <div
+            className="relative w-full rounded-lg overflow-hidden border border-gray-800 mb-6"
+            // set default height via inline style to match Tailwind h-96 (384px)
+            style={{ height: `${DEFAULT_CHART_HEIGHT_PX}px` }}
+          >
+            {/* chart mount point */}
             <div ref={chartContainerRef} className="w-full h-full" />
+
+            {/* fullscreen button — unobtrusive, won't cover tradingview toolbar */}
             <button
               onClick={toggleFullscreen}
-              className="absolute top-2 right-2 z-10 bg-gray-900/80 backdrop-blur text-white px-3 py-1 text-xs rounded-md hover:bg-gray-700"
+              className="absolute top-2 right-2 z-20 bg-gray-900/80 backdrop-blur text-white px-3 py-1 text-xs rounded-md hover:bg-gray-700"
+              aria-label="Toggle fullscreen"
+              title="Toggle fullscreen (chart only)"
             >
-              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+              ⛶
             </button>
           </div>
 
-          {/* GIF + SVG */}
-          <div className="mt-6 flex flex-row items-center justify-center gap-6 w-full">
-            <Image
-              src="/alocation.gif"
-              alt="Allocation Chart"
-              width={220}
-              height={140}
-              unoptimized
-              className="w-[90%] max-w-[220px] rounded-lg shadow-md border border-gray-800"
-            />
-            <Image
-              src="/hero-illustration.svg"
-              alt="Portfolio Illustration"
-              width={220}
-              height={140}
-              className="w-[90%] max-w-[220px] rounded-lg shadow-md border border-gray-800"
-            />
+          {/* GIF + SVG sejajar di desktop, tapi di mobile dikecilkan supaya tidak melebar */}
+          <div className="mt-6 flex flex-col lg:flex-row items-center justify-center gap-6 w-full">
+            {/* wrapper 1 */}
+            <div className="flex justify-center w-full">
+              <div className="w-[85%] max-w-[220px] lg:max-w-[300px] bg-[#0b1320] rounded-lg p-2 flex items-center justify-center border border-gray-800">
+                <Image
+                  src="/alocation.gif"
+                  alt="Allocation Chart"
+                  width={400}
+                  height={250}
+                  unoptimized
+                  className="w-full h-auto object-contain rounded-md"
+                />
+              </div>
+            </div>
+
+            {/* wrapper 2 */}
+            <div className="flex justify-center w-full">
+              <div className="w-[85%] max-w-[220px] lg:max-w-[300px] bg-[#0b1320] rounded-lg p-2 flex items-center justify-center border border-gray-800">
+                <Image
+                  src="/hero-illustration.svg"
+                  alt="Portfolio Illustration"
+                  width={400}
+                  height={250}
+                  className="w-full h-auto object-contain rounded-md"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Section Features */}
+      {/* Section Features (tidak diubah selain styling) */}
       <section id="features" className="mt-20">
-        <h2 className="text-3xl font-bold text-white text-center">
-          Key Features
-        </h2>
+        <h2 className="text-3xl font-bold text-white text-center">Key Features</h2>
         <p className="text-gray-400 text-center mt-2 max-w-2xl mx-auto">
           Everything you need to manage, analyze, and grow your portfolio in one
           integrated platform.
@@ -158,9 +218,7 @@ export default function Home() {
 
         <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-[#0b1320] p-6 rounded-lg shadow-md">
-            <h3 className="text-lg font-semibold text-white">
-              Portfolio Tracking
-            </h3>
+            <h3 className="text-lg font-semibold text-white">Portfolio Tracking</h3>
             <p className="text-sm text-gray-400 mt-2">
               Track asset allocation, performance history, and growth trends.
             </p>
@@ -172,9 +230,7 @@ export default function Home() {
             </p>
           </div>
           <div className="bg-[#0b1320] p-6 rounded-lg shadow-md">
-            <h3 className="text-lg font-semibold text-white">
-              News & Alerts
-            </h3>
+            <h3 className="text-lg font-semibold text-white">News & Alerts</h3>
             <p className="text-sm text-gray-400 mt-2">
               Stay updated with market news and instant custom alerts.
             </p>
