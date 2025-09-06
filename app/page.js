@@ -122,16 +122,16 @@ export default function Home() {
             <Image
               src="/alocation.gif"
               alt="Allocation Chart"
-              width={300}
-              height={200}
+              width={250}
+              height={160}
               unoptimized
               className="rounded-lg shadow-md border border-gray-800"
             />
             <Image
               src="/hero-illustration.svg"
               alt="Portfolio Illustration"
-              width={300}
-              height={200}
+              width={250}
+              height={160}
               className="rounded-lg shadow-md border border-gray-800"
             />
           </div>
