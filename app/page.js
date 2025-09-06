@@ -69,7 +69,7 @@ export default function Home() {
       </header>
 
       {/* Hero Section */}
-      <div className="max-w-6xl mx-auto px-4 py-16">
+      <div className="max-w-6xl mx-auto px-4 py-12">
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
           <div>
             <h1 className="text-5xl font-bold text-white leading-tight">
@@ -97,31 +97,9 @@ export default function Home() {
                 Learn more
               </a>
             </div>
-
-            {/* Feature cards */}
-            <div className="mt-10 grid grid-cols-3 gap-5">
-              <div className="bg-[#0b1320] p-5 rounded-xl shadow-md">
-                <h4 className="text-white font-semibold">Realtime Quotes</h4>
-                <p className="text-xs text-gray-400 mt-2">
-                  Finnhub / provider integration for live prices.
-                </p>
-              </div>
-              <div className="bg-[#0b1320] p-5 rounded-xl shadow-md">
-                <h4 className="text-white font-semibold">AI Strategy Lab</h4>
-                <p className="text-xs text-gray-400 mt-2">
-                  Generate trading robots & backtest code with OpenAI.
-                </p>
-              </div>
-              <div className="bg-[#0b1320] p-5 rounded-xl shadow-md">
-                <h4 className="text-white font-semibold">TradingView Charts</h4>
-                <p className="text-xs text-gray-400 mt-2">
-                  Official TradingView Advanced Chart widget embedded.
-                </p>
-              </div>
-            </div>
           </div>
 
-          {/* Chart + Gambar */}
+          {/* Chart + GIF + SVG */}
           <div className="flex flex-col items-center justify-center w-full">
             {/* TradingView chart + tombol fullscreen */}
             <div className="relative w-full h-96 mb-8 rounded-xl overflow-hidden border border-gray-800 shadow-lg">
@@ -135,48 +113,23 @@ export default function Home() {
               </button>
             </div>
 
-            {/* GIF + SVG atas bawah */}
-            <div className="flex flex-col gap-6 w-full">
+            {/* GIF + SVG sampingan */}
+            <div className="flex flex-row gap-6 w-full justify-center">
               <Image
                 src="/alocation.gif"
                 alt="Allocation Chart"
-                width={600}
-                height={300}
+                width={280}
+                height={200}
                 unoptimized
-                className="rounded-xl shadow-lg mx-auto"
+                className="rounded-xl shadow-lg border border-gray-800"
               />
               <Image
                 src="/hero-illustration.svg"
                 alt="Hero"
-                width={600}
-                height={300}
-                className="rounded-xl shadow-lg mx-auto"
+                width={280}
+                height={200}
+                className="rounded-xl shadow-lg border border-gray-800"
               />
-            </div>
-          </div>
-        </section>
-
-        {/* Section Features */}
-        <section id="features" className="mt-20">
-          <h2 className="text-3xl font-bold text-white">Features</h2>
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-[#0b1320] p-6 rounded-lg shadow-md">
-              <h3 className="font-semibold">Portfolio Tracking</h3>
-              <p className="text-xs text-gray-400 mt-2">
-                Per-device Supabase storage, CRUD UI.
-              </p>
-            </div>
-            <div className="bg-[#0b1320] p-6 rounded-lg shadow-md">
-              <h3 className="font-semibold">AI Insights</h3>
-              <p className="text-xs text-gray-400 mt-2">
-                ChatGPT-backed assistant for trading strategies.
-              </p>
-            </div>
-            <div className="bg-[#0b1320] p-6 rounded-lg shadow-md">
-              <h3 className="font-semibold">News & Alerts</h3>
-              <p className="text-xs text-gray-400 mt-2">
-                News API integration & watchlist alerts.
-              </p>
             </div>
           </div>
         </section>
