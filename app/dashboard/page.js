@@ -4,22 +4,20 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Portfolio Dashboard — single-file React client component (final)
+ * Portfolio Dashboard — final single-file React client component
  *
- * Perbaikan & catatan:
- * - numeric coercion di-load & saat operasi (shares, avgPrice, investedUSD, lastPriceUSD, marketValueUSD)
- * - display currency disimpan di localStorage ("pf_display_ccy_v2")
- * - polling saham via server proxy: /api/price?symbols=...
- * - search via server proxy: /api/yahoo/search?q=...
- * - export / import CSV di bagian bawah
- * - jangan ubah UI / flow yang sudah ada — hanya perbaikan agar berjalan
+ * Notes:
+ * - Stocks fetched via server proxy: /api/yahoo/quote?symbol=a,b,c (this file uses that)
+ * - Search uses /api/yahoo/search?q=... (server proxy)
+ * - Display currency persisted to localStorage pf_display_ccy_v2
+ * - All numeric fields coerced to numbers to avoid NaN/strings causing zero PnL
+ * - Export/Import CSV at bottom
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`; // proxy for search
-const YAHOO_QUOTE_BULK = (symbols) => `/api/price?symbols=${encodeURIComponent(symbols)}`; // proxy bulk quotes (preferred)
-const YAHOO_QUOTE_SINGLE = (symbol) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`; // fallback single-symbol quote
+const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
+const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`; // accepts "AAPL,MSFT" etc
 const COINGECKO_PRICE = (ids) =>
   `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
@@ -186,7 +184,7 @@ export default function PortfolioDashboard() {
           return;
         }
 
-        // For stocks: use server proxy /api/yahoo/search (most common) — be tolerant to shapes
+        // Stocks search: try proxy /api/yahoo/search
         const proxyCandidates = [
           YAHOO_SEARCH,
           (t) => `/api/search?q=${encodeURIComponent(t)}`,
@@ -200,7 +198,7 @@ export default function PortfolioDashboard() {
             payload = await res.json();
             if (payload) break;
           } catch (e) {
-            // try next
+            // continue
           }
         }
         if (!payload) { setSuggestions([]); return; }
@@ -253,7 +251,6 @@ export default function PortfolioDashboard() {
   }, [query, searchMode]);
 
   /* ===================== POLLING PRICES ===================== */
-  // use refs to prevent stale closures
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -299,34 +296,31 @@ export default function PortfolioDashboard() {
           return;
         }
 
-        // Try bulk proxy first: /api/price?symbols=a,b,c
+        // Try bulk call to /api/yahoo/quote?symbol=a,b,c
         let j = null;
         try {
-          const res = await fetch(YAHOO_QUOTE_BULK(symbols.join(",")));
-          if (res.ok) {
-            j = await res.json();
-          }
+          const res = await fetch(YAHOO_QUOTE(symbols.join(",")));
+          if (res.ok) j = await res.json();
         } catch (e) {
-          // continue to fallback
+          // fallback handled below
         }
 
         const map = {};
         if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
           j.quoteResponse.result.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
         } else if (Array.isArray(j)) {
-          // proxy returning array
           j.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
         } else {
-          // Fallback: call single-symbol proxy for each symbol
+          // fallback: call single symbol endpoint per ticker if bulk failed
           for (const s of symbols) {
             try {
-              const resS = await fetch(YAHOO_QUOTE_SINGLE(s));
+              const resS = await fetch(YAHOO_QUOTE(s));
               if (!resS.ok) continue;
               const js = await resS.json();
               const q = js?.quoteResponse?.result?.[0] || (Array.isArray(js) ? js[0] : null);
               if (q && q.symbol) map[q.symbol] = q;
             } catch (e) {
-              // ignore and continue
+              // ignore
             }
           }
         }
@@ -335,7 +329,6 @@ export default function PortfolioDashboard() {
           if (a.type === "stock" && map[a.symbol]) {
             const q = map[a.symbol];
             const price = toNum(q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? 0);
-            // detect IDR (IDX)
             const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
             let priceUSD = price;
             if (looksLikeId) {
@@ -346,6 +339,7 @@ export default function PortfolioDashboard() {
           }
           return ensureNumericAsset(a);
         }));
+
         setLastTick(Date.now());
         if (isInitialLoading && mounted) setIsInitialLoading(false);
       } catch (e) {
