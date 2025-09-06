@@ -1,17 +1,32 @@
+// app/dashboard/page.jsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
-Portfolio Dashboard — single-file React component
-Perbaikan: numeric coercion, persist display currency, export/import CSV, robust polling
-*/
+ * Portfolio Dashboard — full single-file React client component
+ *
+ * Features implemented:
+ * - Search crypto (CoinGecko) & stocks (via server proxy /api/search and /api/price)
+ * - Add asset (crypto / IDX / US)
+ * - Live polling for prices (CoinGecko + proxy to Yahoo)
+ * - Display currency toggle (USD / IDR) persisted to localStorage
+ * - Donut allocation chart (SVG)
+ * - Buy & Sell: modal form accepts qty & price (per unit) -> weighted avg & realized P/L
+ * - Delete with confirmation
+ * - Persist assets & realized P/L & display currency to localStorage
+ * - Export / Import CSV (merge or replace)
+ * - Defensive numeric handling (no strings causing NaN)
+ * - Avoids recreating intervals by using refs
+ *
+ * Paste this file into app/dashboard/page.jsx or components/PortfolioDashboard.jsx (use client).
+ */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
-const YAHOO_QUOTE = (symbols) =>
-  `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`;
+const YAHOO_QUOTE_PROXY = (symbols) => `/api/price?symbols=${encodeURIComponent(symbols)}`;
+// internal search proxy (optional — include in server if you want)
+const YAHOO_SEARCH_PROXY = (q) => `/api/search?q=${encodeURIComponent(q)}`;
 const COINGECKO_PRICE = (ids) =>
   `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
@@ -43,7 +58,6 @@ function normalizeIdr(v) {
   return Math.round(n * 1000);
 }
 function ensureNumericAsset(a) {
-  // ensure numeric fields and defaults
   return {
     ...a,
     shares: toNum(a.shares || 0),
@@ -56,7 +70,7 @@ function ensureNumericAsset(a) {
 }
 
 /* ===================== DONUT SVG ===================== */
-function Donut({ data = [], size = 180, inner = 60 }) {
+function Donut({ data = [], size = 160, inner = 48 }) {
   const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2,
     cy = size / 2,
@@ -94,8 +108,8 @@ function Donut({ data = [], size = 180, inner = 60 }) {
   );
 }
 
-/* ===================== COMPONENT ===================== */
-export default function PortfolioDashboard() {
+/* ===================== MAIN COMPONENT ===================== */
+export default function PortfolioDashboardPage() {
   /* ---------- load & normalize persisted state ---------- */
   const loadAssetsFromLS = () => {
     try {
@@ -132,7 +146,7 @@ export default function PortfolioDashboard() {
 
   /* ---------- search/add UI ---------- */
   const [openAdd, setOpenAdd] = useState(false);
-  const [searchMode, setSearchMode] = useState("crypto");
+  const [searchMode, setSearchMode] = useState("crypto"); // crypto | id | us
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
@@ -142,6 +156,7 @@ export default function PortfolioDashboard() {
 
   /* ---------- live quotes ---------- */
   const [lastTick, setLastTick] = useState(null);
+  const [priceChangeMap, setPriceChangeMap] = useState({}); // store last price to detect up/down
 
   /* ---------- trade modal ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
@@ -183,21 +198,27 @@ export default function PortfolioDashboard() {
             source: "coingecko", type: "crypto",
           })));
         } else {
-          const res = await fetch(YAHOO_SEARCH(q));
-          if (!res.ok) { setSuggestions([]); return; }
-          const j = await res.json();
-          const list = (j.quotes || []).slice(0, 60).map((it) => ({
-            symbol: it.symbol,
-            display: it.shortname || it.longname || it.symbol,
-            exchange: it.exchange,
-            currency: it.currency,
-            source: "yahoo",
-            type: "stock",
-          }));
-          if (searchMode === "id") {
-            setSuggestions(list.filter((x) => x.symbol?.toUpperCase().includes(".JK") || String(x.exchange || "").toUpperCase().includes("JAKARTA") || String(x.exchange || "").toUpperCase().includes("IDX")).slice(0, 30));
-          } else {
-            setSuggestions(list.filter((x) => !x.symbol?.endsWith(".JK")).slice(0, 30));
+          // use server-side proxy for search (optional). If not available, fallback to nothing.
+          try {
+            const res = await fetch(YAHOO_SEARCH_PROXY(q));
+            if (!res.ok) { setSuggestions([]); return; }
+            const j = await res.json();
+            const list = (j.quotes || []).slice(0, 60).map((it) => ({
+              symbol: it.symbol,
+              display: it.shortname || it.longname || it.symbol,
+              exchange: it.exchange,
+              currency: it.currency,
+              source: "yahoo",
+              type: "stock",
+            }));
+            if (searchMode === "id") {
+              setSuggestions(list.filter((x) => x.symbol?.toUpperCase().includes(".JK") || String(x.exchange || "").toUpperCase().includes("JAKARTA") || String(x.exchange || "").toUpperCase().includes("IDX")).slice(0, 30));
+            } else {
+              setSuggestions(list.filter((x) => !x.symbol?.endsWith(".JK")).slice(0, 30));
+            }
+          } catch (e) {
+            // no search proxy available
+            setSuggestions([]);
           }
         }
       } catch (e) { console.warn("search err", e); setSuggestions([]); }
@@ -218,13 +239,20 @@ export default function PortfolioDashboard() {
         const res = await fetch(COINGECKO_PRICE(ids.join(",")));
         if (!mounted || !res.ok) return;
         const j = await res.json();
-        setAssets(prev => prev.map(a => {
-          if (a.type === "crypto" && j[a.coingeckoId] && typeof j[a.coingeckoId].usd === "number") {
-            const last = toNum(j[a.coingeckoId].usd);
-            return { ...ensureNumericAsset(a), lastPriceUSD: last, marketValueUSD: last * toNum(a.shares || 0) };
-          }
-          return ensureNumericAsset(a);
-        }));
+        setAssets(prev => {
+          const next = prev.map(a => {
+            if (a.type === "crypto" && j[a.coingeckoId] && typeof j[a.coingeckoId].usd === "number") {
+              const last = toNum(j[a.coingeckoId].usd);
+              const prevLast = a.lastPriceUSD || 0;
+              if (last !== prevLast) {
+                setPriceChangeMap(m => ({ ...m, [a.id]: last - prevLast }));
+              }
+              return ensureNumericAsset({ ...a, lastPriceUSD: last, marketValueUSD: last * toNum(a.shares || 0) });
+            }
+            return ensureNumericAsset(a);
+          });
+          return next;
+        });
         setLastTick(Date.now());
         if (isInitialLoading && mounted) setIsInitialLoading(false);
       } catch (e) { console.warn("pollCg err", e); }
@@ -243,29 +271,37 @@ export default function PortfolioDashboard() {
           if (isInitialLoading && mounted) setIsInitialLoading(false);
           return;
         }
-        const res = await fetch(YAHOO_QUOTE(symbols.join(",")));
+        // call proxy that queries Yahoo (server-side) to avoid CORS
+        const res = await fetch(YAHOO_QUOTE_PROXY(symbols.join(",")));
         if (!mounted || !res.ok) return;
         const j = await res.json();
         const map = {};
         if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
           j.quoteResponse.result.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
         }
-        setAssets(prev => prev.map(a => {
-          if (a.type === "stock" && map[a.symbol]) {
-            const q = map[a.symbol];
-            // use best available market price
-            const rawPrice = toNum(q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? 0);
-            // detect if quoted in IDR
-            const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
-            let priceUSD = rawPrice;
-            if (looksLikeId) {
-              const fx = usdIdrRef.current || 1;
-              priceUSD = fx > 0 ? (rawPrice / fx) : rawPrice;
+        setAssets(prev => {
+          const next = prev.map(a => {
+            if (a.type === "stock" && map[a.symbol]) {
+              const q = map[a.symbol];
+              // use best available market price (regular, post, pre)
+              const rawPrice = toNum(q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? 0);
+              // detect if quoted in IDR (IDX)
+              const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
+              let priceUSD = rawPrice;
+              if (looksLikeId) {
+                const fx = usdIdrRef.current || 1;
+                priceUSD = fx > 0 ? (rawPrice / fx) : rawPrice;
+              }
+              const prevLast = a.lastPriceUSD || 0;
+              if (priceUSD !== prevLast) {
+                setPriceChangeMap(m => ({ ...m, [a.id]: priceUSD - prevLast }));
+              }
+              return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
             }
-            return { ...ensureNumericAsset(a), lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) };
-          }
-          return ensureNumericAsset(a);
-        }));
+            return ensureNumericAsset(a);
+          });
+          return next;
+        });
         setLastTick(Date.now());
         if (isInitialLoading && mounted) setIsInitialLoading(false);
       } catch (e) { console.warn("pollYf err", e); }
@@ -442,7 +478,7 @@ export default function PortfolioDashboard() {
     return { invested, market, pnl, pnlPct };
   }, [rows]);
 
-  /* ===================== Donut ===================== */
+  /* ===================== Donut data & logic ===================== */
   const donutData = useMemo(() => {
     const sortedRows = rows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
     const topFive = sortedRows.slice(0, 4);
@@ -456,20 +492,17 @@ export default function PortfolioDashboard() {
 
   /* ===================== CSV Export / Import ===================== */
   function exportCSV() {
-    // include assets + realized + displayCcy + usdIdr
     const headers = ["id","type","coingeckoId","symbol","name","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt"];
     const lines = [headers.join(",")];
     assets.forEach(a => {
       const aa = ensureNumericAsset(a);
       const row = headers.map(h => {
         const v = aa[h];
-        // escape comma in name
         if (typeof v === "string" && v.includes(",")) return `"${v.replace(/"/g, '""')}"`;
         return (v === undefined || v === null) ? "" : String(v);
       }).join(",");
       lines.push(row);
     });
-    // metadata row
     lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr}`);
     const csv = lines.join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -492,7 +525,6 @@ export default function PortfolioDashboard() {
       const header = lines[0].split(",").map(h => h.replace(/^"|"$/g,"").trim());
       const dataLines = lines.slice(1).filter(l => !l.startsWith("#META"));
       const imported = dataLines.map(line => {
-        // naive CSV parse that supports quoted fields
         const values = [];
         let cur = "";
         let insideQuote = false;
@@ -506,7 +538,6 @@ export default function PortfolioDashboard() {
         values.push(cur);
         const obj = {};
         header.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
-        // coerce numeric fields
         const parsed = {
           id: obj.id || `imp:${obj.symbol || ""}:${Date.now()}`,
           type: obj.type || "stock",
@@ -522,7 +553,6 @@ export default function PortfolioDashboard() {
         };
         return ensureNumericAsset(parsed);
       });
-      // parse meta if present
       const metaLine = lines.find(l => l.startsWith("#META"));
       if (metaLine) {
         try {
@@ -537,7 +567,6 @@ export default function PortfolioDashboard() {
         } catch (e) { /* ignore */ }
       }
       if (merge) {
-        // merge by symbol (replace existing with imported if same symbol)
         const map = {};
         assets.forEach(a => map[a.symbol] = ensureNumericAsset(a));
         imported.forEach(i => map[i.symbol] = ensureNumericAsset(i));
@@ -559,7 +588,7 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* ===================== UI helpers ===================== */
+  /* ===================== small utilities for UI ===================== */
   function colorForIndex(i) {
     const palette = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#FF9CEE","#B28DFF","#FFB26B","#6BFFA0","#FF6BE5","#00C49F"];
     return palette[i % palette.length];
