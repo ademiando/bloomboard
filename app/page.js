@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
@@ -12,7 +14,8 @@ export default function Home() {
     chartContainerRef.current.innerHTML = "";
 
     const script = document.createElement("script");
-    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.src =
+      "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
     script.type = "text/javascript";
     script.async = true;
     script.innerHTML = JSON.stringify({
@@ -24,8 +27,8 @@ export default function Home() {
       style: "1",
       locale: "en",
       allow_symbol_change: true,
-      withdateranges: true,      // timeframe selector
-      hide_top_toolbar: false,   // show toolbar
+      withdateranges: true, // timeframe selector
+      hide_top_toolbar: false, // show toolbar
       hide_legend: false,
       support_host: "https://www.tradingview.com",
     });
@@ -48,8 +51,11 @@ export default function Home() {
             Bloomboard — Portfolio Management & Trading Lab
           </h1>
           <p className="mt-4 text-gray-300">
-            Track portfolios in realtime, connect Wallet, TradingView charts, get AI insights, and manage positions — all in one beautiful app.
+            Track portfolios in realtime, connect Wallet, TradingView charts,
+            get AI insights, and manage positions — all in one beautiful app.
           </p>
+
+          {/* Tombol dengan hover animasi */}
           <div className="mt-6 flex gap-3">
             <Link
               href="/dashboard"
@@ -66,6 +72,8 @@ export default function Home() {
               Learn more
             </a>
           </div>
+
+          {/* Fitur kecil */}
           <div className="mt-8 grid grid-cols-3 gap-4">
             <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
               <h4 className="text-white font-semibold">Realtime Quotes</h4>
@@ -89,15 +97,21 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col items-center justify-center w-full">
-          {/* TradingView chart pakai ref */}
+          {/* TradingView chart */}
           <div
             ref={chartContainerRef}
             className="w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800"
           />
-          <Image src="/hero-illustration.svg" alt="Hero" width={600} height={350} />
+          <Image
+            src="/hero-illustration.svg"
+            alt="Hero"
+            width={600}
+            height={350}
+          />
         </div>
       </section>
 
+      {/* Section Features */}
       <section id="features" className="mt-16">
         <h2 className="text-2xl font-bold text-white">Features</h2>
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
