@@ -1,26 +1,18 @@
-// app/api/yahoo/quote/route.js
 import { NextResponse } from "next/server";
 
 export async function GET(req) {
-  try {
-    const url = new URL(req.url);
-    const symbols = url.searchParams.get("symbols") || "";
-    if (!symbols) return NextResponse.json({ quoteResponse: { result: [] } });
+  const { searchParams } = new URL(req.url);
+  const ticker = searchParams.get("symbol");
+  if (!ticker) return NextResponse.json({ error: "Missing symbol" }, { status: 400 });
 
-    const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        Accept: "application/json, text/plain, */*",
-      },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      return NextResponse.json({ quoteResponse: { result: [] } }, { status: 502 });
-    }
-    const json = await res.json();
-    return NextResponse.json(json);
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`,
+      { cache: "no-store" }
+    );
+    const data = await res.json();
+    return NextResponse.json(data);
   } catch (err) {
-    console.error("API /api/yahoo/quote error:", err);
-    return NextResponse.json({ quoteResponse: { result: [] } }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
