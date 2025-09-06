@@ -1,10 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export default function Home() {
+  const chartContainerRef = useRef(null);
+
   useEffect(() => {
-    // Inject TradingView script
+    if (!chartContainerRef.current) return;
+
+    // Clear container sebelum inject ulang
+    chartContainerRef.current.innerHTML = "";
+
     const script = document.createElement("script");
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
     script.type = "text/javascript";
@@ -18,14 +24,20 @@ export default function Home() {
       style: "1",
       locale: "en",
       allow_symbol_change: true,
-      enable_publishing: false,
-      withdateranges: true,      // enable timeframe selector
-      hide_top_toolbar: false,   // show top toolbar
-      hide_legend: false,        // show legend
-      studies: [],               // indicators, empty means default
+      withdateranges: true,      // timeframe selector
+      hide_top_toolbar: false,   // show toolbar
+      hide_legend: false,
       support_host: "https://www.tradingview.com",
     });
-    document.getElementById("tradingview-snp500").appendChild(script);
+
+    chartContainerRef.current.appendChild(script);
+
+    // Cleanup biar ga error saat unmount
+    return () => {
+      if (chartContainerRef.current) {
+        chartContainerRef.current.innerHTML = "";
+      }
+    };
   }, []);
 
   return (
@@ -77,11 +89,11 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col items-center justify-center w-full">
-          {/* TradingView chart di atas hero image */}
+          {/* TradingView chart pakai ref */}
           <div
-            id="tradingview-snp500"
+            ref={chartContainerRef}
             className="w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800"
-          ></div>
+          />
           <Image src="/hero-illustration.svg" alt="Hero" width={600} height={350} />
         </div>
       </section>
