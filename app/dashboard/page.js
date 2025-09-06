@@ -4,29 +4,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Portfolio Dashboard — full single-file React client component
+ * Portfolio Dashboard — single-file React client component (rewritten final)
  *
- * Features implemented:
- * - Search crypto (CoinGecko) & stocks (via server proxy /api/search and /api/price)
- * - Add asset (crypto / IDX / US)
- * - Live polling for prices (CoinGecko + proxy to Yahoo)
- * - Display currency toggle (USD / IDR) persisted to localStorage
- * - Donut allocation chart (SVG)
- * - Buy & Sell: modal form accepts qty & price (per unit) -> weighted avg & realized P/L
- * - Delete with confirmation
- * - Persist assets & realized P/L & display currency to localStorage
- * - Export / Import CSV (merge or replace)
- * - Defensive numeric handling (no strings causing NaN)
- * - Avoids recreating intervals by using refs
- *
- * Paste this file into app/dashboard/page.jsx or components/PortfolioDashboard.jsx (use client).
+ * Perbaikan & catatan:
+ * - numeric coercion di-load & saat operasi (shares, avgPrice, investedUSD, lastPriceUSD, marketValueUSD)
+ * - display currency disimpan di localStorage ("pf_display_ccy_v2")
+ * - polling saham via server proxy: /api/price?symbols=...
+ * - search via server proxy: /api/yahoo/search?q=...
+ * - export / import CSV di bagian bawah
+ * - jangan ubah UI / flow yang sudah ada — hanya perbaikan agar berjalan
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-const YAHOO_QUOTE_PROXY = (symbols) => `/api/price?symbols=${encodeURIComponent(symbols)}`;
-// internal search proxy (optional — include in server if you want)
-const YAHOO_SEARCH_PROXY = (q) => `/api/search?q=${encodeURIComponent(q)}`;
+const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`; // server proxy route for search
+const YAHOO_QUOTE_PROXY = (symbols) => `/api/price?symbols=${encodeURIComponent(symbols)}`; // server proxy route for quotes
 const COINGECKO_PRICE = (ids) =>
   `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
@@ -70,7 +62,7 @@ function ensureNumericAsset(a) {
 }
 
 /* ===================== DONUT SVG ===================== */
-function Donut({ data = [], size = 160, inner = 48 }) {
+function Donut({ data = [], size = 180, inner = 60 }) {
   const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2,
     cy = size / 2,
@@ -109,20 +101,19 @@ function Donut({ data = [], size = 160, inner = 48 }) {
 }
 
 /* ===================== MAIN COMPONENT ===================== */
-export default function PortfolioDashboardPage() {
-  /* ---------- load & normalize persisted state ---------- */
-  const loadAssetsFromLS = () => {
+export default function PortfolioDashboard() {
+  /* ---------- persistent state ---------- */
+  const loadAssets = () => {
     try {
       if (!isBrowser) return [];
       const raw = JSON.parse(localStorage.getItem("pf_assets_v2") || "[]");
       if (!Array.isArray(raw)) return [];
       return raw.map(ensureNumericAsset);
-    } catch (e) {
-      console.warn("loadAssets err", e);
+    } catch {
       return [];
     }
   };
-  const [assets, setAssets] = useState(loadAssetsFromLS);
+  const [assets, setAssets] = useState(loadAssets);
 
   const loadRealized = () => {
     try {
@@ -140,13 +131,14 @@ export default function PortfolioDashboardPage() {
   };
   const [displayCcy, setDisplayCcy] = useState(loadDisplayCcy);
 
+  /* ---------- UI & FX ---------- */
   const [usdIdr, setUsdIdr] = useState(16000);
   const [fxLoading, setFxLoading] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  /* ---------- search/add UI ---------- */
+  /* ---------- search/add ---------- */
   const [openAdd, setOpenAdd] = useState(false);
-  const [searchMode, setSearchMode] = useState("crypto"); // crypto | id | us
+  const [searchMode, setSearchMode] = useState("crypto");
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
@@ -156,29 +148,22 @@ export default function PortfolioDashboardPage() {
 
   /* ---------- live quotes ---------- */
   const [lastTick, setLastTick] = useState(null);
-  const [priceChangeMap, setPriceChangeMap] = useState({}); // store last price to detect up/down
 
-  /* ---------- trade modal ---------- */
+  /* ---------- trade modal state ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
 
-  /* ---------- refs for stable polling ---------- */
-  const assetsRef = useRef(assets);
-  const usdIdrRef = useRef(usdIdr);
-  useEffect(() => { assetsRef.current = assets; }, [assets]);
-  useEffect(() => { usdIdrRef.current = usdIdr; }, [usdIdr]);
-
-  /* ---------- persist to localStorage ---------- */
+  /* ---------- local helpers: persist ---------- */
   useEffect(() => {
-    try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets)); } catch (e) { console.warn("ls save assets", e); }
+    try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {}
   }, [assets]);
   useEffect(() => {
-    try { localStorage.setItem("pf_realized_v2", String(realizedUSD)); } catch (e) { console.warn("ls save realized", e); }
+    try { localStorage.setItem("pf_realized_v2", String(realizedUSD)); } catch {}
   }, [realizedUSD]);
   useEffect(() => {
-    try { localStorage.setItem("pf_display_ccy_v2", displayCcy); } catch (e) { console.warn("ls save display", e); }
+    try { localStorage.setItem("pf_display_ccy_v2", displayCcy); } catch {}
   }, [displayCcy]);
 
-  /* ===================== SEARCH LOGIC ===================== */
+  /* ===================== SEARCH LOGIC (robust) ===================== */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 1) {
@@ -197,41 +182,87 @@ export default function PortfolioDashboardPage() {
             id: c.id, symbol: (c.symbol || "").toUpperCase(), display: c.name,
             source: "coingecko", type: "crypto",
           })));
-        } else {
-          // use server-side proxy for search (optional). If not available, fallback to nothing.
+          return;
+        }
+
+        // For stocks: use server proxy /api/yahoo/search (most common) — be tolerant to shapes
+        const proxyCandidates = [
+          YAHOO_SEARCH,
+          (t) => `/api/search?q=${encodeURIComponent(t)}`,
+        ];
+        let payload = null;
+        for (const p of proxyCandidates) {
           try {
-            const res = await fetch(YAHOO_SEARCH_PROXY(q));
-            if (!res.ok) { setSuggestions([]); return; }
-            const j = await res.json();
-            const list = (j.quotes || []).slice(0, 60).map((it) => ({
-              symbol: it.symbol,
-              display: it.shortname || it.longname || it.symbol,
-              exchange: it.exchange,
-              currency: it.currency,
-              source: "yahoo",
-              type: "stock",
-            }));
-            if (searchMode === "id") {
-              setSuggestions(list.filter((x) => x.symbol?.toUpperCase().includes(".JK") || String(x.exchange || "").toUpperCase().includes("JAKARTA") || String(x.exchange || "").toUpperCase().includes("IDX")).slice(0, 30));
-            } else {
-              setSuggestions(list.filter((x) => !x.symbol?.endsWith(".JK")).slice(0, 30));
-            }
+            const url = typeof p === "function" ? p(q) : p(q);
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            payload = await res.json();
+            if (payload) break;
           } catch (e) {
-            // no search proxy available
-            setSuggestions([]);
+            // try next
           }
         }
-      } catch (e) { console.warn("search err", e); setSuggestions([]); }
+        if (!payload) { setSuggestions([]); return; }
+
+        const rawList = payload.quotes || payload.result || (payload.data && payload.data.quotes) || (payload.finance && payload.finance.result && payload.finance.result.quotes) || payload.items || [];
+        const list = (Array.isArray(rawList) ? rawList : []).slice(0, 120).map((it) => {
+          const symbol =
+            it.symbol ||
+            it.ticker ||
+            it.symbolDisplay ||
+            it.id ||
+            (typeof it === "string" ? it : "");
+          const display =
+            it.shortname ||
+            it.shortName ||
+            it.longname ||
+            it.longName ||
+            it.name ||
+            it.title ||
+            it.displayName ||
+            it.description ||
+            symbol;
+          const exchange = it.exchange || it.fullExchangeName || it.exchangeName || it.exchDisp || "";
+          const currency = it.currency || it.quoteCurrency || "";
+          return {
+            symbol: (symbol || "").toString().toUpperCase(),
+            display: display || symbol,
+            exchange,
+            currency,
+            source: "yahoo",
+            type: "stock",
+          };
+        });
+
+        if (searchMode === "id") {
+          setSuggestions(list.filter((x) =>
+            (x.symbol || "").toUpperCase().includes(".JK") ||
+            String(x.exchange || "").toUpperCase().includes("JAKARTA") ||
+            String(x.exchange || "").toUpperCase().includes("IDX")
+          ).slice(0, 30));
+        } else {
+          setSuggestions(list.filter((x) => !(x.symbol || "").toUpperCase().endsWith(".JK")).slice(0, 30));
+        }
+      } catch (e) {
+        console.warn("search err", e);
+        setSuggestions([]);
+      }
     }, 320);
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
   /* ===================== POLLING PRICES ===================== */
+  // use refs to prevent stale closures
+  const assetsRef = useRef(assets);
+  const usdIdrRef = useRef(usdIdr);
+  useEffect(() => { assetsRef.current = assets; }, [assets]);
+  useEffect(() => { usdIdrRef.current = usdIdr; }, [usdIdr]);
+
   useEffect(() => {
     let mounted = true;
     async function pollCg() {
       try {
-        const ids = Array.from(new Set((assetsRef.current || []).filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId)));
+        const ids = Array.from(new Set(assetsRef.current.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId)));
         if (ids.length === 0) {
           if (isInitialLoading && mounted) setIsInitialLoading(false);
           return;
@@ -239,79 +270,71 @@ export default function PortfolioDashboardPage() {
         const res = await fetch(COINGECKO_PRICE(ids.join(",")));
         if (!mounted || !res.ok) return;
         const j = await res.json();
-        setAssets(prev => {
-          const next = prev.map(a => {
-            if (a.type === "crypto" && j[a.coingeckoId] && typeof j[a.coingeckoId].usd === "number") {
-              const last = toNum(j[a.coingeckoId].usd);
-              const prevLast = a.lastPriceUSD || 0;
-              if (last !== prevLast) {
-                setPriceChangeMap(m => ({ ...m, [a.id]: last - prevLast }));
-              }
-              return ensureNumericAsset({ ...a, lastPriceUSD: last, marketValueUSD: last * toNum(a.shares || 0) });
-            }
-            return ensureNumericAsset(a);
-          });
-          return next;
-        });
+        setAssets(prev => prev.map(a => {
+          if (a.type === "crypto" && j[a.coingeckoId] && typeof j[a.coingeckoId].usd === "number") {
+            const last = toNum(j[a.coingeckoId].usd);
+            return ensureNumericAsset({ ...a, lastPriceUSD: last, marketValueUSD: last * toNum(a.shares || 0) });
+          }
+          return ensureNumericAsset(a);
+        }));
         setLastTick(Date.now());
         if (isInitialLoading && mounted) setIsInitialLoading(false);
-      } catch (e) { console.warn("pollCg err", e); }
+      } catch (e) {
+        // silent
+      }
     }
     pollCg();
-    const intv = setInterval(pollCg, 6000);
-    return () => { mounted = false; clearInterval(intv); };
+    const id = setInterval(pollCg, 6000);
+    return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
   useEffect(() => {
     let mounted = true;
     async function pollYf() {
       try {
-        const symbols = Array.from(new Set((assetsRef.current || []).filter(a => a.type === "stock").map(a => a.symbol))).slice(0, 50);
+        const symbols = Array.from(new Set(assetsRef.current.filter(a => a.type === "stock").map(a => a.symbol))).slice(0, 50);
         if (symbols.length === 0) {
           if (isInitialLoading && mounted) setIsInitialLoading(false);
           return;
         }
-        // call proxy that queries Yahoo (server-side) to avoid CORS
+        // call server proxy for quotes
         const res = await fetch(YAHOO_QUOTE_PROXY(symbols.join(",")));
         if (!mounted || !res.ok) return;
         const j = await res.json();
         const map = {};
         if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
           j.quoteResponse.result.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
+        } else if (Array.isArray(j)) {
+          // some proxies may return array directly
+          j.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
         }
-        setAssets(prev => {
-          const next = prev.map(a => {
-            if (a.type === "stock" && map[a.symbol]) {
-              const q = map[a.symbol];
-              // use best available market price (regular, post, pre)
-              const rawPrice = toNum(q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? 0);
-              // detect if quoted in IDR (IDX)
-              const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
-              let priceUSD = rawPrice;
-              if (looksLikeId) {
-                const fx = usdIdrRef.current || 1;
-                priceUSD = fx > 0 ? (rawPrice / fx) : rawPrice;
-              }
-              const prevLast = a.lastPriceUSD || 0;
-              if (priceUSD !== prevLast) {
-                setPriceChangeMap(m => ({ ...m, [a.id]: priceUSD - prevLast }));
-              }
-              return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
+        setAssets(prev => prev.map(a => {
+          if (a.type === "stock" && map[a.symbol]) {
+            const q = map[a.symbol];
+            const price = toNum(q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? 0);
+            // detect IDR (IDX)
+            const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
+            let priceUSD = price;
+            if (looksLikeId) {
+              const fx = usdIdrRef.current || 1;
+              priceUSD = fx > 0 ? (price / fx) : price;
             }
-            return ensureNumericAsset(a);
-          });
-          return next;
-        });
+            return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
+          }
+          return ensureNumericAsset(a);
+        }));
         setLastTick(Date.now());
         if (isInitialLoading && mounted) setIsInitialLoading(false);
-      } catch (e) { console.warn("pollYf err", e); }
+      } catch (e) {
+        // silent
+      }
     }
     pollYf();
-    const intv = setInterval(pollYf, 5000);
-    return () => { mounted = false; clearInterval(intv); };
+    const id = setInterval(pollYf, 5000);
+    return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  /* FX tether -> IDR */
+  /* FX: tether -> IDR */
   useEffect(() => {
     let mounted = true;
     async function fetchFx() {
@@ -323,13 +346,15 @@ export default function PortfolioDashboardPage() {
         const raw = j?.tether?.idr;
         const n = normalizeIdr(raw);
         if (n) setUsdIdr(prev => (!prev || Math.abs(prev - n) / n > 0.0005 ? n : prev));
-      } catch (e) { console.warn("fetchFx err", e); } finally {
+      } catch (e) {
+        // silent
+      } finally {
         if (mounted) setFxLoading(false);
       }
     }
     fetchFx();
-    const intv = setInterval(fetchFx, 60_000);
-    return () => { mounted = false; clearInterval(intv); };
+    const id = setInterval(fetchFx, 60_000);
+    return () => { mounted = false; clearInterval(id); };
   }, []);
 
   /* ===================== ADD ASSET ===================== */
@@ -347,21 +372,19 @@ export default function PortfolioDashboardPage() {
   }
 
   async function addManualAsset() {
-    const typedRaw = query.split("—")[0].trim();
-    if (!typedRaw) { alert("Type symbol or select suggestion"); return; }
+    const typed = query.split("—")[0].trim();
+    if (!typed) { alert("Type symbol or select suggestion"); return; }
     let newAsset = null;
     if (searchMode === "crypto") {
       newAsset = ensureNumericAsset({
-        id: `manual:cg:${typedRaw}:${Date.now()}`, type: "crypto",
-        coingeckoId: typedRaw.toLowerCase(), symbol: typedRaw.toUpperCase(), name: typedRaw,
+        id: `manual:cg:${typed}:${Date.now()}`, type: "crypto",
+        coingeckoId: typed.toLowerCase(), symbol: typed.toUpperCase(), name: typed,
         shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
       });
     } else {
-      let sym = typedRaw.toUpperCase();
-      if (searchMode === "id" && !sym.endsWith(".JK")) sym = `${sym}.JK`;
       newAsset = ensureNumericAsset({
-        id: `manual:yh:${sym}:${Date.now()}`, type: "stock",
-        symbol: sym, name: sym,
+        id: `manual:yh:${typed}:${Date.now()}`, type: "stock",
+        symbol: typed.toUpperCase(), name: typed.toUpperCase(),
         shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
       });
     }
@@ -372,41 +395,39 @@ export default function PortfolioDashboardPage() {
   async function addAssetWithInitial() {
     let picked = selectedSuggestion;
     if (!picked) {
-      const typedRaw = query.split("—")[0].trim();
-      if (!typedRaw) { alert("Select suggestion or type symbol"); return; }
+      const typed = query.split("—")[0].trim();
+      if (!typed) { alert("Select suggestion or type symbol"); return; }
       if (searchMode === "crypto") {
-        picked = { source: "coingecko", id: typedRaw.toLowerCase(), symbol: typedRaw.toUpperCase(), display: typedRaw };
+        picked = { source: "coingecko", id: typed.toLowerCase(), symbol: typed.toUpperCase(), display: typed };
       } else {
-        let sym = typedRaw.toUpperCase();
-        if (searchMode === "id" && !sym.endsWith(".JK")) sym = `${sym}.JK`;
-        picked = { source: "yahoo", symbol: sym, display: sym };
+        picked = { source: "yahoo", symbol: typed.toUpperCase(), display: typed.toUpperCase() };
       }
     }
     const qty = toNum(initQty);
     const priceInput = toNum(initPrice);
     if (qty <= 0 || priceInput <= 0) { alert("Qty & price must be > 0"); return; }
 
-    const internalId = `${picked.source || picked.type}:${picked.symbol || picked.id}:${Date.now()}`;  
-    const priceInUSD = initPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;  
-    const asset = ensureNumericAsset({  
-      id: internalId,  
-      type: picked.source === "coingecko" ? "crypto" : "stock",  
-      coingeckoId: picked.source === "coingecko" ? (picked.id || picked.coingeckoId) : undefined,  
-      symbol: (picked.symbol || picked.id).toString().toUpperCase(),  
-      name: picked.display || picked.name || picked.symbol || picked.id,  
-      shares: qty,  
-      avgPrice: priceInUSD,  
-      investedUSD: priceInUSD * qty,  
-      lastPriceUSD: priceInUSD,  
-      marketValueUSD: priceInUSD * qty,  
-      createdAt: Date.now(),  
-    });  
-    setAssets(prev => [...prev, asset]);  
-    setOpenAdd(false); setQuery(""); setInitQty(""); setInitPrice("");  
+    const internalId = `${picked.source || picked.type}:${picked.symbol || picked.id}:${Date.now()}`;
+    const priceInUSD = initPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
+    const asset = ensureNumericAsset({
+      id: internalId,
+      type: picked.source === "coingecko" ? "crypto" : "stock",
+      coingeckoId: picked.source === "coingecko" ? (picked.id || picked.coingeckoId) : undefined,
+      symbol: (picked.symbol || picked.id).toString().toUpperCase(),
+      name: picked.display || picked.name || picked.symbol || picked.id,
+      shares: qty,
+      avgPrice: priceInUSD,
+      investedUSD: priceInUSD * qty,
+      lastPriceUSD: priceInUSD,
+      marketValueUSD: priceInUSD * qty,
+      createdAt: Date.now(),
+    });
+    setAssets(prev => [...prev, asset]);
+    setOpenAdd(false); setQuery(""); setInitQty(""); setInitPrice("");
     setInitPriceCcy("USD"); setSelectedSuggestion(null);
   }
 
-  /* ===================== BUY / SELL ===================== */
+  /* ===================== BUY / SELL (modal) ===================== */
   function openTradeModal(assetId, mode) {
     const asset = assets.find(a => a.id === assetId);
     if (!asset) return;
@@ -425,7 +446,8 @@ export default function PortfolioDashboardPage() {
       const addCost = q * p;
       const newShares = oldShares + q, newInvested = oldInvested + addCost;
       const newAvg = newShares > 0 ? newInvested / newShares : 0;
-      return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p });
+      return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg,
+        lastPriceUSD: p, marketValueUSD: newShares * p });
     }));
     closeTradeModal();
   }
@@ -437,18 +459,19 @@ export default function PortfolioDashboardPage() {
     const a = assets.find(x => x.id === id); if (!a) return;
     const oldShares = toNum(a.shares || 0); if (q > oldShares) { alert("Cannot sell more than you own"); return; }
 
-    const avg = toNum(a.avgPrice || 0);  
-    const proceeds = q * p, costOfSold = q * avg;  
-    const realized = proceeds - costOfSold;  
-    setRealizedUSD(prev => prev + realized);  
+    const avg = toNum(a.avgPrice || 0);
+    const proceeds = q * p, costOfSold = q * avg;
+    const realized = proceeds - costOfSold;
+    setRealizedUSD(prev => prev + realized);
 
-    const newShares = oldShares - q;  
-    const newInvested = a.investedUSD - costOfSold;  
-    const newAvg = newShares > 0 ? (newInvested / newShares) : 0;  
-    setAssets(prev => {  
-      if (newShares <= 0) return prev.filter(x => x.id !== id).map(ensureNumericAsset);  
-      return prev.map(x => x.id === id ? ensureNumericAsset({ ...x, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p }) : ensureNumericAsset(x));  
-    });  
+    const newShares = oldShares - q;
+    const newInvested = a.investedUSD - costOfSold;
+    const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
+    setAssets(prev => {
+      if (newShares <= 0) return prev.filter(x => x.id !== id);
+      return prev.map(x => x.id === id ? ensureNumericAsset({ ...x, shares: newShares, investedUSD: newInvested,
+        avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p }) : ensureNumericAsset(x));
+    });
     closeTradeModal();
   }
 
@@ -490,7 +513,13 @@ export default function PortfolioDashboardPage() {
     return data;
   }, [rows]);
 
-  /* ===================== CSV Export / Import ===================== */
+  /* ===================== small utilities for UI ===================== */
+  function colorForIndex(i) {
+    const palette = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#FF9CEE","#B28DFF","#FFB26B","#6BFFA0","#FF6BE5","#00C49F"];
+    return palette[i % palette.length];
+  }
+
+  /* ===================== EXPORT / IMPORT CSV ===================== */
   function exportCSV() {
     const headers = ["id","type","coingeckoId","symbol","name","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt"];
     const lines = [headers.join(",")];
@@ -588,12 +617,6 @@ export default function PortfolioDashboardPage() {
     e.target.value = "";
   }
 
-  /* ===================== small utilities for UI ===================== */
-  function colorForIndex(i) {
-    const palette = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#FF9CEE","#B28DFF","#FFB26B","#6BFFA0","#FF6BE5","#00C49F"];
-    return palette[i % palette.length];
-  }
-
   /* ===================== RENDER ===================== */
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
@@ -672,7 +695,6 @@ export default function PortfolioDashboardPage() {
                 <button onClick={() => { setSearchMode("us"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "us" ? "bg-gray-800" : ""}`}>US/Global</button>
               </div>
             </div>
-
             <div className="flex gap-3 flex-col sm:flex-row items-start">
               <div className="relative w-full sm:max-w-lg">
                 <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
@@ -746,7 +768,7 @@ export default function PortfolioDashboardPage() {
           </table>
         </div>
 
-        {/* DONUT + LEGEND */}
+        {/* DONUT + LEGEND (HORIZONTAL LAYOUT) */}
         {rows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="w-32 h-32 flex items-center justify-center">
@@ -778,7 +800,7 @@ export default function PortfolioDashboardPage() {
           </div>
         )}
 
-        {/* TRADE MODAL */}
+        {/* TRADE MODAL (BUY / SELL) */}
         {tradeModal.open && (
           <TradeModal
             mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)}
@@ -811,7 +833,7 @@ export default function PortfolioDashboardPage() {
   );
 }
 
-/* ===================== TRADE MODAL ===================== */
+/* ===================== TRADE MODAL COMPONENT ===================== */
 function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
