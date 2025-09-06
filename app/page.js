@@ -11,7 +11,6 @@ export default function Home() {
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
-
     chartContainerRef.current.innerHTML = "";
 
     const script = document.createElement("script");
@@ -21,7 +20,7 @@ export default function Home() {
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: "NASDAQ:NVDA", // NVDA
+      symbol: "NASDAQ:NVDA",
       interval: "D",
       timezone: "Etc/UTC",
       theme: "dark",
@@ -35,7 +34,6 @@ export default function Home() {
     });
 
     chartContainerRef.current.appendChild(script);
-
     return () => {
       if (chartContainerRef.current) chartContainerRef.current.innerHTML = "";
     };
@@ -52,9 +50,7 @@ export default function Home() {
         await document.exitFullscreen();
         setIsFullscreen(false);
       }
-    } catch (err) {
-      // ignore fullscreen errors
-    }
+    } catch {}
   };
 
   return (
@@ -68,20 +64,26 @@ export default function Home() {
             Track portfolios in realtime, connect Wallet, TradingView charts,
             get AI insights, and manage positions — all in one beautiful app.
           </p>
+
+          {/* Tombol */}
           <div className="mt-6 flex gap-3">
             <Link
               href="/dashboard"
-              className="px-5 py-3 bg-cyan-500 rounded-md text-black font-semibold transition transform hover:bg-cyan-400 hover:scale-105"
+              className="px-5 py-3 bg-cyan-500 rounded-md text-black font-semibold 
+                         transition transform hover:bg-cyan-400 hover:scale-105"
             >
               Open Dashboard
             </Link>
             <a
               href="#features"
-              className="px-5 py-3 border border-gray-700 rounded-md text-gray-300 transition hover:text-white hover:border-white"
+              className="px-5 py-3 border border-gray-700 rounded-md text-gray-300 
+                         transition hover:text-white hover:border-white"
             >
               Learn more
             </a>
           </div>
+
+          {/* Feature cards */}
           <div className="mt-8 grid grid-cols-3 gap-4">
             <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
               <h4 className="text-white font-semibold">Realtime Quotes</h4>
@@ -104,8 +106,9 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Chart + Gambar */}
         <div className="flex flex-col items-center justify-center w-full">
-          {/* TradingView chart wrapper */}
+          {/* TradingView chart */}
           <div
             ref={chartWrapperRef}
             className="relative w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800"
@@ -121,27 +124,32 @@ export default function Home() {
             </button>
           </div>
 
-          {/* GIF + SVG sejajar di desktop */}
+          {/* GIF + SVG rapih sejajar */}
           <div className="flex flex-col lg:flex-row items-center justify-center gap-6 w-full">
-            <Image
-              src="/alocation.gif"
-              alt="Allocation Chart"
-              width={500}
-              height={300}
-              unoptimized
-              className="rounded-lg shadow-md object-contain"
-            />
-            <Image
-              src="/hero-illustration.svg"
-              alt="Hero"
-              width={500}
-              height={300}
-              className="rounded-lg shadow-md object-contain"
-            />
+            <div className="w-full lg:w-1/2 h-72 bg-[#0b1320] rounded-lg flex items-center justify-center p-2">
+              <Image
+                src="/alocation.gif"
+                alt="Allocation Chart"
+                width={400}
+                height={250}
+                unoptimized
+                className="h-full w-auto object-contain rounded-md"
+              />
+            </div>
+            <div className="w-full lg:w-1/2 h-72 bg-[#0b1320] rounded-lg flex items-center justify-center p-2">
+              <Image
+                src="/hero-illustration.svg"
+                alt="Hero"
+                width={400}
+                height={250}
+                className="h-full w-auto object-contain rounded-md"
+              />
+            </div>
           </div>
         </div>
       </section>
 
+      {/* Section Features */}
       <section id="features" className="mt-16">
         <h2 className="text-2xl font-bold text-white">Features</h2>
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
