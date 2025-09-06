@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
-  const chartContainerRef = useRef(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -19,7 +20,7 @@ export default function Home() {
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: "NASDAQ:NVDA", // Chart NVDA
+      symbol: "NASDAQ:NVDA",
       interval: "D",
       timezone: "Etc/UTC",
       theme: "dark",
@@ -40,6 +41,17 @@ export default function Home() {
       }
     };
   }, []);
+
+  const toggleFullscreen = () => {
+    const el = chartContainerRef.current;
+    if (!el) return;
+
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().then(() => setIsFullscreen(true));
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false));
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
@@ -96,14 +108,19 @@ export default function Home() {
 
         {/* Chart + Gambar */}
         <div className="flex flex-col items-center justify-center w-full">
-          {/* TradingView chart */}
-          <div
-            ref={chartContainerRef}
-            className="w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800"
-          />
+          {/* TradingView chart + tombol fullscreen */}
+          <div className="relative w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800">
+            <div ref={chartContainerRef} className="w-full h-full" />
+            <button
+              onClick={toggleFullscreen}
+              className="absolute top-2 right-2 bg-black/60 text-white px-3 py-1 rounded-md text-xs hover:bg-black/80"
+            >
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            </button>
+          </div>
 
-          {/* GIF + SVG sejajar di desktop */}
-          <div className="flex flex-col lg:flex-row items-center justify-center gap-6 w-full">
+          {/* GIF + SVG selalu atas-bawah */}
+          <div className="flex flex-col items-center justify-center gap-6 w-full">
             <Image
               src="/alocation.gif"
               alt="Allocation Chart"
