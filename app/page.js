@@ -6,8 +6,8 @@ export default function Home() {
     <div className="max-w-6xl mx-auto px-4 py-12">
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
         <div>
-          <h1 className="text-4xl font-bold text-white">Bloomboard — Premium Portfolio & Trading Lab</h1>
-          <p className="mt-4 text-gray-300">Track portfolios in realtime, connect TradingView charts, get AI insights, and manage positions — all in one beautiful app.</p>
+          <h1 className="text-4xl font-bold text-white">Bloomboard — Portfolio Management & Trading Lab</h1>
+          <p className="mt-4 text-gray-300">Track portfolios in realtime, connect Wallet, TradingView charts, get AI insights, and manage positions — all in one beautiful app.</p>
           <div className="mt-6 flex gap-3">
             <Link href="/dashboard" className="px-5 py-3 bg-cyan-500 rounded-md text-black font-semibold">Open Dashboard</Link>
             <a href="#features" className="px-5 py-3 border border-gray-700 rounded-md text-gray-300">Learn more</a>
