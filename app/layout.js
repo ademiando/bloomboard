@@ -9,31 +9,37 @@ export default function RootLayout({ children }) {
       <body>
         <header className="bg-[#07102a] border-b border-gray-800">
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            {/* Logo jadi link ke home */}
+            <Link href="/" className="flex items-center gap-3">
               <Image src="/logo.svg" alt="Bloomboard" width={120} height={30} />
-            </div>
+            </Link>
+
+            {/* Navbar */}
             <nav className="flex items-center gap-4 text-sm text-gray-300">
               <Link
-                href="/"
-                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
-              >
-                Bloomboard
-              </Link>
-              <Link
                 href="/dashboard"
-                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+                className="relative px-2 py-1 transition-colors hover:text-white 
+                  after:content-[''] after:absolute after:left-0 after:bottom-0 
+                  after:h-[2px] after:w-0 after:bg-white after:transition-all 
+                  after:duration-300 hover:after:w-full"
               >
                 Dashboard
               </Link>
               <Link
                 href="/lab"
-                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+                className="relative px-2 py-1 transition-colors hover:text-white 
+                  after:content-[''] after:absolute after:left-0 after:bottom-0 
+                  after:h-[2px] after:w-0 after:bg-white after:transition-all 
+                  after:duration-300 hover:after:w-full"
               >
                 Lab
               </Link>
               <Link
                 href="/trade"
-                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+                className="relative px-2 py-1 transition-colors hover:text-white 
+                  after:content-[''] after:absolute after:left-0 after:bottom-0 
+                  after:h-[2px] after:w-0 after:bg-white after:transition-all 
+                  after:duration-300 hover:after:w-full"
               >
                 Trade
               </Link>
@@ -41,19 +47,26 @@ export default function RootLayout({ children }) {
                 href="https://github.com/"
                 target="_blank"
                 rel="noreferrer"
-                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+                className="relative px-2 py-1 transition-colors hover:text-white 
+                  after:content-[''] after:absolute after:left-0 after:bottom-0 
+                  after:h-[2px] after:w-0 after:bg-white after:transition-all 
+                  after:duration-300 hover:after:w-full"
               >
                 Docs
               </a>
             </nav>
           </div>
         </header>
+
         <main>{children}</main>
+
         <footer className="bg-[#07102a] border-t border-gray-800 mt-16">
           <div className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm text-gray-400">
             <div>
               <Image src="/logo.svg" alt="Bloomboard" width={120} height={30} />
-              <p className="mt-3 text-xs">Premium portfolio tracker — TradingView, Supabase, OpenAI integrated.</p>
+              <p className="mt-3 text-xs">
+                Premium portfolio tracker — TradingView, Supabase, OpenAI integrated.
+              </p>
             </div>
             <div>
               <h4 className="text-white font-semibold">Product</h4>
@@ -72,7 +85,9 @@ export default function RootLayout({ children }) {
               </ul>
             </div>
           </div>
-          <div className="border-t border-gray-800 text-center py-4 text-xs text-gray-500">© 2025 Bloomboard</div>
+          <div className="border-t border-gray-800 text-center py-4 text-xs text-gray-500">
+            © 2025 Bloomboard
+          </div>
         </footer>
       </body>
     </html>
