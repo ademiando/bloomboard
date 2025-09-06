@@ -7,8 +7,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * Portfolio Dashboard — final single-file React client component
  *
  * Notes:
- * - Stocks fetched via server proxy: /api/yahoo/quote?symbol=a,b,c (this file uses that)
  * - Search uses /api/yahoo/search?q=... (server proxy)
+ * - Market last for stocks uses Finnhub via server proxy: /api/finnhub/quote?symbol=...
  * - Display currency persisted to localStorage pf_display_ccy_v2
  * - All numeric fields coerced to numbers to avoid NaN/strings causing zero PnL
  * - Export/Import CSV at bottom
@@ -17,7 +17,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 /* ===================== CONFIG/ENDPOINTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
-const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`; // accepts "AAPL,MSFT" etc
+const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`; // fallback if needed
+const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`; // NEW: Finnhub proxy route (single symbol)
 const COINGECKO_PRICE = (ids) =>
   `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
@@ -251,6 +252,7 @@ export default function PortfolioDashboard() {
   }, [query, searchMode]);
 
   /* ===================== POLLING PRICES ===================== */
+  // use refs to prevent stale closures
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -296,39 +298,58 @@ export default function PortfolioDashboard() {
           return;
         }
 
-        // Try bulk call to /api/yahoo/quote?symbol=a,b,c
-        let j = null;
-        try {
-          const res = await fetch(YAHOO_QUOTE(symbols.join(",")));
-          if (res.ok) j = await res.json();
-        } catch (e) {
-          // fallback handled below
+        // NEW: Use Finnhub proxy per-symbol to get current price (data.c)
+        const map = {};
+        for (const s of symbols) {
+          try {
+            const res = await fetch(FINNHUB_QUOTE(s));
+            if (!res.ok) {
+              // try fallback to yahoo bulk for this batch if finnhub fails
+              throw new Error(`Finnhub fetch failed for ${s}`);
+            }
+            const js = await res.json();
+            // Finnhub quote: { c: current, h: high, l: low, o: open, pc: prev close, ... }
+            const current = toNum(js?.c ?? js?.current ?? 0);
+            if (current > 0) {
+              // Finnhub likely returns local exchange price — detect IDX/IDR similar to before
+              const looksLikeId = String(s || "").toUpperCase().endsWith(".JK");
+              let priceUSD = current;
+              if (looksLikeId) {
+                const fx = usdIdrRef.current || 1;
+                priceUSD = fx > 0 ? (current / fx) : current;
+              }
+              map[s] = { symbol: s, regularMarketPrice: priceUSD, _source: "finnhub" };
+            } else {
+              // if Finnhub returned 0, leave for potential fallback
+            }
+          } catch (e) {
+            // ignore per-symbol error — fallback to yahoo or continue
+          }
         }
 
-        const map = {};
-        if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
-          j.quoteResponse.result.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
-        } else if (Array.isArray(j)) {
-          j.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
-        } else {
-          // fallback: call single symbol endpoint per ticker if bulk failed
-          for (const s of symbols) {
-            try {
-              const resS = await fetch(YAHOO_QUOTE(s));
-              if (!resS.ok) continue;
-              const js = await resS.json();
-              const q = js?.quoteResponse?.result?.[0] || (Array.isArray(js) ? js[0] : null);
-              if (q && q.symbol) map[q.symbol] = q;
-            } catch (e) {
-              // ignore
+        // If map is empty (Finnhub gave nothing), attempt Yahoo proxy bulk as fallback
+        if (Object.keys(map).length === 0) {
+          try {
+            const res = await fetch(YAHOO_QUOTE(symbols.join(",")));
+            if (res.ok) {
+              const j = await res.json();
+              if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
+                j.quoteResponse.result.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
+              } else if (Array.isArray(j)) {
+                j.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
+              }
             }
+          } catch (e) {
+            // ignore
           }
         }
 
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
             const q = map[a.symbol];
-            const price = toNum(q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? 0);
+            // if q came from our Finnhub mock, it's shaped { regularMarketPrice: price }
+            const price = toNum(q.regularMarketPrice ?? q.c ?? q.current ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? 0);
+            // detect IDR-like tickers
             const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
             let priceUSD = price;
             if (looksLikeId) {
