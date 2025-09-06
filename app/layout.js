@@ -13,18 +13,23 @@ export const metadata = {
 export default function RootLayout({ children }) {
   const pathname = usePathname();
 
-  const navLink = (href, label) => (
-    <Link
-      href={href}
-      className={`relative px-2 py-1 transition-colors ${
-        pathname === href ? "text-white after:w-full" : "text-gray-300 hover:text-white after:w-0 hover:after:w-full"
-      } 
-        after:content-[''] after:absolute after:left-0 after:bottom-0 
-        after:h-[2px] after:bg-white after:transition-all after:duration-300`}
-    >
-      {label}
-    </Link>
-  );
+  const navLink = (href, label) => {
+    const isActive = pathname === href;
+    return (
+      <Link
+        href={href}
+        className={`relative px-2 py-1 transition-colors ${
+          isActive
+            ? "text-white after:w-full"
+            : "text-gray-300 hover:text-white after:w-0 hover:after:w-full"
+        } 
+          after:content-[''] after:absolute after:left-0 after:bottom-0 
+          after:h-[2px] after:bg-white after:transition-all after:duration-300`}
+      >
+        {label}
+      </Link>
+    );
+  };
 
   return (
     <html lang="en">
