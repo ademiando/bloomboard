@@ -53,7 +53,7 @@ export default function Home() {
             get AI insights, and manage positions — all in one beautiful app.
           </p>
 
-          {/* Tombol dengan hover animasi */}
+          {/* Tombol */}
           <div className="mt-6 flex gap-3">
             <Link
               href="/dashboard"
@@ -71,7 +71,7 @@ export default function Home() {
             </a>
           </div>
 
-          {/* Fitur kecil */}
+          {/* Feature cards */}
           <div className="mt-8 grid grid-cols-3 gap-4">
             <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
               <h4 className="text-white font-semibold">Realtime Quotes</h4>
@@ -94,7 +94,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Bagian chart + gambar */}
+        {/* Chart + Gambar */}
         <div className="flex flex-col items-center justify-center w-full">
           {/* TradingView chart */}
           <div
@@ -102,21 +102,21 @@ export default function Home() {
             className="w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800"
           />
 
-          {/* GIF + SVG sejajar hanya di desktop */}
+          {/* GIF + SVG sejajar di desktop */}
           <div className="flex flex-col lg:flex-row items-center justify-center gap-6 w-full">
             <Image
               src="/alocation.gif"
               alt="Allocation Chart"
-              width={300}
-              height={200}
+              width={350}
+              height={220}
               unoptimized
               className="rounded-lg shadow-md"
             />
             <Image
               src="/hero-illustration.svg"
               alt="Hero"
-              width={300}
-              height={200}
+              width={350}
+              height={220}
               className="rounded-lg shadow-md"
             />
           </div>
