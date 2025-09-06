@@ -34,8 +34,7 @@ export default function RootLayout({ children }) {
               <Image src="/logo.svg" alt="Bloomboard" width={120} height={30} />
               <p className="mt-3 text-xs leading-relaxed">
                 Bloomboard is your all-in-one portfolio tracker.  
-                Integrated with TradingView, Supabase, and OpenAI —  
-                designed for investors and traders who want clarity and control.
+                Designed for investors who want clarity and control.
               </p>
             </div>
             <div>
