@@ -19,7 +19,7 @@ export default function Home() {
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: "NASDAQ:NVDA", // NVDA stock
+      symbol: "NASDAQ:NVDA", // Chart NVDA
       interval: "D",
       timezone: "Etc/UTC",
       theme: "dark",
@@ -94,6 +94,7 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Bagian chart + gambar */}
         <div className="flex flex-col items-center justify-center w-full">
           {/* TradingView chart */}
           <div
@@ -101,23 +102,24 @@ export default function Home() {
             className="w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800"
           />
 
-          {/* Gambar GIF dari public/alocation.gif */}
-          <Image
-            src="/alocation.gif"
-            alt="Allocation Chart"
-            width={600}
-            height={350}
-            unoptimized
-            className="mb-6 rounded-lg shadow-md"
-          />
-
-          {/* Hero illustration */}
-          <Image
-            src="/hero-illustration.svg"
-            alt="Hero"
-            width={600}
-            height={350}
-          />
+          {/* GIF + SVG sejajar hanya di desktop */}
+          <div className="flex flex-col lg:flex-row items-center justify-center gap-6 w-full">
+            <Image
+              src="/alocation.gif"
+              alt="Allocation Chart"
+              width={300}
+              height={200}
+              unoptimized
+              className="rounded-lg shadow-md"
+            />
+            <Image
+              src="/hero-illustration.svg"
+              alt="Hero"
+              width={300}
+              height={200}
+              className="rounded-lg shadow-md"
+            />
+          </div>
         </div>
       </section>
 
