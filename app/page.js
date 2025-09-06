@@ -6,11 +6,11 @@ import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
   const chartContainerRef = useRef(null);
-  const chartWrapperRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
+
     chartContainerRef.current.innerHTML = "";
 
     const script = document.createElement("script");
@@ -34,35 +34,29 @@ export default function Home() {
     });
 
     chartContainerRef.current.appendChild(script);
-    return () => {
-      if (chartContainerRef.current) chartContainerRef.current.innerHTML = "";
-    };
-  }, []);
 
-  const toggleFullscreen = async () => {
-    const el = chartWrapperRef.current ?? chartContainerRef.current;
-    if (!el) return;
-    try {
-      if (!document.fullscreenElement) {
-        await el.requestFullscreen();
-        setIsFullscreen(true);
-      } else {
-        await document.exitFullscreen();
-        setIsFullscreen(false);
+    return () => {
+      if (chartContainerRef.current) {
+        chartContainerRef.current.innerHTML = "";
       }
-    } catch {}
+    };
+  }, [isFullscreen]);
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
   };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
         <div>
+          {/* Judul & Subjudul */}
           <h1 className="text-4xl font-bold text-white">
             Bloomboard — Portfolio Management & Trading Lab
           </h1>
-          <p className="mt-4 text-gray-300">
-            Track portfolios in realtime, connect Wallet, TradingView charts,
-            get AI insights, and manage positions — all in one beautiful app.
+          <p className="mt-3 text-lg text-gray-300">
+            Monitor your investments in real-time, explore AI-powered insights,
+            and visualize growth with professional-grade tools.
           </p>
 
           {/* Tombol */}
@@ -84,23 +78,23 @@ export default function Home() {
           </div>
 
           {/* Feature cards */}
-          <div className="mt-8 grid grid-cols-3 gap-4">
-            <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
-              <h4 className="text-white font-semibold">Realtime Quotes</h4>
+          <div className="mt-10 grid grid-cols-3 gap-4">
+            <div className="bg-[#0b1320] p-5 rounded-lg shadow-sm">
+              <h4 className="text-white font-semibold text-sm">Realtime Quotes</h4>
               <p className="text-xs text-gray-400 mt-2">
-                Finnhub / provider integration for live prices.
+                Get live market prices directly integrated from top providers.
               </p>
             </div>
-            <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
-              <h4 className="text-white font-semibold">AI Strategy Lab</h4>
+            <div className="bg-[#0b1320] p-5 rounded-lg shadow-sm">
+              <h4 className="text-white font-semibold text-sm">AI Strategy Lab</h4>
               <p className="text-xs text-gray-400 mt-2">
-                Generate trading robots & backtest code with OpenAI.
+                Generate strategies, run backtests, and explore automation.
               </p>
             </div>
-            <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
-              <h4 className="text-white font-semibold">TradingView Charts</h4>
+            <div className="bg-[#0b1320] p-5 rounded-lg shadow-sm">
+              <h4 className="text-white font-semibold text-sm">Pro Charts</h4>
               <p className="text-xs text-gray-400 mt-2">
-                Official TradingView Advanced Chart widget embedded.
+                Embedded TradingView advanced chart for deep analysis.
               </p>
             </div>
           </div>
@@ -108,67 +102,73 @@ export default function Home() {
 
         {/* Chart + Gambar */}
         <div className="flex flex-col items-center justify-center w-full">
-          {/* TradingView chart */}
+          {/* TradingView chart dengan tombol fullscreen */}
           <div
-            ref={chartWrapperRef}
-            className="relative w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800"
+            className={`relative w-full rounded-lg overflow-hidden border border-gray-800 ${
+              isFullscreen ? "h-[90vh]" : "h-96"
+            }`}
           >
             <div ref={chartContainerRef} className="w-full h-full" />
             <button
               onClick={toggleFullscreen}
-              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-              className="absolute top-3 right-3 z-10 bg-black/60 hover:bg-black/80 text-white p-2 rounded-md text-xs"
-              aria-label="Toggle fullscreen"
+              className="absolute top-2 right-2 bg-gray-900 text-white px-3 py-1 text-xs rounded-md hover:bg-gray-700"
             >
-              ⛶
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </button>
           </div>
 
-          {/* GIF + SVG rapih sejajar */}
-          <div className="flex flex-col lg:flex-row items-center justify-center gap-6 w-full">
-            <div className="w-full lg:w-1/2 h-72 bg-[#0b1320] rounded-lg flex items-center justify-center p-2">
-              <Image
-                src="/alocation.gif"
-                alt="Allocation Chart"
-                width={400}
-                height={250}
-                unoptimized
-                className="h-full w-auto object-contain rounded-md"
-              />
-            </div>
-            <div className="w-full lg:w-1/2 h-72 bg-[#0b1320] rounded-lg flex items-center justify-center p-2">
-              <Image
-                src="/hero-illustration.svg"
-                alt="Hero"
-                width={400}
-                height={250}
-                className="h-full w-auto object-contain rounded-md"
-              />
-            </div>
+          {/* GIF + SVG rapih berjejer */}
+          <div className="mt-6 flex flex-row items-center justify-center gap-6 w-full">
+            <Image
+              src="/alocation.gif"
+              alt="Allocation Chart"
+              width={300}
+              height={200}
+              unoptimized
+              className="rounded-lg shadow-md border border-gray-800"
+            />
+            <Image
+              src="/hero-illustration.svg"
+              alt="Portfolio Illustration"
+              width={300}
+              height={200}
+              className="rounded-lg shadow-md border border-gray-800"
+            />
           </div>
         </div>
       </section>
 
       {/* Section Features */}
-      <section id="features" className="mt-16">
-        <h2 className="text-2xl font-bold text-white">Features</h2>
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-[#0b1320] p-6 rounded-lg">
-            <h3 className="font-semibold">Portfolio Tracking</h3>
-            <p className="text-xs text-gray-400 mt-2">
-              Per-device Supabase storage, CRUD UI.
+      <section id="features" className="mt-20">
+        <h2 className="text-3xl font-bold text-white text-center">
+          Key Features
+        </h2>
+        <p className="text-gray-400 text-center mt-2 max-w-2xl mx-auto">
+          Everything you need to manage, analyze, and grow your portfolio in one
+          integrated platform.
+        </p>
+
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-[#0b1320] p-6 rounded-lg shadow-md">
+            <h3 className="text-lg font-semibold text-white">
+              Portfolio Tracking
+            </h3>
+            <p className="text-sm text-gray-400 mt-2">
+              Track asset allocation, performance history, and growth trends.
             </p>
           </div>
-          <div className="bg-[#0b1320] p-6 rounded-lg">
-            <h3 className="font-semibold">AI Insights</h3>
-            <p className="text-xs text-gray-400 mt-2">
-              ChatGPT-backed assistant for trading strategies.
+          <div className="bg-[#0b1320] p-6 rounded-lg shadow-md">
+            <h3 className="text-lg font-semibold text-white">AI Insights</h3>
+            <p className="text-sm text-gray-400 mt-2">
+              Leverage AI to identify opportunities and manage risks smarter.
             </p>
           </div>
-          <div className="bg-[#0b1320] p-6 rounded-lg">
-            <h3 className="font-semibold">News & Alerts</h3>
-            <p className="text-xs text-gray-400 mt-2">
-              News API integration & watchlist alerts.
+          <div className="bg-[#0b1320] p-6 rounded-lg shadow-md">
+            <h3 className="text-lg font-semibold text-white">
+              News & Alerts
+            </h3>
+            <p className="text-sm text-gray-400 mt-2">
+              Stay updated with market news and instant custom alerts.
             </p>
           </div>
         </div>
