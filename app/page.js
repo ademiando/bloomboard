@@ -10,7 +10,6 @@ export default function Home() {
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Clear container sebelum inject ulang
     chartContainerRef.current.innerHTML = "";
 
     const script = document.createElement("script");
@@ -20,22 +19,21 @@ export default function Home() {
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: "SPX", // S&P 500 index
+      symbol: "NASDAQ:NVDA", // NVDA stock
       interval: "D",
       timezone: "Etc/UTC",
       theme: "dark",
       style: "1",
       locale: "en",
       allow_symbol_change: true,
-      withdateranges: true, // timeframe selector
-      hide_top_toolbar: false, // show toolbar
+      withdateranges: true,
+      hide_top_toolbar: false,
       hide_legend: false,
       support_host: "https://www.tradingview.com",
     });
 
     chartContainerRef.current.appendChild(script);
 
-    // Cleanup biar ga error saat unmount
     return () => {
       if (chartContainerRef.current) {
         chartContainerRef.current.innerHTML = "";
@@ -102,6 +100,18 @@ export default function Home() {
             ref={chartContainerRef}
             className="w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800"
           />
+
+          {/* Gambar GIF dari public/alocation.gif */}
+          <Image
+            src="/alocation.gif"
+            alt="Allocation Chart"
+            width={600}
+            height={350}
+            unoptimized
+            className="mb-6 rounded-lg shadow-md"
+          />
+
+          {/* Hero illustration */}
           <Image
             src="/hero-illustration.svg"
             alt="Hero"
