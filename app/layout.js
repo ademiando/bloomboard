@@ -1,7 +1,7 @@
 import "./globals.css";
 import Image from "next/image";
 import Link from "next/link";
-export const metadata = { title: "Bloomboard", description: "Premium portfolio tracker & trading lab" };
+export const metadata = { title: "Bloomboard", description: "Portfolio tracker & trading lab" };
 
 export default function RootLayout({ children }) {
   return (
