@@ -6,11 +6,13 @@ import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
   const chartContainerRef = useRef(null);
+  const chartWrapperRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    // ensure container empty
     chartContainerRef.current.innerHTML = "";
 
     const script = document.createElement("script");
@@ -20,7 +22,7 @@ export default function Home() {
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: "NASDAQ:NVDA", // Chart NVDA
+      symbol: "NASDAQ:NVDA", // NVDA
       interval: "D",
       timezone: "Etc/UTC",
       theme: "dark",
@@ -36,104 +38,115 @@ export default function Home() {
     chartContainerRef.current.appendChild(script);
 
     return () => {
-      if (chartContainerRef.current) {
-        chartContainerRef.current.innerHTML = "";
-      }
+      // cleanup to avoid duplicates/errors on HMR
+      if (chartContainerRef.current) chartContainerRef.current.innerHTML = "";
     };
   }, []);
 
-  const toggleFullscreen = () => {
-    const el = chartContainerRef.current;
+  const toggleFullscreen = async () => {
+    const el = chartWrapperRef.current ?? chartContainerRef.current;
     if (!el) return;
-
-    if (!document.fullscreenElement) {
-      el.requestFullscreen().then(() => setIsFullscreen(true));
-    } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false));
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch (err) {
+      // ignore fullscreen errors
+      // console.warn(err);
     }
   };
 
   return (
-    <div className="bg-[#07102a] min-h-screen text-white">
-      {/* Sticky Header */}
-      <header className="sticky top-0 z-50 bg-[#07102a] border-b border-gray-800">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Image src="/logo.svg" alt="Bloomboard" width={120} height={30} />
-          <nav className="flex items-center gap-6 text-sm text-gray-300">
-            <Link href="/dashboard" className="hover:text-white">Dashboard</Link>
-            <Link href="/lab" className="hover:text-white">Lab</Link>
-            <Link href="/trade" className="hover:text-white">Trade</Link>
-            <a href="https://github.com" target="_blank" rel="noreferrer" className="hover:text-white">Docs</a>
-          </nav>
+    <div className="max-w-6xl mx-auto px-4 py-12">
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+        <div>
+          <h1 className="text-4xl font-bold text-white">Bloomboard — Portfolio Management & Trading Lab</h1>
+          <p className="mt-4 text-gray-300">
+            Track portfolios in realtime, connect Wallet, TradingView charts, get AI insights, and manage positions — all in one beautiful app.
+          </p>
+          <div className="mt-6 flex gap-3">
+            <Link href="/dashboard" className="px-5 py-3 bg-cyan-500 rounded-md text-black font-semibold transition transform hover:bg-cyan-400 hover:scale-105">
+              Open Dashboard
+            </Link>
+            <a href="#features" className="px-5 py-3 border border-gray-700 rounded-md text-gray-300 transition hover:text-white hover:border-white">
+              Learn more
+            </a>
+          </div>
+          <div className="mt-8 grid grid-cols-3 gap-4">
+            <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
+              <h4 className="text-white font-semibold">Realtime Quotes</h4>
+              <p className="text-xs text-gray-400 mt-2">Finnhub / provider integration for live prices.</p>
+            </div>
+            <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
+              <h4 className="text-white font-semibold">AI Strategy Lab</h4>
+              <p className="text-xs text-gray-400 mt-2">Generate trading robots & backtest code with OpenAI.</p>
+            </div>
+            <div className="bg-[#0b1320] p-4 rounded-lg shadow-sm">
+              <h4 className="text-white font-semibold">TradingView Charts</h4>
+              <p className="text-xs text-gray-400 mt-2">Official TradingView Advanced Chart widget embedded.</p>
+            </div>
+          </div>
         </div>
-      </header>
 
-      {/* Hero Section */}
-      <div className="max-w-6xl mx-auto px-4 py-12">
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
-          <div>
-            <h1 className="text-5xl font-bold text-white leading-tight">
-              Bloomboard — Portfolio Management & Trading Lab
-            </h1>
-            <p className="mt-4 text-gray-300 text-lg">
-              Track portfolios in realtime, connect Wallet, TradingView charts,
-              get AI insights, and manage positions — all in one beautiful app.
-            </p>
+        <div className="flex flex-col items-center justify-center w-full">
+          {/* TradingView chart wrapper (for fullscreen request) */}
+          <div ref={chartWrapperRef} className="relative w-full h-96 mb-6 rounded-lg overflow-hidden border border-gray-800">
+            {/* chart container where the TradingView script mounts */}
+            <div ref={chartContainerRef} className="w-full h-full" />
 
-            {/* Tombol */}
-            <div className="mt-8 flex gap-4">
-              <Link
-                href="/dashboard"
-                className="px-6 py-3 bg-cyan-500 rounded-lg text-black font-semibold 
-                           transition transform hover:bg-cyan-400 hover:scale-105 shadow-md"
-              >
-                Open Dashboard
-              </Link>
-              <a
-                href="#features"
-                className="px-6 py-3 border border-gray-700 rounded-lg text-gray-300 
-                           transition hover:text-white hover:border-white"
-              >
-                Learn more
-              </a>
-            </div>
+            {/* small fullscreen button — unobtrusive */}
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              className="absolute top-3 right-3 z-10 bg-black/60 hover:bg-black/80 text-white p-2 rounded-md text-xs"
+              aria-label="Toggle fullscreen"
+            >
+              ⛶
+            </button>
           </div>
 
-          {/* Chart + GIF + SVG */}
-          <div className="flex flex-col items-center justify-center w-full">
-            {/* TradingView chart + tombol fullscreen */}
-            <div className="relative w-full h-96 mb-8 rounded-xl overflow-hidden border border-gray-800 shadow-lg">
-              <div ref={chartContainerRef} className="w-full h-full" />
-              <button
-                onClick={toggleFullscreen}
-                className="absolute top-3 right-3 bg-black/70 text-white p-2 rounded-md text-xs hover:bg-black/90"
-                title="Fullscreen"
-              >
-                ⛶
-              </button>
-            </div>
-
-            {/* GIF + SVG sampingan */}
-            <div className="flex flex-row gap-6 w-full justify-center">
-              <Image
-                src="/alocation.gif"
-                alt="Allocation Chart"
-                width={280}
-                height={200}
-                unoptimized
-                className="rounded-xl shadow-lg border border-gray-800"
-              />
-              <Image
-                src="/hero-illustration.svg"
-                alt="Hero"
-                width={280}
-                height={200}
-                className="rounded-xl shadow-lg border border-gray-800"
-              />
-            </div>
+          {/* GIF then SVG (atas-bawah, tidak sejajar) */}
+          <div className="flex flex-col items-center gap-6 w-full">
+            <Image
+              src="/alocation.gif"
+              alt="Allocation Chart"
+              width={600}
+              height={350}
+              unoptimized
+              className="rounded-lg shadow-md"
+            />
+            <Image
+              src="/hero-illustration.svg"
+              alt="Hero"
+              width={600}
+              height={350}
+              className="rounded-lg shadow-md"
+            />
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
+
+      <section id="features" className="mt-16">
+        <h2 className="text-2xl font-bold text-white">Features</h2>
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-[#0b1320] p-6 rounded-lg">
+            <h3 className="font-semibold">Portfolio Tracking</h3>
+            <p className="text-xs text-gray-400 mt-2">Per-device Supabase storage, CRUD UI.</p>
+          </div>
+          <div className="bg-[#0b1320] p-6 rounded-lg">
+            <h3 className="font-semibold">AI Insights</h3>
+            <p className="text-xs text-gray-400 mt-2">ChatGPT-backed assistant for trading strategies.</p>
+          </div>
+          <div className="bg-[#0b1320] p-6 rounded-lg">
+            <h3 className="font-semibold">News & Alerts</h3>
+            <p className="text-xs text-gray-400 mt-2">News API integration & watchlist alerts.</p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
