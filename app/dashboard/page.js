@@ -4,21 +4,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Portfolio Dashboard — single-file React client component (rewritten final)
+ * Portfolio Dashboard — single-file React client component (final)
  *
- * Perbaikan & catatan:
- * - numeric coercion di-load & saat operasi (shares, avgPrice, investedUSD, lastPriceUSD, marketValueUSD)
+ * Catatan perbaikan:
+ * - parsing search tolerant terhadap banyak bentuk payload
+ * - polling saham mencoba /api/price?symbols=... dan fallback ke /api/yahoo/quote?symbol=...
  * - display currency disimpan di localStorage ("pf_display_ccy_v2")
- * - polling saham via server proxy: /api/price?symbols=...
- * - search via server proxy: /api/yahoo/search?q=...
- * - export / import CSV di bagian bawah
- * - jangan ubah UI / flow yang sudah ada — hanya perbaikan agar berjalan
+ * - CSV export/import ada di bagian bawah
+ * - menjaga agar logic aslimu tidak berubah kecuali perbaikan data feed
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`; // server proxy route for search
-const YAHOO_QUOTE_PROXY = (symbols) => `/api/price?symbols=${encodeURIComponent(symbols)}`; // server proxy route for quotes
+const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`; // proxy for search
+const YAHOO_QUOTE_BULK = (symbols) => `/api/price?symbols=${encodeURIComponent(symbols)}`; // proxy bulk quotes (preferred)
+const YAHOO_QUOTE_SINGLE = (symbol) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbol)}`; // fallback single-symbol quote
 const COINGECKO_PRICE = (ids) =>
   `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
@@ -297,17 +297,39 @@ export default function PortfolioDashboard() {
           if (isInitialLoading && mounted) setIsInitialLoading(false);
           return;
         }
-        // call server proxy for quotes
-        const res = await fetch(YAHOO_QUOTE_PROXY(symbols.join(",")));
-        if (!mounted || !res.ok) return;
-        const j = await res.json();
+
+        // Try bulk proxy first: /api/price?symbols=a,b,c
+        let j = null;
+        try {
+          const res = await fetch(YAHOO_QUOTE_BULK(symbols.join(",")));
+          if (res.ok) {
+            j = await res.json();
+          }
+        } catch (e) {
+          // continue to fallback
+        }
+
         const map = {};
         if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
           j.quoteResponse.result.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
         } else if (Array.isArray(j)) {
-          // some proxies may return array directly
+          // proxy returning array
           j.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
+        } else {
+          // Fallback: call single-symbol proxy for each symbol
+          for (const s of symbols) {
+            try {
+              const resS = await fetch(YAHOO_QUOTE_SINGLE(s));
+              if (!resS.ok) continue;
+              const js = await resS.json();
+              const q = js?.quoteResponse?.result?.[0] || (Array.isArray(js) ? js[0] : null);
+              if (q && q.symbol) map[q.symbol] = q;
+            } catch (e) {
+              // ignore and continue
+            }
+          }
         }
+
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
             const q = map[a.symbol];
