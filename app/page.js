@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
   const chartContainerRef = useRef(null);
+  const wrapperRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -40,10 +41,18 @@ export default function Home() {
         chartContainerRef.current.innerHTML = "";
       }
     };
-  }, [isFullscreen]);
+  }, []);
 
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
+  const toggleFullscreen = async () => {
+    if (!wrapperRef.current) return;
+
+    if (!document.fullscreenElement) {
+      await wrapperRef.current.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      await document.exitFullscreen();
+      setIsFullscreen(false);
+    }
   };
 
   return (
@@ -101,38 +110,37 @@ export default function Home() {
         </div>
 
         {/* Chart + Gambar */}
-        <div className="flex flex-col items-center justify-center w-full">
-          {/* TradingView chart dengan tombol fullscreen */}
-          <div
-            className={`relative w-full rounded-lg overflow-hidden border border-gray-800 ${
-              isFullscreen ? "h-[90vh]" : "h-96"
-            }`}
-          >
+        <div
+          ref={wrapperRef}
+          className="flex flex-col items-center justify-center w-full"
+        >
+          {/* TradingView chart */}
+          <div className="relative w-full h-96 rounded-lg overflow-hidden border border-gray-800">
             <div ref={chartContainerRef} className="w-full h-full" />
             <button
               onClick={toggleFullscreen}
-              className="absolute top-2 right-2 bg-gray-900 text-white px-3 py-1 text-xs rounded-md hover:bg-gray-700"
+              className="absolute top-2 right-2 z-10 bg-gray-900/80 backdrop-blur text-white px-3 py-1 text-xs rounded-md hover:bg-gray-700"
             >
               {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </button>
           </div>
 
-          {/* GIF + SVG rapih berjejer */}
+          {/* GIF + SVG */}
           <div className="mt-6 flex flex-row items-center justify-center gap-6 w-full">
             <Image
               src="/alocation.gif"
               alt="Allocation Chart"
-              width={250}
-              height={160}
+              width={220}
+              height={140}
               unoptimized
-              className="rounded-lg shadow-md border border-gray-800"
+              className="w-[90%] max-w-[220px] rounded-lg shadow-md border border-gray-800"
             />
             <Image
               src="/hero-illustration.svg"
               alt="Portfolio Illustration"
-              width={250}
-              height={160}
-              className="rounded-lg shadow-md border border-gray-800"
+              width={220}
+              height={140}
+              className="w-[90%] max-w-[220px] rounded-lg shadow-md border border-gray-800"
             />
           </div>
         </div>
