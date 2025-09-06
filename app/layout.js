@@ -13,11 +13,38 @@ export default function RootLayout({ children }) {
               <Image src="/logo.svg" alt="Bloomboard" width={120} height={30} />
             </div>
             <nav className="flex items-center gap-4 text-sm text-gray-300">
-              <Link href="/">Home</Link>
-              <Link href="/dashboard">Dashboard</Link>
-              <Link href="/lab">Lab</Link>
-              <Link href="/trade">Trade</Link>
-              <a href="https://github.com/" target="_blank" rel="noreferrer">Docs</a>
+              <Link
+                href="/"
+                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+              >
+                Bloomboard
+              </Link>
+              <Link
+                href="/dashboard"
+                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+              >
+                Dashboard
+              </Link>
+              <Link
+                href="/lab"
+                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+              >
+                Lab
+              </Link>
+              <Link
+                href="/trade"
+                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+              >
+                Trade
+              </Link>
+              <a
+                href="https://github.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="relative px-2 py-1 transition-colors hover:text-white after:content-[''] after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full"
+              >
+                Docs
+              </a>
             </nav>
           </div>
         </header>
