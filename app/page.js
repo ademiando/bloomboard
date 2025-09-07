@@ -106,7 +106,7 @@ export default function Home() {
         <div>
           {/* Judul & Subjudul (tidak diubah selain styling) */}
           <h1 className="text-4xl font-bold text-white">
-            Beyond Independence and Toward Sovereignty
+            Beyond Independence & Toward Sovereignty
           </h1>
           <p className="mt-3 text-lg text-gray-300">
             Monitor your investments in real-time, explore AI-powered insights,
