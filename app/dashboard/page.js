@@ -5,25 +5,20 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * app/dashboard/page.js
- * Single-file Portfolio Dashboard — final adjusted version
  *
- * Key behavior:
- *  - Single file, client component
- *  - "All Portfolio" header with small caret dropdown (no box, no label)
- *  - Filter menu toggled from caret: All / Crypto / Stocks / Non-Liquid
- *  - Columns:
- *      Code (top) / Description (bottom)
- *      Qty
- *      Avg: Invested (top, large) / Avg price (bottom, small)
- *      Market: Market value (top, large) / Current Price (bottom, small)
- *      P&L: P&L (top) / Gain % (bottom)
- *  - For Indonesian stocks: if market current price not available or <=0, fallback to avgPrice for lastPrice to avoid wrong negative P&L
- *  - Transactions modal (open by clicking Realized P&L area): view, delete (confirm), undo last delete
- *  - Non-liquid assets support (Land, Art, Rolex...) with optional description and YoY compounded growth
- *  - All UI strings in English
+ * Single-file Portfolio Dashboard.
+ * - Header has a caret (bigger) next to the title; picking filter updates title and data.
+ * - Table columns exactly:
+ *   Code (top) / Description (bottom)
+ *   Qty
+ *   Avg -> top: Invested (big), bottom: avg price (small)
+ *   Market -> top: Market value (big), bottom: Current Price (small)
+ *   P&L -> top: P&L (big), bottom: Gain % (small)
+ * - Indonesian stock price fetching: will NOT overwrite lastPrice with zero; if market data missing use avgPrice fallback.
+ * - Non-liquid assets supported (compounded YoY).
+ * - Transactions modal: view, delete (confirm) and undo last delete.
  *
- * LocalStorage keys:
- *  pf_assets_v2, pf_realized_v2, pf_display_ccy_v2, pf_transactions_v2
+ * Path: app/dashboard/page.js
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -73,7 +68,7 @@ function ensureNumericAsset(a) {
     purchaseDate: a.purchaseDate || a.createdAt || Date.now(),
     nonLiquidYoy: toNum(a.nonLiquidYoy || 0),
     description: a.description || "",
-    type: a.type || "stock", // "crypto" | "stock" | "nonliquid"
+    type: a.type || "stock", // crypto | stock | nonliquid
   };
 }
 
@@ -116,7 +111,7 @@ function Donut({ data = [], size = 180, inner = 60 }) {
   );
 }
 
-/* ===================== TRADE MODAL COMPONENT ===================== */
+/* ===================== TRADE MODAL ===================== */
 function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
@@ -250,7 +245,7 @@ export default function PortfolioDashboard() {
   const [nlPrice, setNlPrice] = useState("");
   const [nlPriceCcy, setNlPriceCcy] = useState("USD");
   const [nlPurchaseDate, setNlPurchaseDate] = useState("");
-  const [nlYoy, setNlYoy] = useState("5"); // percent
+  const [nlYoy, setNlYoy] = useState("5"); // percent per year
   const [nlDesc, setNlDesc] = useState("");
 
   /* ---------- live quotes ---------- */
@@ -258,8 +253,6 @@ export default function PortfolioDashboard() {
 
   /* ---------- filters & UI states ---------- */
   const [portfolioFilter, setPortfolioFilter] = useState("all"); // all | crypto | stock | nonliquid
-
-  // menu state for caret dropdown (small, no box)
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
   /* ---------- transactions / undo ---------- */
@@ -269,7 +262,7 @@ export default function PortfolioDashboard() {
   /* ---------- trade modal state ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
 
-  /* ---------- local persist ---------- */
+  /* ---------- local helpers: persist ---------- */
   useEffect(() => {
     try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {}
   }, [assets]);
@@ -283,7 +276,7 @@ export default function PortfolioDashboard() {
     try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {}
   }, [transactions]);
 
-  /* ===================== SEARCH (same as before) ===================== */
+  /* ===================== SEARCH LOGIC ===================== */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
@@ -325,8 +318,22 @@ export default function PortfolioDashboard() {
 
         const rawList = payload.quotes || payload.result || (payload.data && payload.data.quotes) || (payload.finance && payload.finance.result && payload.finance.result.quotes) || payload.items || [];
         const list = (Array.isArray(rawList) ? rawList : []).slice(0, 120).map((it) => {
-          const symbol = it.symbol || it.ticker || it.symbolDisplay || it.id || (typeof it === "string" ? it : "");
-          const display = it.shortname || it.shortName || it.longname || it.longName || it.name || it.title || it.displayName || it.description || symbol;
+          const symbol =
+            it.symbol ||
+            it.ticker ||
+            it.symbolDisplay ||
+            it.id ||
+            (typeof it === "string" ? it : "");
+          const display =
+            it.shortname ||
+            it.shortName ||
+            it.longname ||
+            it.longName ||
+            it.name ||
+            it.title ||
+            it.displayName ||
+            it.description ||
+            symbol;
           const exchange = it.exchange || it.fullExchangeName || it.exchangeName || it.exchDisp || "";
           const currency = it.currency || it.quoteCurrency || "";
           return {
@@ -362,7 +369,7 @@ export default function PortfolioDashboard() {
   useEffect(() => { assetsRef.current = assets; }, [assets]);
   useEffect(() => { usdIdrRef.current = usdIdr; }, [usdIdr]);
 
-  // coingecko polling
+  // Crypto polling
   useEffect(() => {
     let mounted = true;
     async function pollCg() {
@@ -393,10 +400,10 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  // stocks polling (finnhub + yahoo fallback)
+  // Stocks polling: ensure we do not overwrite lastPrice with 0 — if fetched price invalid, skip updating
   useEffect(() => {
     let mounted = true;
-    async function pollYf() {
+    async function pollStocks() {
       try {
         const symbols = Array.from(new Set(assetsRef.current.filter(a => a.type === "stock").map(a => a.symbol))).slice(0, 50);
         if (symbols.length === 0) {
@@ -406,6 +413,7 @@ export default function PortfolioDashboard() {
 
         const map = {};
 
+        // Try Finnhub per symbol with some variants; only set when price > 0
         for (const s of symbols) {
           try {
             const tryVariants = [s];
@@ -426,7 +434,7 @@ export default function PortfolioDashboard() {
                 const js = await res.json();
                 const current = toNum(js?.c ?? js?.current ?? 0);
                 if (current > 0) { got = { variant, current, data: js }; break; }
-              } catch (e) { /* next */ }
+              } catch (e) { /* try next */ }
             }
 
             if (got) {
@@ -437,27 +445,37 @@ export default function PortfolioDashboard() {
                 const fx = usdIdrRef.current || 1;
                 priceUSD = fx > 0 ? (current / fx) : current;
               }
-              map[s] = { symbol: s, regularMarketPrice: priceUSD, _source: "finnhub" };
+              if (priceUSD > 0) map[s] = { symbol: s, priceUSD, _source: "finnhub" };
+              // if priceUSD <= 0, do not set — so we avoid overwriting with zero
             }
           } catch (e) {
             // ignore
           }
         }
 
+        // Fallback Yahoo for missing symbols — only accept positive prices
         const missing = symbols.filter(s => !map[s]);
         if (missing.length > 0) {
           try {
             const res = await fetch(YAHOO_QUOTE(missing.join(",")));
             if (res.ok) {
               const j = await res.json();
+              // multiple shapes possible
               if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
-                j.quoteResponse.result.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
+                j.quoteResponse.result.forEach(q => {
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
+                  if (price > 0) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo", currency: q.currency, fullExchangeName: q.fullExchangeName };
+                });
               } else if (Array.isArray(j)) {
-                j.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
+                j.forEach(q => {
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo" };
+                });
               } else if (j && typeof j === "object") {
                 Object.keys(j).forEach(k => {
                   const q = j[k];
-                  if (q && q.symbol) map[q.symbol] = q;
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo" };
                 });
               }
             }
@@ -466,19 +484,22 @@ export default function PortfolioDashboard() {
           }
         }
 
+        // Apply updates: only update assets for symbols we have positive price; otherwise leave asset unchanged
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
-            const q = map[a.symbol];
-            const price = toNum(q.regularMarketPrice ?? q.c ?? q.current ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? q.last ?? 0);
-            const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
+            const price = toNum(map[a.symbol].priceUSD || 0);
+            // detect IDR-like and convert if necessary (if Yahoo provided currency=IDR)
+            const looksLikeId = (String(map[a.symbol].currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(map[a.symbol].fullExchangeName || "").toUpperCase().includes("JAKARTA");
             let priceUSD = price;
-            if (looksLikeId) {
+            if (looksLikeId && price > 0) {
               const fx = usdIdrRef.current || 1;
               priceUSD = fx > 0 ? (price / fx) : price;
             }
-            // If priceUSD <= 0, we will fallback later to avgPrice to avoid P&L distortion.
-            return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
+            if (priceUSD > 0) {
+              return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
+            }
           }
+          // NO update if we don't have a positive market price; keep existing a (so not overwritten by 0)
           return ensureNumericAsset(a);
         }));
 
@@ -488,12 +509,12 @@ export default function PortfolioDashboard() {
         // silent
       }
     }
-    pollYf();
-    const id = setInterval(pollYf, 5000);
+    pollStocks();
+    const id = setInterval(pollStocks, 5000);
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  /* FX */
+  /* FX: tether -> IDR */
   useEffect(() => {
     let mounted = true;
     async function fetchFx() {
@@ -524,7 +545,7 @@ export default function PortfolioDashboard() {
     return last;
   }
 
-  /* ===================== ADD ASSET FUNCTIONS ===================== */
+  /* ===================== ADD ASSET ===================== */
   function addAssetFromSuggestion(s) {
     const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
     const asset = ensureNumericAsset({
@@ -625,7 +646,7 @@ export default function PortfolioDashboard() {
     setOpenAdd(false);
   }
 
-  /* ===================== BUY / SELL (modal) ===================== */
+  /* ===================== BUY / SELL ===================== */
   function openTradeModal(assetId, mode) {
     const asset = assets.find(a => a.id === assetId);
     if (!asset) return;
@@ -696,7 +717,6 @@ export default function PortfolioDashboard() {
     const tx = transactions.find(t => t.id === txId);
     if (!tx) return;
     if (!confirm(`Delete transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit)})? This can be undone.`)) return;
-    // remove from list and store as lastDeletedTx for undo
     setTransactions(prev => prev.filter(t => t.id !== txId));
     setLastDeletedTx(tx);
   }
@@ -705,10 +725,7 @@ export default function PortfolioDashboard() {
     setTransactions(prev => [lastDeletedTx, ...prev]);
     setLastDeletedTx(null);
   }
-  function purgeLastDeletedTransaction() {
-    // forget undo option
-    setLastDeletedTx(null);
-  }
+  function purgeLastDeletedTransaction() { setLastDeletedTx(null); }
 
   /* ===================== EDIT / DELETE ASSET ===================== */
   function removeAsset(id) {
@@ -720,20 +737,19 @@ export default function PortfolioDashboard() {
   /* ===================== computed rows & totals ===================== */
   const rows = useMemo(() => assets.map(a => {
     const aa = ensureNumericAsset(a);
+
     if (aa.type === "nonliquid") {
       const last = computeNonLiquidLastPrice(aa.avgPrice, aa.purchaseDate || aa.createdAt, aa.nonLiquidYoy || 0);
       aa.lastPriceUSD = last;
       aa.marketValueUSD = last * toNum(aa.shares || 0);
     } else {
-      aa.lastPriceUSD = toNum(aa.lastPriceUSD || aa.avgPrice || 0);
+      // For stock/crypto: keep existing lastPrice if present; if lastPrice is 0/invalid then fallback to avgPrice.
+      aa.lastPriceUSD = toNum(aa.lastPriceUSD || 0);
+      if (!aa.lastPriceUSD || aa.lastPriceUSD <= 0) {
+        // fallback to avgPrice to avoid P&L distortion
+        aa.lastPriceUSD = aa.avgPrice || aa.lastPriceUSD || 0;
+      }
       aa.marketValueUSD = toNum(aa.shares || 0) * aa.lastPriceUSD;
-    }
-
-    // IMPORTANT: handle missing stock prices (esp Indonesian). If stock and lastPriceUSD <= 0,
-    // fallback to avgPrice so P&L doesn't become negative due to missing market data.
-    if (aa.type === "stock" && (!aa.lastPriceUSD || aa.lastPriceUSD <= 0)) {
-      aa.lastPriceUSD = aa.avgPrice || aa.lastPriceUSD || 0;
-      aa.marketValueUSD = aa.lastPriceUSD * toNum(aa.shares || 0);
     }
 
     const last = aa.lastPriceUSD || aa.avgPrice || 0;
@@ -760,15 +776,15 @@ export default function PortfolioDashboard() {
     return { invested, market, pnl, pnlPct };
   }, [filteredRows]);
 
-  /* ===================== donut data ===================== */
+  /* ===================== DONUT DATA ===================== */
   const donutData = useMemo(() => {
     const sortedRows = filteredRows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
-    const top = sortedRows.slice(0, 4);
-    const other = sortedRows.slice(4);
-    const otherTotal = other.reduce((s, r) => s + (r.marketValueUSD || 0), 0);
-    const otherSymbols = other.map(r => r.symbol);
-    const data = top.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
-    if (otherTotal > 0) data.push({ name: "Other", value: otherTotal, symbols: otherSymbols });
+    const topFive = sortedRows.slice(0, 4);
+    const otherAssets = sortedRows.slice(4);
+    const otherTotalValue = otherAssets.reduce((sum, asset) => sum + (asset.marketValueUSD || 0), 0);
+    const otherSymbols = otherAssets.map(asset => asset.symbol);
+    const data = topFive.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
+    if (otherTotalValue > 0) data.push({ name: "Other", value: otherTotalValue, symbols: otherSymbols });
     return data;
   }, [filteredRows]);
 
@@ -777,7 +793,7 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* ===================== CSV export/import (kept) ===================== */
+  /* ===================== CSV (kept) ===================== */
   function exportCSV() {
     const headers = ["id","type","coingeckoId","symbol","name","description","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt","purchaseDate","nonLiquidYoy"];
     const lines = [headers.join(",")];
@@ -802,6 +818,7 @@ export default function PortfolioDashboard() {
     a.remove();
     URL.revokeObjectURL(url);
   }
+
   function handleImportFile(file, { merge = true } = {}) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -868,6 +885,7 @@ export default function PortfolioDashboard() {
     };
     reader.readAsText(file);
   }
+
   function onImportClick(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -877,28 +895,38 @@ export default function PortfolioDashboard() {
   }
 
   /* ===================== RENDER ===================== */
+
+  // Title mapping based on filter
+  const titleForFilter = {
+    all: "All Portfolio",
+    crypto: "Crypto Portfolio",
+    stock: "Stocks Portfolio",
+    nonliquid: "Non-Liquid Portfolio",
+  };
+  const headerTitle = titleForFilter[portfolioFilter] || "Portfolio";
+
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
       <div className="max-w-6xl mx-auto">
 
-        {/* HEADER: Title + minimal caret dropdown (no box, no text) */}
+        {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2 relative">
-            <h1 className="text-2xl font-semibold">All Portfolio</h1>
+            <h1 className="text-2xl font-semibold">{headerTitle}</h1>
 
-            {/* caret button (minimal) */}
+            {/* larger caret button (no box, no text) */}
             <button
               aria-label="Filter"
               onClick={() => setFilterMenuOpen(v => !v)}
-              className="text-gray-400 hover:text-gray-200 select-none"
-              style={{ fontSize: 14, lineHeight: 1 }}
+              className="text-gray-400 hover:text-gray-200 select-none ml-1"
+              style={{ fontSize: 18, lineHeight: 1, padding: "4px 6px" }}
             >
               ▾
             </button>
 
-            {/* minimal menu (no box) */}
+            {/* minimal floating menu */}
             {filterMenuOpen && (
-              <div className="absolute mt-9 left-0 z-50">
+              <div className="absolute mt-10 left-0 z-50">
                 <div className="bg-transparent">
                   <button onClick={() => { setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="block px-3 py-1 text-sm text-gray-200 hover:text-white">All</button>
                   <button onClick={() => { setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="block px-3 py-1 text-sm text-gray-200 hover:text-white">Crypto</button>
@@ -946,7 +974,7 @@ export default function PortfolioDashboard() {
           )}
         </div>
 
-        {/* KPIs: Invested, Market, Gain P&L, Realized (click Realized area to open transactions modal) */}
+        {/* KPIs */}
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm items-center">
           <div className="flex justify-between text-gray-400">
             <div>Invested</div>
@@ -960,16 +988,9 @@ export default function PortfolioDashboard() {
             <div>Gain P&L</div>
             <div className={`font-semibold ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(totals.pnl * usdIdr, "IDR") : fmtMoney(totals.pnl, "USD")} ({totals.pnlPct.toFixed(2)}%)</div>
           </div>
-
-          {/* Realized P&L area — click to open transactions modal */}
-          <div
-            className="flex items-center justify-between text-gray-400 cursor-pointer"
-            onClick={() => setTransactionsOpen(true)}
-            title="Click to view transactions"
-          >
+          <div className="flex items-center justify-between text-gray-400 cursor-pointer" onClick={() => setTransactionsOpen(true)}>
             <div className="flex items-center gap-3">
               <div>Realized P&L</div>
-              <div className="text-xs text-gray-400">view</div>
             </div>
             <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
           </div>
@@ -1016,7 +1037,6 @@ export default function PortfolioDashboard() {
                 </div>
               </div>
             ) : (
-              // NON-LIQUID ADD FORM (English labels + description)
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-400">Name (Land, Art, Rolex...)</label>
@@ -1082,19 +1102,19 @@ export default function PortfolioDashboard() {
                   </td>
                   <td className="px-3 py-3 text-right">{Number(r.shares || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
 
-                  {/* AVG column: Invested (big) / Avg price (small) */}
+                  {/* AVG column -> top: Invested (big), bottom: Avg price (small) */}
                   <td className="px-3 py-3 text-right tabular-nums">
                     <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.investedUSD * usdIdr, "IDR") : fmtMoney(r.investedUSD, "USD")}</div>
                     <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.avgPrice * usdIdr, "IDR") : fmtMoney(r.avgPrice, "USD")}</div>
                   </td>
 
-                  {/* MARKET column: Market value (big) / Current Price (small) */}
+                  {/* MARKET column -> top: Market value (big), bottom: Current Price (small) */}
                   <td className="px-3 py-3 text-right tabular-nums">
                     <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")}</div>
                     <div className="text-xs text-gray-400">{r.lastPriceUSD > 0 ? (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) : "-"}</div>
                   </td>
 
-                  {/* P&L column */}
+                  {/* P&L column -> top: P&L (big), bottom: Gain % (small) */}
                   <td className="px-3 py-3 text-right">
                     <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(r.pnlUSD * usdIdr, "IDR") : fmtMoney(r.pnlUSD, "USD")}</div>
                     <div className={`text-xs ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{isFinite(r.pnlPct) ? `${r.pnlPct.toFixed(2)}%` : "0.00%"}</div>
@@ -1198,7 +1218,7 @@ export default function PortfolioDashboard() {
                           <td className="px-3 py-3 text-right">{displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")}</td>
                           <td className="px-3 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <button onClick={() => { if (confirm("Undo this transaction (move proceeds back)? Not implemented)")) {} }} className="bg-gray-700 px-2 py-1 rounded text-xs">Undo</button>
+                              <button onClick={() => { if (confirm("Undo this transaction not implemented automatically. Use undo delete to restore deleted tx.")) {} }} className="bg-gray-700 px-2 py-1 rounded text-xs">Undo</button>
                               <button onClick={() => deleteTransaction(tx.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black">Delete</button>
                             </div>
                           </td>
@@ -1209,7 +1229,6 @@ export default function PortfolioDashboard() {
                 </div>
               )}
 
-              {/* Undo hint / last deleted info */}
               {lastDeletedTx && (
                 <div className="mt-4 flex items-center justify-between">
                   <div className="text-sm text-gray-300">Last deleted: {lastDeletedTx.symbol} ({new Date(lastDeletedTx.date).toLocaleString()})</div>
@@ -1223,7 +1242,7 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* EXPORT / IMPORT */}
+        {/* EXPORT / IMPORT CSV */}
         <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1">
             <div className="text-sm text-gray-300">CSV: export / import (merge or replace)</div>
