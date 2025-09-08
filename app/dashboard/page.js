@@ -5,20 +5,18 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * app/dashboard/page.js
+ * Single-file Portfolio Dashboard — final adjusted
  *
- * Single-file Portfolio Dashboard.
- * - Header has a caret (bigger) next to the title; picking filter updates title and data.
+ * - Header with caret dropdown (non-transparent box)
+ * - Filter updates title and displayed data
  * - Table columns exactly:
- *   Code (top) / Description (bottom)
- *   Qty
- *   Avg -> top: Invested (big), bottom: avg price (small)
- *   Market -> top: Market value (big), bottom: Current Price (small)
- *   P&L -> top: P&L (big), bottom: Gain % (small)
- * - Indonesian stock price fetching: will NOT overwrite lastPrice with zero; if market data missing use avgPrice fallback.
- * - Non-liquid assets supported (compounded YoY).
- * - Transactions modal: view, delete (confirm) and undo last delete.
- *
- * Path: app/dashboard/page.js
+ *    Code (top) / Description (bottom)
+ *    Qty
+ *    Invested (top big) / Avg price (bottom small)
+ *    Market value (top big) / Current price (bottom small)
+ *    P&L (top big) / Gain (bottom small)
+ * - Realized P&L has small slanted arrow icon to indicate clickable
+ * - Indonesian stocks: do not overwrite lastPrice with 0; fallback to avgPrice when needed
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -229,7 +227,7 @@ export default function PortfolioDashboard() {
   const [fxLoading, setFxLoading] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  /* ---------- search/add ---------- */
+  /* ---------- add/search state ---------- */
   const [openAdd, setOpenAdd] = useState(false);
   const [searchMode, setSearchMode] = useState("crypto"); // crypto | id | us | nonliquid
   const [query, setQuery] = useState("");
@@ -251,18 +249,18 @@ export default function PortfolioDashboard() {
   /* ---------- live quotes ---------- */
   const [lastTick, setLastTick] = useState(null);
 
-  /* ---------- filters & UI states ---------- */
+  /* ---------- filter & UI ---------- */
   const [portfolioFilter, setPortfolioFilter] = useState("all"); // all | crypto | stock | nonliquid
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
   /* ---------- transactions / undo ---------- */
   const [transactionsOpen, setTransactionsOpen] = useState(false);
-  const [lastDeletedTx, setLastDeletedTx] = useState(null); // store last deleted tx for undo
+  const [lastDeletedTx, setLastDeletedTx] = useState(null);
 
-  /* ---------- trade modal state ---------- */
+  /* ---------- trade modal ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
 
-  /* ---------- local helpers: persist ---------- */
+  /* ---------- persist to localStorage ---------- */
   useEffect(() => {
     try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {}
   }, [assets]);
@@ -276,7 +274,7 @@ export default function PortfolioDashboard() {
     try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {}
   }, [transactions]);
 
-  /* ===================== SEARCH LOGIC ===================== */
+  /* ===================== SEARCH (same) ===================== */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
@@ -400,7 +398,7 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  // Stocks polling: ensure we do not overwrite lastPrice with 0 — if fetched price invalid, skip updating
+  // Stocks polling (Finnhub per-symbol + Yahoo fallback). DO NOT overwrite with 0.
   useEffect(() => {
     let mounted = true;
     async function pollStocks() {
@@ -413,9 +411,10 @@ export default function PortfolioDashboard() {
 
         const map = {};
 
-        // Try Finnhub per symbol with some variants; only set when price > 0
+        // Try Finnhub per symbol; only accept positive price
         for (const s of symbols) {
           try {
+            // create plausible variants to increase chance of match
             const tryVariants = [s];
             if (String(s).toUpperCase().endsWith(".JK")) {
               const bare = s.replace(/\.JK$/i, "");
@@ -426,45 +425,46 @@ export default function PortfolioDashboard() {
               tryVariants.push(`${s}.JK`);
             }
 
-            let got = null;
             for (const variant of tryVariants) {
               try {
                 const res = await fetch(FINNHUB_QUOTE(variant));
                 if (!res.ok) continue;
                 const js = await res.json();
                 const current = toNum(js?.c ?? js?.current ?? 0);
-                if (current > 0) { got = { variant, current, data: js }; break; }
-              } catch (e) { /* try next */ }
-            }
-
-            if (got) {
-              const current = got.current;
-              const looksLikeId = String(s || "").toUpperCase().endsWith(".JK") || String(got.variant || "").toUpperCase().startsWith("IDX:");
-              let priceUSD = current;
-              if (looksLikeId) {
-                const fx = usdIdrRef.current || 1;
-                priceUSD = fx > 0 ? (current / fx) : current;
+                if (current > 0) {
+                  const looksLikeId = String(variant || "").toUpperCase().startsWith("IDX:") || String(variant || "").toUpperCase().endsWith(".JK");
+                  let priceUSD = current;
+                  if (looksLikeId) {
+                    const fx = usdIdrRef.current || 1;
+                    priceUSD = fx > 0 ? (current / fx) : current;
+                  }
+                  if (priceUSD > 0) {
+                    map[s] = { symbol: s, priceUSD, _source: "finnhub", variant };
+                    break;
+                  }
+                }
+              } catch (e) {
+                // next variant
               }
-              if (priceUSD > 0) map[s] = { symbol: s, priceUSD, _source: "finnhub" };
-              // if priceUSD <= 0, do not set — so we avoid overwriting with zero
             }
           } catch (e) {
-            // ignore
+            // ignore symbol
           }
         }
 
-        // Fallback Yahoo for missing symbols — only accept positive prices
+        // Yahoo fallback for missing
         const missing = symbols.filter(s => !map[s]);
         if (missing.length > 0) {
           try {
             const res = await fetch(YAHOO_QUOTE(missing.join(",")));
             if (res.ok) {
               const j = await res.json();
-              // multiple shapes possible
               if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
                 j.quoteResponse.result.forEach(q => {
                   const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo", currency: q.currency, fullExchangeName: q.fullExchangeName };
+                  if (price > 0 && q?.symbol) {
+                    map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo", currency: q.currency, fullExchangeName: q.fullExchangeName };
+                  }
                 });
               } else if (Array.isArray(j)) {
                 j.forEach(q => {
@@ -472,10 +472,11 @@ export default function PortfolioDashboard() {
                   if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo" };
                 });
               } else if (j && typeof j === "object") {
+                // object keyed response
                 Object.keys(j).forEach(k => {
                   const q = j[k];
                   const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo" };
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo", currency: q.currency, fullExchangeName: q.fullExchangeName };
                 });
               }
             }
@@ -484,22 +485,21 @@ export default function PortfolioDashboard() {
           }
         }
 
-        // Apply updates: only update assets for symbols we have positive price; otherwise leave asset unchanged
+        // Apply updates only for positive prices — do not overwrite with 0
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
-            const price = toNum(map[a.symbol].priceUSD || 0);
-            // detect IDR-like and convert if necessary (if Yahoo provided currency=IDR)
-            const looksLikeId = (String(map[a.symbol].currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(map[a.symbol].fullExchangeName || "").toUpperCase().includes("JAKARTA");
-            let priceUSD = price;
+            const entry = map[a.symbol];
+            let price = toNum(entry.priceUSD || entry.price || entry.priceUSD || 0);
+            const looksLikeId = (String(entry.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
             if (looksLikeId && price > 0) {
               const fx = usdIdrRef.current || 1;
-              priceUSD = fx > 0 ? (price / fx) : price;
+              price = fx > 0 ? (price / fx) : price;
             }
-            if (priceUSD > 0) {
-              return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
+            if (price > 0) {
+              return ensureNumericAsset({ ...a, lastPriceUSD: price, marketValueUSD: price * toNum(a.shares || 0) });
             }
           }
-          // NO update if we don't have a positive market price; keep existing a (so not overwritten by 0)
+          // keep previous a as-is if no positive price available
           return ensureNumericAsset(a);
         }));
 
@@ -514,7 +514,7 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  /* FX: tether -> IDR */
+  /* FX for IDR */
   useEffect(() => {
     let mounted = true;
     async function fetchFx() {
@@ -712,7 +712,7 @@ export default function PortfolioDashboard() {
     closeTradeModal();
   }
 
-  /* ===================== TRANSACTIONS: delete & undo ===================== */
+  /* ===================== TRANSACTIONS delete/undo ===================== */
   function deleteTransaction(txId) {
     const tx = transactions.find(t => t.id === txId);
     if (!tx) return;
@@ -743,10 +743,9 @@ export default function PortfolioDashboard() {
       aa.lastPriceUSD = last;
       aa.marketValueUSD = last * toNum(aa.shares || 0);
     } else {
-      // For stock/crypto: keep existing lastPrice if present; if lastPrice is 0/invalid then fallback to avgPrice.
+      // Preserve lastPrice if already present; only use avgPrice when no valid market price exists.
       aa.lastPriceUSD = toNum(aa.lastPriceUSD || 0);
       if (!aa.lastPriceUSD || aa.lastPriceUSD <= 0) {
-        // fallback to avgPrice to avoid P&L distortion
         aa.lastPriceUSD = aa.avgPrice || aa.lastPriceUSD || 0;
       }
       aa.marketValueUSD = toNum(aa.shares || 0) * aa.lastPriceUSD;
@@ -776,15 +775,15 @@ export default function PortfolioDashboard() {
     return { invested, market, pnl, pnlPct };
   }, [filteredRows]);
 
-  /* ===================== DONUT DATA ===================== */
+  /* ===================== donut data ===================== */
   const donutData = useMemo(() => {
     const sortedRows = filteredRows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
-    const topFive = sortedRows.slice(0, 4);
-    const otherAssets = sortedRows.slice(4);
-    const otherTotalValue = otherAssets.reduce((sum, asset) => sum + (asset.marketValueUSD || 0), 0);
-    const otherSymbols = otherAssets.map(asset => asset.symbol);
-    const data = topFive.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
-    if (otherTotalValue > 0) data.push({ name: "Other", value: otherTotalValue, symbols: otherSymbols });
+    const top = sortedRows.slice(0, 4);
+    const other = sortedRows.slice(4);
+    const otherTotal = other.reduce((s, r) => s + (r.marketValueUSD || 0), 0);
+    const otherSymbols = other.map(r => r.symbol);
+    const data = top.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
+    if (otherTotal > 0) data.push({ name: "Other", value: otherTotal, symbols: otherSymbols });
     return data;
   }, [filteredRows]);
 
@@ -793,7 +792,7 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* ===================== CSV (kept) ===================== */
+  /* ===================== CSV export/import ===================== */
   function exportCSV() {
     const headers = ["id","type","coingeckoId","symbol","name","description","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt","purchaseDate","nonLiquidYoy"];
     const lines = [headers.join(",")];
@@ -818,7 +817,6 @@ export default function PortfolioDashboard() {
     a.remove();
     URL.revokeObjectURL(url);
   }
-
   function handleImportFile(file, { merge = true } = {}) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -885,7 +883,6 @@ export default function PortfolioDashboard() {
     };
     reader.readAsText(file);
   }
-
   function onImportClick(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -896,7 +893,6 @@ export default function PortfolioDashboard() {
 
   /* ===================== RENDER ===================== */
 
-  // Title mapping based on filter
   const titleForFilter = {
     all: "All Portfolio",
     crypto: "Crypto Portfolio",
@@ -914,27 +910,26 @@ export default function PortfolioDashboard() {
           <div className="flex items-center gap-2 relative">
             <h1 className="text-2xl font-semibold">{headerTitle}</h1>
 
-            {/* larger caret button (no box, no text) */}
-            <button
-              aria-label="Filter"
-              onClick={() => setFilterMenuOpen(v => !v)}
-              className="text-gray-400 hover:text-gray-200 select-none ml-1"
-              style={{ fontSize: 18, lineHeight: 1, padding: "4px 6px" }}
-            >
-              ▾
-            </button>
+            {/* styled dropdown box (non-transparent) */}
+            <div className="relative">
+              <button
+                aria-label="Filter"
+                onClick={() => setFilterMenuOpen(v => !v)}
+                className="ml-2 inline-flex items-center justify-center rounded px-2 py-1 bg-gray-800 border border-gray-700 text-gray-200 hover:bg-gray-700"
+                style={{ fontSize: 16, lineHeight: 1 }}
+              >
+                ▾
+              </button>
 
-            {/* minimal floating menu */}
-            {filterMenuOpen && (
-              <div className="absolute mt-10 left-0 z-50">
-                <div className="bg-transparent">
-                  <button onClick={() => { setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="block px-3 py-1 text-sm text-gray-200 hover:text-white">All</button>
-                  <button onClick={() => { setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="block px-3 py-1 text-sm text-gray-200 hover:text-white">Crypto</button>
-                  <button onClick={() => { setPortfolioFilter("stock"); setFilterMenuOpen(false); }} className="block px-3 py-1 text-sm text-gray-200 hover:text-white">Stocks</button>
-                  <button onClick={() => { setPortfolioFilter("nonliquid"); setFilterMenuOpen(false); }} className="block px-3 py-1 text-sm text-gray-200 hover:text-white">Non-Liquid</button>
+              {filterMenuOpen && (
+                <div className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-40">
+                  <button onClick={() => { setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">All</button>
+                  <button onClick={() => { setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Crypto</button>
+                  <button onClick={() => { setPortfolioFilter("stock"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Stocks</button>
+                  <button onClick={() => { setPortfolioFilter("nonliquid"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Non-Liquid</button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -989,7 +984,12 @@ export default function PortfolioDashboard() {
             <div className={`font-semibold ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(totals.pnl * usdIdr, "IDR") : fmtMoney(totals.pnl, "USD")} ({totals.pnlPct.toFixed(2)}%)</div>
           </div>
           <div className="flex items-center justify-between text-gray-400 cursor-pointer" onClick={() => setTransactionsOpen(true)}>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {/* small slanted arrow icon to indicate clickability */}
+              <svg width="12" height="12" viewBox="0 0 24 24" className="transform rotate-22" style={{ transform: "rotate(20deg)" }}>
+                <path d="M3 21l18-18" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                <path d="M21 7v-4h-4" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+              </svg>
               <div>Realized P&L</div>
             </div>
             <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
@@ -1085,8 +1085,8 @@ export default function PortfolioDashboard() {
               <tr>
                 <th className="text-left py-2 px-3">Code <div className="text-xs text-gray-500">Description</div></th>
                 <th className="text-right py-2 px-3">Qty</th>
-                <th className="text-right py-2 px-3">Avg <div className="text-xs text-gray-500">Invested / Avg price</div></th>
-                <th className="text-right py-2 px-3">Market <div className="text-xs text-gray-500">Market value / Current Price</div></th>
+                <th className="text-right py-2 px-3">Invested <div className="text-xs text-gray-500">Avg price</div></th>
+                <th className="text-right py-2 px-3">Market value <div className="text-xs text-gray-500">Current Price</div></th>
                 <th className="text-right py-2 px-3">P&L <div className="text-xs text-gray-500">Gain</div></th>
                 <th className="py-2 px-3"></th>
               </tr>
@@ -1102,19 +1102,19 @@ export default function PortfolioDashboard() {
                   </td>
                   <td className="px-3 py-3 text-right">{Number(r.shares || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
 
-                  {/* AVG column -> top: Invested (big), bottom: Avg price (small) */}
+                  {/* Invested (top big) / Avg price (small) */}
                   <td className="px-3 py-3 text-right tabular-nums">
                     <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.investedUSD * usdIdr, "IDR") : fmtMoney(r.investedUSD, "USD")}</div>
                     <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.avgPrice * usdIdr, "IDR") : fmtMoney(r.avgPrice, "USD")}</div>
                   </td>
 
-                  {/* MARKET column -> top: Market value (big), bottom: Current Price (small) */}
+                  {/* Market value (top big) / Current Price (small) */}
                   <td className="px-3 py-3 text-right tabular-nums">
                     <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")}</div>
                     <div className="text-xs text-gray-400">{r.lastPriceUSD > 0 ? (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) : "-"}</div>
                   </td>
 
-                  {/* P&L column -> top: P&L (big), bottom: Gain % (small) */}
+                  {/* P&L */}
                   <td className="px-3 py-3 text-right">
                     <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(r.pnlUSD * usdIdr, "IDR") : fmtMoney(r.pnlUSD, "USD")}</div>
                     <div className={`text-xs ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{isFinite(r.pnlPct) ? `${r.pnlPct.toFixed(2)}%` : "0.00%"}</div>
