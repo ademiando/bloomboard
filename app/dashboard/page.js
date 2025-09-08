@@ -5,18 +5,15 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * app/dashboard/page.js
- * Single-file Portfolio Dashboard — final adjusted
  *
- * - Header with caret dropdown (non-transparent box)
- * - Filter updates title and displayed data
- * - Table columns exactly:
- *    Code (top) / Description (bottom)
- *    Qty
- *    Invested (top big) / Avg price (bottom small)
- *    Market value (top big) / Current price (bottom small)
- *    P&L (top big) / Gain (bottom small)
- * - Realized P&L has small slanted arrow icon to indicate clickable
- * - Indonesian stocks: do not overwrite lastPrice with 0; fallback to avgPrice when needed
+ * Single-file Portfolio Dashboard — FINAL (with:
+ * - Indonesian stock fix (prefer Yahoo for .JK),
+ * - Restore / Delete / Undo semantics for transactions,
+ * - Buy transactions recorded,
+ * - Non-liquid assets with YoY compounding,
+ * - Chart with timeframe (1d,2d,1w,1m,1y,all),
+ * - Exact column layout: Invested (big) / Avg price (small), Market value (big) / Current Price (small), Code/Description, P&L/Gain,
+ * - Realized P&L icon in a small box to the right of label.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -106,6 +103,71 @@ function Donut({ data = [], size = 180, inner = 60 }) {
       })}
       <circle cx={cx} cy={cy} r={inner} fill="#070707" />
     </svg>
+  );
+}
+
+/* ===================== SIMPLE SVG CHART ===================== */
+function PortfolioChart({ series = [], width = 700, height = 180, onHoverValue }) {
+  // series: array of {t: timestamp, v: value}
+  if (!series || series.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
+  const max = Math.max(...series.map(s => s.v));
+  const min = Math.min(...series.map(s => s.v));
+  const pad = 12;
+  const w = width;
+  const h = height;
+  const points = series.map((s, i) => {
+    const x = pad + (i / (series.length - 1)) * (w - pad * 2);
+    const y = pad + (1 - (s.v - min) / Math.max(1e-8, (max - min))) * (h - pad * 2);
+    return { x, y, t: s.t, v: s.v };
+  });
+
+  const d = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
+  const areaD = `${d} L ${points[points.length - 1].x.toFixed(2)} ${h - pad} L ${points[0].x.toFixed(2)} ${h - pad} Z`;
+
+  // hover handling inside component: return tooltip via onHoverValue
+  const [hoverX, setHoverX] = useState(null);
+  const [hoverIdx, setHoverIdx] = useState(null);
+
+  function handleMove(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    // find closest point
+    let best = 0, bestDist = Infinity;
+    points.forEach((p, i) => {
+      const d = Math.abs(p.x - x);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    setHoverX(points[best].x);
+    setHoverIdx(best);
+    if (onHoverValue) onHoverValue(points[best]);
+  }
+  function handleLeave() {
+    setHoverX(null);
+    setHoverIdx(null);
+    if (onHoverValue) onHoverValue(null);
+  }
+
+  return (
+    <div className="w-full overflow-hidden">
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
+        onMouseMove={handleMove} onMouseLeave={handleLeave}>
+        <defs>
+          <linearGradient id="gradArea" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#4D96FF" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#4D96FF" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d={areaD} fill="url(#gradArea)" stroke="none" />
+        <path d={d} fill="none" stroke="#4D96FF" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {hoverIdx !== null && points[hoverIdx] && (
+          <>
+            <line x1={points[hoverIdx].x} y1={pad} x2={points[hoverIdx].x} y2={h - pad} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <circle cx={points[hoverIdx].x} cy={points[hoverIdx].y} r="4" fill="#fff" />
+            <circle cx={points[hoverIdx].x} cy={points[hoverIdx].y} r="3" fill="#4D96FF" />
+          </>
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -260,6 +322,10 @@ export default function PortfolioDashboard() {
   /* ---------- trade modal ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
 
+  /* ---------- chart timeframe ---------- */
+  const [chartRange, setChartRange] = useState("all"); // 1d,2d,1w,1m,1y,all
+  const [chartHover, setChartHover] = useState(null);
+
   /* ---------- persist to localStorage ---------- */
   useEffect(() => {
     try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {}
@@ -398,7 +464,7 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  // Stocks polling (Finnhub per-symbol + Yahoo fallback). DO NOT overwrite with 0.
+  // Stocks polling with .JK preference for Yahoo
   useEffect(() => {
     let mounted = true;
     async function pollStocks() {
@@ -411,20 +477,44 @@ export default function PortfolioDashboard() {
 
         const map = {};
 
-        // Try Finnhub per symbol; only accept positive price
-        for (const s of symbols) {
+        // prioritize Yahoo for .JK tickers
+        const jkSymbols = symbols.filter(s => String(s).toUpperCase().endsWith(".JK"));
+        if (jkSymbols.length > 0) {
           try {
-            // create plausible variants to increase chance of match
+            const res = await fetch(YAHOO_QUOTE(jkSymbols.join(",")));
+            if (res.ok) {
+              const j = await res.json();
+              if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
+                j.quoteResponse.result.forEach(q => {
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
+                  if (price > 0 && q?.symbol) {
+                    map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency, fullExchangeName: q.fullExchangeName, _source: "yahoo" };
+                  }
+                });
+              } else if (Array.isArray(j)) {
+                j.forEach(q => {
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, _source: "yahoo" };
+                });
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        // For other symbols, try Finnhub per-symbol, fallback to Yahoo bulk
+        const nonJk = symbols.filter(s => !map[s]);
+        for (const s of nonJk) {
+          try {
             const tryVariants = [s];
             if (String(s).toUpperCase().endsWith(".JK")) {
               const bare = s.replace(/\.JK$/i, "");
-              tryVariants.push(bare);
-              tryVariants.push(`IDX:${bare}`);
+              tryVariants.push(bare, `IDX:${bare}`);
             } else {
-              tryVariants.push(`IDX:${s}`);
-              tryVariants.push(`${s}.JK`);
+              tryVariants.push(`IDX:${s}`, `${s}.JK`);
             }
-
+            let found = false;
             for (const variant of tryVariants) {
               try {
                 const res = await fetch(FINNHUB_QUOTE(variant));
@@ -432,27 +522,31 @@ export default function PortfolioDashboard() {
                 const js = await res.json();
                 const current = toNum(js?.c ?? js?.current ?? 0);
                 if (current > 0) {
+                  // try to detect IDR prices: if variant or symbol indicates IDX or .JK treat as IDR
                   const looksLikeId = String(variant || "").toUpperCase().startsWith("IDX:") || String(variant || "").toUpperCase().endsWith(".JK");
-                  let priceUSD = current;
+                  let priceRaw = current;
                   if (looksLikeId) {
-                    const fx = usdIdrRef.current || 1;
-                    priceUSD = fx > 0 ? (current / fx) : current;
+                    // Finnhub returned local currency likely IDR; convert only after we set price
+                    map[s] = { symbol: s, priceRaw: priceRaw, currency: "IDR", _source: "finnhub", variant };
+                  } else {
+                    map[s] = { symbol: s, priceRaw: priceRaw, currency: js?.currency || "USD", _source: "finnhub", variant };
                   }
-                  if (priceUSD > 0) {
-                    map[s] = { symbol: s, priceUSD, _source: "finnhub", variant };
-                    break;
-                  }
+                  found = true;
+                  break;
                 }
               } catch (e) {
-                // next variant
+                // try next variant
               }
             }
+            if (!found) {
+              // leave for yahoo fallback
+            }
           } catch (e) {
-            // ignore symbol
+            // ignore
           }
         }
 
-        // Yahoo fallback for missing
+        // Yahoo fallback for remaining missing
         const missing = symbols.filter(s => !map[s]);
         if (missing.length > 0) {
           try {
@@ -463,20 +557,19 @@ export default function PortfolioDashboard() {
                 j.quoteResponse.result.forEach(q => {
                   const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
                   if (price > 0 && q?.symbol) {
-                    map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo", currency: q.currency, fullExchangeName: q.fullExchangeName };
+                    map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency, fullExchangeName: q.fullExchangeName, _source: "yahoo" };
                   }
                 });
               } else if (Array.isArray(j)) {
                 j.forEach(q => {
                   const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo" };
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: "USD", _source: "yahoo" };
                 });
               } else if (j && typeof j === "object") {
-                // object keyed response
                 Object.keys(j).forEach(k => {
                   const q = j[k];
                   const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceUSD: price, _source: "yahoo", currency: q.currency, fullExchangeName: q.fullExchangeName };
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency || "USD", fullExchangeName: q.fullExchangeName, _source: "yahoo" };
                 });
               }
             }
@@ -485,21 +578,24 @@ export default function PortfolioDashboard() {
           }
         }
 
-        // Apply updates only for positive prices — do not overwrite with 0
+        // Apply updates only for positive prices; convert IDR to USD using fx when necessary
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
             const entry = map[a.symbol];
-            let price = toNum(entry.priceUSD || entry.price || entry.priceUSD || 0);
-            const looksLikeId = (String(entry.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
-            if (looksLikeId && price > 0) {
+            let priceRaw = toNum(entry.priceRaw || 0);
+            const currency = (entry.currency || "").toString().toUpperCase();
+            let priceUSD = priceRaw;
+            // Heuristic: treat currency 'IDR' or .JK as IDR and convert
+            const looksLikeId = currency === "IDR" || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
+            if (looksLikeId && priceRaw > 0) {
               const fx = usdIdrRef.current || 1;
-              price = fx > 0 ? (price / fx) : price;
+              priceUSD = fx > 0 ? (priceRaw / fx) : priceRaw;
             }
-            if (price > 0) {
-              return ensureNumericAsset({ ...a, lastPriceUSD: price, marketValueUSD: price * toNum(a.shares || 0) });
+            // Extra safeguard: if priceUSD <= 0 or NaN, skip update (keep previous)
+            if (priceUSD > 0 && Number.isFinite(priceUSD)) {
+              return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
             }
           }
-          // keep previous a as-is if no positive price available
           return ensureNumericAsset(a);
         }));
 
@@ -538,11 +634,119 @@ export default function PortfolioDashboard() {
   }, []);
 
   /* ===================== NON-LIQUID helpers ===================== */
-  function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent) {
-    const years = Math.max(0, (Date.now() - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
+  function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent, targetTime = Date.now()) {
+    // Compute price at targetTime using compounding
+    const years = Math.max(0, (targetTime - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
     const r = toNum(yoyPercent) / 100;
     const last = avgPriceUSD * Math.pow(1 + r, years);
     return last;
+  }
+
+  /* ===================== TRANSACTION EFFECTS HELPERS ===================== */
+  function applyTransactionEffects(tx) {
+    // Applies tx effects to portfolio state (used when we re-apply a deleted tx)
+    if (!tx) return;
+    if (tx.type === "sell") {
+      // apply sale: reduce shares, investedUSD reduced by costOfSold, realizedUSD increase by realized
+      setAssets(prev => prev.map(a => {
+        if (a.id === tx.assetId) {
+          const oldShares = toNum(a.shares || 0);
+          const newShares = Math.max(0, oldShares - tx.qty);
+          const newInvested = Math.max(0, toNum(a.investedUSD || 0) - tx.costOfSold);
+          const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
+          const lastPriceUSD = tx.pricePerUnit || a.lastPriceUSD || newAvg;
+          return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD, marketValueUSD: newShares * lastPriceUSD });
+        }
+        return ensureNumericAsset(a);
+      }));
+      setRealizedUSD(prev => prev + toNum(tx.realized || 0));
+    } else if (tx.type === "buy") {
+      // apply buy: increase shares, investedUSD increase, avgPrice recalc
+      setAssets(prev => {
+        const found = prev.find(a => a.id === tx.assetId);
+        if (found) {
+          return prev.map(a => {
+            if (a.id === tx.assetId) {
+              const oldShares = toNum(a.shares || 0);
+              const oldInvested = toNum(a.investedUSD || 0);
+              const newShares = oldShares + tx.qty;
+              const newInvested = oldInvested + tx.cost;
+              const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
+              const lastPriceUSD = tx.pricePerUnit || a.lastPriceUSD || newAvg;
+              return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD, marketValueUSD: newShares * lastPriceUSD });
+            }
+            return ensureNumericAsset(a);
+          });
+        } else {
+          // create new asset (rare): use tx.assetId if present, else generate
+          const id = tx.assetId || `tx-asset:${tx.symbol}:${Date.now()}`;
+          const avg = tx.cost / (tx.qty || 1);
+          const asset = ensureNumericAsset({
+            id, type: tx.assetType || "stock", symbol: tx.symbol, name: tx.name || tx.symbol,
+            shares: tx.qty, avgPrice: avg, investedUSD: tx.cost, lastPriceUSD: tx.pricePerUnit || avg, marketValueUSD: tx.qty * (tx.pricePerUnit || avg),
+          });
+          return [...prev, asset];
+        }
+      });
+    }
+  }
+
+  function reverseTransactionEffects(tx) {
+    // Reverse effects of tx (used when restoring/cancelling a transaction)
+    if (!tx) return;
+    if (tx.type === "sell") {
+      // reversing a sell: add shares back, investedUSD increase by costOfSold, realizedUSD decrease by tx.realized
+      setAssets(prev => {
+        const found = prev.find(a => a.id === tx.assetId);
+        if (found) {
+          return prev.map(a => {
+            if (a.id === tx.assetId) {
+              const oldShares = toNum(a.shares || 0);
+              const newShares = oldShares + tx.qty;
+              const newInvested = toNum(a.investedUSD || 0) + tx.costOfSold;
+              const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
+              const lastPriceUSD = a.lastPriceUSD || newAvg;
+              return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD, marketValueUSD: newShares * lastPriceUSD });
+            }
+            return ensureNumericAsset(a);
+          });
+        } else {
+          // asset doesn't exist (was removed after sale) => recreate it using tx info
+          const avg = tx.costOfSold / (tx.qty || 1);
+          const asset = ensureNumericAsset({
+            id: tx.assetId || `restored:${tx.symbol}:${Date.now()}`,
+            type: tx.assetType || "stock",
+            symbol: tx.symbol,
+            name: tx.name || tx.symbol,
+            shares: tx.qty,
+            avgPrice: avg,
+            investedUSD: tx.costOfSold,
+            lastPriceUSD: tx.pricePerUnit || avg,
+            marketValueUSD: tx.qty * (tx.pricePerUnit || avg),
+          });
+          return [...prev, asset];
+        }
+      });
+      setRealizedUSD(prev => prev - toNum(tx.realized || 0));
+    } else if (tx.type === "buy") {
+      // reversing a buy: remove those bought shares, adjust investedUSD
+      setAssets(prev => {
+        const found = prev.find(a => a.id === tx.assetId);
+        if (!found) return prev;
+        return prev.flatMap(a => {
+          if (a.id === tx.assetId) {
+            const oldShares = toNum(a.shares || 0);
+            const newShares = Math.max(0, oldShares - tx.qty);
+            const newInvested = Math.max(0, toNum(a.investedUSD || 0) - tx.cost);
+            if (newShares <= 0) return []; // remove asset entirely
+            const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
+            const lastPriceUSD = a.lastPriceUSD || newAvg;
+            return [ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD, marketValueUSD: newShares * lastPriceUSD })];
+          }
+          return [ensureNumericAsset(a)];
+        });
+      });
+    }
   }
 
   /* ===================== ADD ASSET ===================== */
@@ -646,7 +850,7 @@ export default function PortfolioDashboard() {
     setOpenAdd(false);
   }
 
-  /* ===================== BUY / SELL ===================== */
+  /* ===================== BUY / SELL (record transactions) ===================== */
   function openTradeModal(assetId, mode) {
     const asset = assets.find(a => a.id === assetId);
     if (!asset) return;
@@ -659,19 +863,23 @@ export default function PortfolioDashboard() {
     const id = tradeModal.assetId; if (!id) return;
     const q = toNum(qty), p = toNum(pricePerUnit);
     if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
-    setAssets(prev => prev.map(a => {
-      if (a.id !== id) return ensureNumericAsset(a);
-      const oldShares = toNum(a.shares || 0), oldInvested = toNum(a.investedUSD || 0);
-      const addCost = q * p;
-      const newShares = oldShares + q, newInvested = oldInvested + addCost;
-      const newAvg = newShares > 0 ? newInvested / newShares : 0;
-      if (a.type === "nonliquid") {
-        const purchaseDateMs = a.purchaseDate || a.createdAt || Date.now();
-        const last = computeNonLiquidLastPrice(newAvg, purchaseDateMs, a.nonLiquidYoy || 0);
-        return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: last, marketValueUSD: newShares * last });
-      }
-      return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p });
-    }));
+
+    const cost = q * p;
+    const tx = {
+      id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
+      assetId: id,
+      assetType: (assets.find(a=>a.id===id)||{}).type || "stock",
+      symbol: (assets.find(a=>a.id===id)||{}).symbol || "",
+      name: (assets.find(a=>a.id===id)||{}).name || "",
+      type: "buy",
+      qty: q,
+      pricePerUnit: p,
+      cost,
+      date: Date.now(),
+    };
+
+    setTransactions(prev => [tx, ...prev].slice(0, 1000));
+    applyTransactionEffects(tx);
     closeTradeModal();
   }
 
@@ -685,11 +893,11 @@ export default function PortfolioDashboard() {
     const avg = toNum(a.avgPrice || 0);
     const proceeds = q * p, costOfSold = q * avg;
     const realized = proceeds - costOfSold;
-    setRealizedUSD(prev => prev + realized);
 
     const tx = {
       id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
       assetId: a.id,
+      assetType: a.type || "stock",
       symbol: a.symbol,
       name: a.name || "",
       type: "sell",
@@ -700,28 +908,38 @@ export default function PortfolioDashboard() {
       realized,
       date: Date.now(),
     };
-    setTransactions(prev => [tx, ...prev].slice(0, 1000));
 
-    const newShares = oldShares - q;
-    const newInvested = toNum(a.investedUSD) - costOfSold;
-    const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
-    setAssets(prev => {
-      if (newShares <= 0) return prev.filter(x => x.id !== id);
-      return prev.map(x => x.id === id ? ensureNumericAsset({ ...x, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p }) : ensureNumericAsset(x));
-    });
+    // apply sale and record tx
+    applyTransactionEffects(tx); // this will decrease shares and increase realized
+    setTransactions(prev => [tx, ...prev].slice(0, 1000));
     closeTradeModal();
   }
 
-  /* ===================== TRANSACTIONS delete/undo ===================== */
+  /* ===================== TRANSACTIONS: delete / restore / undo ===================== */
   function deleteTransaction(txId) {
     const tx = transactions.find(t => t.id === txId);
     if (!tx) return;
-    if (!confirm(`Delete transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit)})? This can be undone.`)) return;
+    if (!confirm(`Delete & CANCEL transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})? This will reverse its effect and can be undone.`)) return;
+    // reverse effects first (so portfolio returns to pre-tx)
+    reverseTransactionEffects(tx);
+    // remove from transactions and store lastDeletedTx for undo re-apply
     setTransactions(prev => prev.filter(t => t.id !== txId));
     setLastDeletedTx(tx);
   }
+
+  function restoreTransaction(txId) {
+    // "restore" meaning reverse the tx (cancel it) without storing lastDeletedTx
+    const tx = transactions.find(t => t.id === txId);
+    if (!tx) return;
+    if (!confirm(`Restore (reverse) transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})?`)) return;
+    reverseTransactionEffects(tx);
+    setTransactions(prev => prev.filter(t => t.id !== txId));
+  }
+
   function undoLastDeletedTransaction() {
     if (!lastDeletedTx) return;
+    // re-apply the transaction (as if it was not deleted)
+    applyTransactionEffects(lastDeletedTx);
     setTransactions(prev => [lastDeletedTx, ...prev]);
     setLastDeletedTx(null);
   }
@@ -743,7 +961,6 @@ export default function PortfolioDashboard() {
       aa.lastPriceUSD = last;
       aa.marketValueUSD = last * toNum(aa.shares || 0);
     } else {
-      // Preserve lastPrice if already present; only use avgPrice when no valid market price exists.
       aa.lastPriceUSD = toNum(aa.lastPriceUSD || 0);
       if (!aa.lastPriceUSD || aa.lastPriceUSD <= 0) {
         aa.lastPriceUSD = aa.avgPrice || aa.lastPriceUSD || 0;
@@ -891,8 +1108,57 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* ===================== RENDER ===================== */
+  /* ===================== CHART DATA GENERATION ===================== */
+  function buildChartSeries(rowsForChart, rangeKey) {
+    // rangeKey -> days or special
+    let points = 180;
+    let days = 365 * 5; // all
+    if (rangeKey === "1d") { points = 24; days = 1 / 24; } // hourly 24
+    if (rangeKey === "2d") { points = 48; days = 2; }
+    if (rangeKey === "1w") { points = 28; days = 7; } // sample 28 points
+    if (rangeKey === "1m") { points = 60; days = 30; }
+    if (rangeKey === "1y") { points = 180; days = 365; }
+    if (rangeKey === "all") { points = 180; days = 365 * 3; } // 3 years synthetic
 
+    const now = Date.now();
+    const start = now - days * 24 * 3600 * 1000;
+    const series = [];
+    for (let i = 0; i < points; i++) {
+      const t = start + (i / (points - 1)) * (now - start);
+      // For each asset compute price at time t by linear interpolation between avgPrice (at purchaseDate) and lastPrice (now).
+      let total = 0;
+      rowsForChart.forEach(r => {
+        const shares = toNum(r.shares || 0);
+        if (shares <= 0) return;
+        if (r.type === "nonliquid") {
+          // compute price at t using YoY compounding from purchaseDate -> t
+          const avgPrice = toNum(r.avgPrice || 0);
+          const pd = r.purchaseDate || r.createdAt || now;
+          const years = Math.max(0, (t - pd) / (365.25 * 24 * 3600 * 1000));
+          const rY = toNum(r.nonLiquidYoy || 0) / 100;
+          const priceT = avgPrice * Math.pow(1 + rY, years);
+          total += shares * priceT;
+        } else {
+          const avg = toNum(r.avgPrice || 0);
+          const last = toNum(r.lastPriceUSD || avg || 0);
+          const pd = r.purchaseDate || r.createdAt || now;
+          // For simplicity, interpolate linearly from avg->last across window (but weight by how old the asset is)
+          // If purchaseDate is in the future relative to start, shift start point
+          // We'll compute a factor f in [0,1] representing progress to now
+          const rel = Math.min(1, Math.max(0, (t - start) / (now - start)));
+          // Optionally skew with asset age: if asset created after start, start value should be avg else avg assumed earlier.
+          const priceT = avg + (last - avg) * rel;
+          total += shares * priceT;
+        }
+      });
+      series.push({ t, v: total });
+    }
+    return series;
+  }
+
+  const chartSeries = useMemo(() => buildChartSeries(filteredRows, chartRange), [filteredRows, chartRange]);
+
+  /* ===================== RENDER ===================== */
   const titleForFilter = {
     all: "All Portfolio",
     crypto: "Crypto Portfolio",
@@ -985,14 +1251,18 @@ export default function PortfolioDashboard() {
           </div>
           <div className="flex items-center justify-between text-gray-400 cursor-pointer" onClick={() => setTransactionsOpen(true)}>
             <div className="flex items-center gap-2">
-              {/* small slanted arrow icon to indicate clickability */}
-              <svg width="12" height="12" viewBox="0 0 24 24" className="transform rotate-22" style={{ transform: "rotate(20deg)" }}>
-                <path d="M3 21l18-18" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                <path d="M21 7v-4h-4" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-              </svg>
               <div>Realized P&L</div>
             </div>
-            <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
+            <div className="flex items-center gap-2">
+              <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
+              {/* small slanted arrow inside small box to indicate clickable */}
+              <div className="w-6 h-6 bg-gray-800 rounded flex items-center justify-center">
+                <svg width="12" height="12" viewBox="0 0 24 24">
+                  <path d="M6 14 L14 6" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  <path d="M14 6 v8 h-8" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                </svg>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1139,6 +1409,27 @@ export default function PortfolioDashboard() {
             <div className="w-32 h-32 flex items-center justify-center">
               <Donut data={donutData.map(d => ({ name: d.name, value: d.value }))} size={120} inner={40} />
             </div>
+
+            <div className="flex-1">
+              {/* Chart with timeframe controls */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-semibold">Portfolio Growth</div>
+                <div className="flex items-center gap-2">
+                  {["1d","2d","1w","1m","1y","all"].map(k => (
+                    <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"}`}>{k}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-3 rounded border border-gray-800">
+                <PortfolioChart series={chartSeries} width={800} height={160} onHoverValue={(p) => setChartHover(p)} />
+                <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
+                  <div>{chartHover ? new Date(chartHover.t).toLocaleString() : ""}</div>
+                  <div className="font-medium">{chartHover ? (displayCcy === "IDR" ? fmtMoney((chartHover.v || 0) * usdIdr, "IDR") : fmtMoney(chartHover.v || 0, "USD")) : ""}</div>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {donutData.map((d, i) => {
                 const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
@@ -1201,8 +1492,7 @@ export default function PortfolioDashboard() {
                         <th className="text-left py-2 px-3">Date</th>
                         <th className="text-left py-2 px-3">Asset</th>
                         <th className="text-right py-2 px-3">Qty</th>
-                        <th className="text-right py-2 px-3">Proceeds</th>
-                        <th className="text-right py-2 px-3">Cost</th>
+                        <th className="text-right py-2 px-3">Proceeds / Cost</th>
                         <th className="text-right py-2 px-3">Realized</th>
                         <th className="py-2 px-3"></th>
                       </tr>
@@ -1213,12 +1503,14 @@ export default function PortfolioDashboard() {
                           <td className="px-3 py-3">{new Date(tx.date).toLocaleString()}</td>
                           <td className="px-3 py-3">{tx.symbol} <div className="text-xs text-gray-400">{tx.name}</div></td>
                           <td className="px-3 py-3 text-right">{Number(tx.qty).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
-                          <td className="px-3 py-3 text-right">{displayCcy === "IDR" ? fmtMoney(tx.proceeds * usdIdr, "IDR") : fmtMoney(tx.proceeds, "USD")}</td>
-                          <td className="px-3 py-3 text-right">{displayCcy === "IDR" ? fmtMoney(tx.costOfSold * usdIdr, "IDR") : fmtMoney(tx.costOfSold, "USD")}</td>
-                          <td className="px-3 py-3 text-right">{displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")}</td>
+                          <td className="px-3 py-3 text-right">
+                            {tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.proceeds * usdIdr, "IDR") : fmtMoney(tx.proceeds, "USD")) : (displayCcy === "IDR" ? fmtMoney(tx.cost * usdIdr, "IDR") : fmtMoney(tx.cost, "USD"))}
+                            <div className="text-xs">{tx.pricePerUnit ? `${fmtMoney(tx.pricePerUnit, "USD")} / unit` : ""}</div>
+                          </td>
+                          <td className="px-3 py-3 text-right">{tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")) : "-"}</td>
                           <td className="px-3 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <button onClick={() => { if (confirm("Undo this transaction not implemented automatically. Use undo delete to restore deleted tx.")) {} }} className="bg-gray-700 px-2 py-1 rounded text-xs">Undo</button>
+                              <button onClick={() => { restoreTransaction(tx.id); }} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black">Restore</button>
                               <button onClick={() => deleteTransaction(tx.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black">Delete</button>
                             </div>
                           </td>
