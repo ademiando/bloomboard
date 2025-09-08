@@ -1,24 +1,29 @@
-// app/dashboard/page.jsx
+// app/dashboard/page.js
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Portfolio Dashboard — final single-file React client component
+ * FULL single-file Portfolio Dashboard (updated)
  *
- * Notes:
- * - Search uses /api/yahoo/search?q=... (server proxy)
- * - Market last for stocks uses Finnhub via server proxy: /api/finnhub/quote?symbol=...
- * - Display currency persisted to localStorage pf_display_ccy_v2
- * - All numeric fields coerced to numbers to avoid NaN/strings causing zero PnL
- * - Export/Import CSV at bottom
+ * - Semua logika asli dipertahankan (localStorage keys: pf_assets_v2, pf_realized_v2, pf_display_ccy_v2)
+ * - Memperbaiki masalah *market last* khusus saham Indonesia dengan fallback ekstra (Finnhub attempts with variants, Yahoo fallback)
+ * - Menambahkan asset NON-LIQUID (tanah, lukisan, dll) — full custom, tanpa pencarian. User bisa set qty, price, purchase date, dan YoY gain %
+ *   => Untuk non-liquid, lastPriceUSD dihitung dengan *compounded yearly gain* berdasarkan purchase date → marketValueUSD dihitung otomatis
+ * - Menambahkan dropdown filter "All Portfolio / Crypto / Stocks / Non-Liquid" yang memfilter tampilan dan komputasi totals
+ * - Mengganti label: "Unrealized P&L" → "Gain P&L" (di KPI header jadi "Gain P&L"); di tabel "Unrealized P/L" → "P&L" dengan bawahnya "Gain"
+ * - Kolom tabel: Avg per unit sekarang menampilkan "Invested" (atas) dan "avg price" (bawah). Kolom Market menggabungkan "Market" (atas) dan "Current Price" (bawah).
+ * - Realized P&L sekarang punya dropdown untuk melihat daftar transaksi (history). Sell akan menambah transaksi di history (disimpan pf_transactions_v2).
+ * - Semua polling, import/export CSV, search, trade modal, buy/sell, remove, dan persisten localStorage tetap ada.
+ *
+ * Path: app/dashboard/page.js
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
 const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`; // fallback if needed
-const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`; // NEW: Finnhub proxy route (single symbol)
+const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`; // Finnhub proxy route (single symbol)
 const COINGECKO_PRICE = (ids) =>
   `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
@@ -58,6 +63,10 @@ function ensureNumericAsset(a) {
     lastPriceUSD: toNum(a.lastPriceUSD || 0),
     marketValueUSD: toNum(a.marketValueUSD || 0),
     createdAt: a.createdAt || Date.now(),
+    // non-liquid specific defaults
+    purchaseDate: a.purchaseDate || a.createdAt || Date.now(),
+    nonLiquidYoy: a.nonLiquidYoy || 0,
+    type: a.type || "stock",
   };
 }
 
@@ -131,6 +140,19 @@ export default function PortfolioDashboard() {
   };
   const [displayCcy, setDisplayCcy] = useState(loadDisplayCcy);
 
+  // transaction history (realized details)
+  const loadTransactions = () => {
+    try {
+      if (!isBrowser) return [];
+      const raw = JSON.parse(localStorage.getItem("pf_transactions_v2") || "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw;
+    } catch {
+      return [];
+    }
+  };
+  const [transactions, setTransactions] = useState(loadTransactions);
+
   /* ---------- UI & FX ---------- */
   const [usdIdr, setUsdIdr] = useState(16000);
   const [fxLoading, setFxLoading] = useState(true);
@@ -138,7 +160,7 @@ export default function PortfolioDashboard() {
 
   /* ---------- search/add ---------- */
   const [openAdd, setOpenAdd] = useState(false);
-  const [searchMode, setSearchMode] = useState("crypto");
+  const [searchMode, setSearchMode] = useState("crypto"); // crypto | id | us | nonliquid
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
@@ -146,8 +168,20 @@ export default function PortfolioDashboard() {
   const [initPrice, setInitPrice] = useState("");
   const [initPriceCcy, setInitPriceCcy] = useState("USD");
 
+  // non-liquid specific add fields
+  const [nl_name, setNlName] = useState("");
+  const [nl_qty, setNlQty] = useState("");
+  const [nl_price, setNlPrice] = useState("");
+  const [nl_price_ccy, setNlPriceCcy] = useState("USD");
+  const [nl_purchase_date, setNlPurchaseDate] = useState("");
+  const [nl_yoy, setNlYoy] = useState("5"); // percent per year default 5%
+
   /* ---------- live quotes ---------- */
   const [lastTick, setLastTick] = useState(null);
+
+  /* ---------- filters & UI states ---------- */
+  const [portfolioFilter, setPortfolioFilter] = useState("all"); // all | crypto | stock | nonliquid
+  const [showTransactions, setShowTransactions] = useState(false);
 
   /* ---------- trade modal state ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
@@ -162,11 +196,14 @@ export default function PortfolioDashboard() {
   useEffect(() => {
     try { localStorage.setItem("pf_display_ccy_v2", displayCcy); } catch {}
   }, [displayCcy]);
+  useEffect(() => {
+    try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {}
+  }, [transactions]);
 
   /* ===================== SEARCH LOGIC (robust) ===================== */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
-    if (!query || query.trim().length < 1) {
+    if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
       setSuggestions([]);
       return;
     }
@@ -258,6 +295,7 @@ export default function PortfolioDashboard() {
   useEffect(() => { assetsRef.current = assets; }, [assets]);
   useEffect(() => { usdIdrRef.current = usdIdr; }, [usdIdr]);
 
+  // Crypto polling (Coingecko)
   useEffect(() => {
     let mounted = true;
     async function pollCg() {
@@ -288,6 +326,7 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
+  // Stocks polling (Finnhub per-symbol with improved fallbacks; Yahoo bulk fallback)
   useEffect(() => {
     let mounted = true;
     async function pollYf() {
@@ -298,58 +337,87 @@ export default function PortfolioDashboard() {
           return;
         }
 
-        // NEW: Use Finnhub proxy per-symbol to get current price (data.c)
+        // map to collect prices
         const map = {};
+
+        // Try multiple variants for Finnhub (to handle IDX/JK naming differences)
         for (const s of symbols) {
           try {
-            const res = await fetch(FINNHUB_QUOTE(s));
-            if (!res.ok) {
-              // try fallback to yahoo bulk for this batch if finnhub fails
-              throw new Error(`Finnhub fetch failed for ${s}`);
+            // attempt 1: raw symbol as stored
+            const tryVariants = [s];
+
+            // if symbol endsWith .JK, try without suffix and also prefix IDX:
+            if (String(s).toUpperCase().endsWith(".JK")) {
+              const bare = s.replace(/\.JK$/i, "");
+              tryVariants.push(bare);
+              tryVariants.push(`IDX:${bare}`);
+            } else {
+              // if no suffix, also try prefix IDX:
+              tryVariants.push(`IDX:${s}`);
+              tryVariants.push(`${s}.JK`);
             }
-            const js = await res.json();
-            // Finnhub quote: { c: current, h: high, l: low, o: open, pc: prev close, ... }
-            const current = toNum(js?.c ?? js?.current ?? 0);
-            if (current > 0) {
-              // Finnhub likely returns local exchange price — detect IDX/IDR similar to before
-              const looksLikeId = String(s || "").toUpperCase().endsWith(".JK");
+
+            let got = null;
+            for (const variant of tryVariants) {
+              try {
+                const res = await fetch(FINNHUB_QUOTE(variant));
+                if (!res.ok) continue;
+                const js = await res.json();
+                const current = toNum(js?.c ?? js?.current ?? 0);
+                if (current > 0) {
+                  got = { variant, current, data: js };
+                  break;
+                }
+              } catch (e) {
+                // ignore variant error -> try next
+              }
+            }
+
+            if (got) {
+              const current = got.current;
+              const looksLikeId = String(s || "").toUpperCase().endsWith(".JK") || String(got.variant || "").toUpperCase().startsWith("IDX:");
               let priceUSD = current;
               if (looksLikeId) {
                 const fx = usdIdrRef.current || 1;
                 priceUSD = fx > 0 ? (current / fx) : current;
               }
               map[s] = { symbol: s, regularMarketPrice: priceUSD, _source: "finnhub" };
-            } else {
-              // if Finnhub returned 0, leave for potential fallback
             }
           } catch (e) {
-            // ignore per-symbol error — fallback to yahoo or continue
+            // ignore per-symbol error — fallback later
           }
         }
 
-        // If map is empty (Finnhub gave nothing), attempt Yahoo proxy bulk as fallback
-        if (Object.keys(map).length === 0) {
+        // If map is missing some symbols, fallback to Yahoo bulk for remaining
+        const missing = symbols.filter(s => !map[s]);
+        if (missing.length > 0) {
           try {
-            const res = await fetch(YAHOO_QUOTE(symbols.join(",")));
+            const res = await fetch(YAHOO_QUOTE(missing.join(",")));
             if (res.ok) {
               const j = await res.json();
+              // handle various shapes from proxies
               if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
                 j.quoteResponse.result.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
               } else if (Array.isArray(j)) {
                 j.forEach(q => { if (q && q.symbol) map[q.symbol] = q; });
+              } else if (j && typeof j === "object") {
+                // try to extract by keys
+                Object.keys(j).forEach(k => {
+                  const q = j[k];
+                  if (q && q.symbol) map[q.symbol] = q;
+                });
               }
             }
           } catch (e) {
-            // ignore
+            // ignore fallback error
           }
         }
 
+        // Apply prices to assets
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
             const q = map[a.symbol];
-            // if q came from our Finnhub mock, it's shaped { regularMarketPrice: price }
-            const price = toNum(q.regularMarketPrice ?? q.c ?? q.current ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? 0);
-            // detect IDR-like tickers
+            const price = toNum(q.regularMarketPrice ?? q.c ?? q.current ?? q.postMarketPrice ?? q.preMarketPrice ?? q.regularMarketPreviousClose ?? q.last ?? 0);
             const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
             let priceUSD = price;
             if (looksLikeId) {
@@ -394,6 +462,16 @@ export default function PortfolioDashboard() {
     const id = setInterval(fetchFx, 60_000);
     return () => { mounted = false; clearInterval(id); };
   }, []);
+
+  /* ===================== NON-LIQUID helpers ===================== */
+  // compute lastPriceUSD for non-liquid by compounded YoY
+  function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent) {
+    const years = Math.max(0, (Date.now() - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
+    const r = toNum(yoyPercent) / 100;
+    // compound: last = avgPrice * (1 + r)^years
+    const last = avgPriceUSD * Math.pow(1 + r, years);
+    return last;
+  }
 
   /* ===================== ADD ASSET ===================== */
   function addAssetFromSuggestion(s) {
@@ -465,6 +543,39 @@ export default function PortfolioDashboard() {
     setInitPriceCcy("USD"); setSelectedSuggestion(null);
   }
 
+  // Add non-liquid asset (custom)
+  function addNonLiquidAsset() {
+    const name = nl_name.trim();
+    const qty = toNum(nl_qty);
+    const priceInput = toNum(nl_price);
+    const purchaseDateMs = nl_purchase_date ? new Date(nl_purchase_date).getTime() : Date.now();
+    const yoy = toNum(nl_yoy);
+    if (!name) { alert("Masukkan nama asset non-liquid (mis. Tanah)"); return; }
+    if (qty <= 0 || priceInput <= 0) { alert("Qty & price must be > 0"); return; }
+    const priceUSD = nl_price_ccy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
+    const id = `nonliquid:${name.replace(/\s+/g, "_")}:${Date.now()}`;
+    // compute last price by compounded YoY gain
+    const last = computeNonLiquidLastPrice(priceUSD, purchaseDateMs, yoy);
+    const asset = ensureNumericAsset({
+      id,
+      type: "nonliquid",
+      symbol: (name.length > 12 ? name.slice(0, 12) + "…" : name).toUpperCase(),
+      name,
+      shares: qty,
+      avgPrice: priceUSD,
+      investedUSD: priceUSD * qty,
+      lastPriceUSD: last,
+      marketValueUSD: last * qty,
+      createdAt: Date.now(),
+      purchaseDate: purchaseDateMs,
+      nonLiquidYoy: yoy,
+    });
+    setAssets(prev => [...prev, asset]);
+    // reset fields
+    setNlName(""); setNlQty(""); setNlPrice(""); setNlPurchaseDate(""); setNlYoy("5");
+    setOpenAdd(false);
+  }
+
   /* ===================== BUY / SELL (modal) ===================== */
   function openTradeModal(assetId, mode) {
     const asset = assets.find(a => a.id === assetId);
@@ -480,12 +591,18 @@ export default function PortfolioDashboard() {
     if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
     setAssets(prev => prev.map(a => {
       if (a.id !== id) return ensureNumericAsset(a);
+      // if nonliquid, buying increases invested and avg; keep purchaseDate as earliest?
       const oldShares = toNum(a.shares || 0), oldInvested = toNum(a.investedUSD || 0);
       const addCost = q * p;
       const newShares = oldShares + q, newInvested = oldInvested + addCost;
       const newAvg = newShares > 0 ? newInvested / newShares : 0;
-      return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg,
-        lastPriceUSD: p, marketValueUSD: newShares * p });
+      // if nonliquid recalc lastPrice using stored YoY & purchaseDate
+      if (a.type === "nonliquid") {
+        const purchaseDateMs = a.purchaseDate || a.createdAt || Date.now();
+        const last = computeNonLiquidLastPrice(newAvg, purchaseDateMs, a.nonLiquidYoy || 0);
+        return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: last, marketValueUSD: newShares * last });
+      }
+      return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p });
     }));
     closeTradeModal();
   }
@@ -502,13 +619,28 @@ export default function PortfolioDashboard() {
     const realized = proceeds - costOfSold;
     setRealizedUSD(prev => prev + realized);
 
+    // record transaction detail
+    const tx = {
+      id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
+      assetId: a.id,
+      symbol: a.symbol,
+      name: a.name || "",
+      type: "sell",
+      qty: q,
+      pricePerUnit: p,
+      proceeds,
+      costOfSold,
+      realized,
+      date: Date.now(),
+    };
+    setTransactions(prev => [tx, ...prev].slice(0, 1000)); // keep cap
+
     const newShares = oldShares - q;
-    const newInvested = a.investedUSD - costOfSold;
+    const newInvested = toNum(a.investedUSD) - costOfSold;
     const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
     setAssets(prev => {
       if (newShares <= 0) return prev.filter(x => x.id !== id);
-      return prev.map(x => x.id === id ? ensureNumericAsset({ ...x, shares: newShares, investedUSD: newInvested,
-        avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p }) : ensureNumericAsset(x));
+      return prev.map(x => x.id === id ? ensureNumericAsset({ ...x, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p }) : ensureNumericAsset(x));
     });
     closeTradeModal();
   }
@@ -520,28 +652,46 @@ export default function PortfolioDashboard() {
     setAssets(prev => prev.filter(x => x.id !== id));
   }
 
-  /* ===================== computed rows & totals ===================== */
+  /* ===================== computed rows & totals (with filter) ===================== */
   const rows = useMemo(() => assets.map(a => {
     const aa = ensureNumericAsset(a);
+    // special handling for non-liquid: ensure lastPriceUSD is recalculated from avgPrice & purchaseDate & yoy
+    if (aa.type === "nonliquid") {
+      const last = computeNonLiquidLastPrice(aa.avgPrice, aa.purchaseDate || aa.createdAt, aa.nonLiquidYoy || 0);
+      aa.lastPriceUSD = last;
+      aa.marketValueUSD = last * toNum(aa.shares || 0);
+    } else {
+      aa.lastPriceUSD = toNum(aa.lastPriceUSD || aa.avgPrice || 0);
+      aa.marketValueUSD = toNum(aa.shares || 0) * aa.lastPriceUSD;
+    }
     const last = aa.lastPriceUSD || aa.avgPrice || 0;
-    const market = toNum(aa.shares || 0) * last;
+    const market = aa.marketValueUSD || (toNum(aa.shares || 0) * last);
     const invested = toNum(aa.investedUSD || 0);
     const pnl = market - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
     return { ...aa, lastPriceUSD: last, marketValueUSD: market, investedUSD: invested, pnlUSD: pnl, pnlPct };
-  }), [assets]);
+  }), [assets, usdIdr]);
+
+  // apply portfolioFilter
+  const filteredRows = useMemo(() => {
+    if (portfolioFilter === "all") return rows;
+    if (portfolioFilter === "crypto") return rows.filter(r => r.type === "crypto");
+    if (portfolioFilter === "stock") return rows.filter(r => r.type === "stock");
+    if (portfolioFilter === "nonliquid") return rows.filter(r => r.type === "nonliquid");
+    return rows;
+  }, [rows, portfolioFilter]);
 
   const totals = useMemo(() => {
-    const invested = rows.reduce((s, r) => s + toNum(r.investedUSD || 0), 0);
-    const market = rows.reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
+    const invested = filteredRows.reduce((s, r) => s + toNum(r.investedUSD || 0), 0);
+    const market = filteredRows.reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
     const pnl = market - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
     return { invested, market, pnl, pnlPct };
-  }, [rows]);
+  }, [filteredRows]);
 
   /* ===================== Donut data & logic ===================== */
   const donutData = useMemo(() => {
-    const sortedRows = rows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
+    const sortedRows = filteredRows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
     const topFive = sortedRows.slice(0, 4);
     const otherAssets = sortedRows.slice(4);
     const otherTotalValue = otherAssets.reduce((sum, asset) => sum + (asset.marketValueUSD || 0), 0);
@@ -549,7 +699,7 @@ export default function PortfolioDashboard() {
     const data = topFive.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
     if (otherTotalValue > 0) data.push({ name: "Other", value: otherTotalValue, symbols: otherSymbols });
     return data;
-  }, [rows]);
+  }, [filteredRows]);
 
   /* ===================== small utilities for UI ===================== */
   function colorForIndex(i) {
@@ -559,7 +709,7 @@ export default function PortfolioDashboard() {
 
   /* ===================== EXPORT / IMPORT CSV ===================== */
   function exportCSV() {
-    const headers = ["id","type","coingeckoId","symbol","name","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt"];
+    const headers = ["id","type","coingeckoId","symbol","name","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt","purchaseDate","nonLiquidYoy"];
     const lines = [headers.join(",")];
     assets.forEach(a => {
       const aa = ensureNumericAsset(a);
@@ -570,7 +720,8 @@ export default function PortfolioDashboard() {
       }).join(",");
       lines.push(row);
     });
-    lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr}`);
+    // include transactions count in META for reference
+    lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},transactions=${transactions.length}`);
     const csv = lines.join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -617,6 +768,8 @@ export default function PortfolioDashboard() {
           lastPriceUSD: toNum(obj.lastPriceUSD || 0),
           marketValueUSD: toNum(obj.marketValueUSD || 0),
           createdAt: toNum(obj.createdAt) || Date.now(),
+          purchaseDate: toNum(obj.purchaseDate) || undefined,
+          nonLiquidYoy: toNum(obj.nonLiquidYoy) || 0,
         };
         return ensureNumericAsset(parsed);
       });
@@ -630,6 +783,7 @@ export default function PortfolioDashboard() {
             if (k === "realizedUSD") setRealizedUSD(toNum(v));
             if (k === "displayCcy" && v) setDisplayCcy(String(v));
             if (k === "usdIdr") setUsdIdr(toNum(v));
+            // transactions count ignored for import; transactions stored separately
           });
         } catch (e) { /* ignore */ }
       }
@@ -663,7 +817,7 @@ export default function PortfolioDashboard() {
         {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">Portfolio</h1>
+            <h1 className="text-2xl font-semibold">All Portfolio</h1>
             <div className="text-xs text-gray-400 flex items-center gap-2 mt-1">
               {isInitialLoading && assets.length > 0 ? (
                 <>
@@ -691,7 +845,15 @@ export default function PortfolioDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="text-sm text-gray-400">Portfolio Value</div>
+            <div className="text-sm text-gray-400">Filter</div>
+            <select value={portfolioFilter} onChange={(e) => { setPortfolioFilter(e.target.value); }} className="bg-gray-900 border border-gray-800 rounded px-3 py-2 text-sm">
+              <option value="all">All Portfolio</option>
+              <option value="crypto">Crypto</option>
+              <option value="stock">Stocks</option>
+              <option value="nonliquid">Non-Liquid</option>
+            </select>
+
+            <div className="text-sm text-gray-400">Display</div>
             <div className="text-lg font-semibold">
               {displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
             </div>
@@ -714,11 +876,14 @@ export default function PortfolioDashboard() {
             <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}</div>
           </div>
           <div className="flex justify-between text-gray-400">
-            <div>Unrealized P&L</div>
+            <div>Gain P&L</div>
             <div className={`font-semibold ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(totals.pnl * usdIdr, "IDR") : fmtMoney(totals.pnl, "USD")} ({totals.pnlPct.toFixed(2)}%)</div>
           </div>
-          <div className="flex justify-between text-gray-400">
-            <div>Realized P&L</div>
+          <div className="flex flex-col text-gray-400 items-end">
+            <div className="flex items-center gap-3">
+              <div>Realized P&L</div>
+              <button onClick={() => setShowTransactions(v => !v)} className="text-xs bg-gray-800 px-2 py-1 rounded ml-2">Transactions</button>
+            </div>
             <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
           </div>
         </div>
@@ -731,35 +896,74 @@ export default function PortfolioDashboard() {
                 <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""}`}>Crypto</button>
                 <button onClick={() => { setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "id" ? "bg-gray-800" : ""}`}>Saham ID</button>
                 <button onClick={() => { setSearchMode("us"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "us" ? "bg-gray-800" : ""}`}>US/Global</button>
+                <button onClick={() => { setSearchMode("nonliquid"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "nonliquid" ? "bg-gray-800" : ""}`}>Non-Liquid</button>
               </div>
             </div>
-            <div className="flex gap-3 flex-col sm:flex-row items-start">
-              <div className="relative w-full sm:max-w-lg">
-                <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
-                {suggestions.length > 0 && (
-                  <div className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
-                    {suggestions.map((s, i) => (
-                      <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
-                        <div>
-                          <div className="font-medium text-gray-100">{s.symbol} • {s.display}</div>
-                          <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto" : `Security • ${s.exchange || ''}`}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+
+            {searchMode !== "nonliquid" ? (
+              <div className="flex gap-3 flex-col sm:flex-row items-start">
+                <div className="relative w-full sm:max-w-lg">
+                  <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
+                  {suggestions.length > 0 && (
+                    <div className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
+                      {suggestions.map((s, i) => (
+                        <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
+                          <div>
+                            <div className="font-medium text-gray-100">{s.symbol} • {s.display}</div>
+                            <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto" : `Security • ${s.exchange || ''}`}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <input value={initQty} onChange={(e) => setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+                <input value={initPrice} onChange={(e) => setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+                <select value={initPriceCcy} onChange={(e) => setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                  <option value="USD">USD</option> <option value="IDR">IDR</option>
+                </select>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add</button>
+                  <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold">Add + Position</button>
+                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button>
+                </div>
               </div>
-              <input value={initQty} onChange={(e) => setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
-              <input value={initPrice} onChange={(e) => setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
-              <select value={initPriceCcy} onChange={(e) => setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
-                <option value="USD">USD</option> <option value="IDR">IDR</option>
-              </select>
-              <div className="flex items-center gap-2">
-                <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add</button>
-                <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold">Add + Position</button>
-                <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button>
+            ) : (
+              // NON-LIQUID ADD FORM
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-400">Name</label>
+                  <input value={nl_name} onChange={(e) => setNlName(e.target.value)} placeholder="Tanah / Lukisan ..." className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">Qty</label>
+                  <input value={nl_qty} onChange={(e) => setNlQty(e.target.value)} placeholder="1" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">Price (per unit)</label>
+                  <input value={nl_price} onChange={(e) => setNlPrice(e.target.value)} placeholder="100000000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">Currency</label>
+                  <select value={nl_price_ccy} onChange={(e) => setNlPriceCcy(e.target.value)} className="w-full rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                    <option value="USD">USD</option>
+                    <option value="IDR">IDR</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">Purchase date</label>
+                  <input type="date" value={nl_purchase_date} onChange={(e) => setNlPurchaseDate(e.target.value)} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">YoY gain (%)</label>
+                  <input value={nl_yoy} onChange={(e) => setNlYoy(e.target.value)} placeholder="5" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div className="sm:col-span-2 flex gap-2">
+                  <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add Non-Liquid</button>
+                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -770,23 +974,30 @@ export default function PortfolioDashboard() {
               <tr>
                 <th className="text-left py-2 px-3">Code <div className="text-xs text-gray-500">Name</div></th>
                 <th className="text-right py-2 px-3">Qty</th>
-                <th className="text-right py-2 px-3">Avg (per unit)</th>
-                <th className="text-right py-2 px-3">Market <div className="text-xs text-gray-500">Last</div></th>
+                <th className="text-right py-2 px-3">Avg (Invested / per unit)</th>
+                <th className="text-right py-2 px-3">Market <div className="text-xs text-gray-500">Current Price</div></th>
                 <th className="text-right py-2 px-3">Market Value</th>
-                <th className="text-right py-2 px-3">Unrealized P/L</th>
+                <th className="text-right py-2 px-3">P&L <div className="text-xs text-gray-500">Gain</div></th>
                 <th className="py-2 px-3"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <tr><td colSpan={7} className="py-8 text-center text-gray-500">No assets — add one with the + button</td></tr>
-              ) : rows.map((r) => (
+              ) : filteredRows.map((r) => (
                 <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
-                  <td className="px-3 py-3"><div className="font-semibold text-gray-100">{r.symbol}</div><div className="text-xs text-gray-400">{r.name}</div></td>
+                  <td className="px-3 py-3">
+                    <div className="font-semibold text-gray-100">{r.symbol}</div>
+                    <div className="text-xs text-gray-400">{r.name}</div>
+                  </td>
                   <td className="px-3 py-3 text-right">{Number(r.shares || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{displayCcy === "IDR" ? fmtMoney(r.avgPrice * usdIdr, "IDR") : fmtMoney(r.avgPrice, "USD")}</td>
                   <td className="px-3 py-3 text-right tabular-nums">
-                    {(r.lastPriceUSD > 0) ? (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) : "-"}
+                    <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.investedUSD * usdIdr, "IDR") : fmtMoney(r.investedUSD, "USD")}</div>
+                    <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.avgPrice * usdIdr, "IDR") : fmtMoney(r.avgPrice, "USD")}</div>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums">
+                    <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")}</div>
+                    <div className="font-medium">{r.lastPriceUSD > 0 ? (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) : "-"}</div>
                   </td>
                   <td className="px-3 py-3 text-right tabular-nums">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")}</td>
                   <td className="px-3 py-3 text-right">
@@ -807,7 +1018,7 @@ export default function PortfolioDashboard() {
         </div>
 
         {/* DONUT + LEGEND (HORIZONTAL LAYOUT) */}
-        {rows.length > 0 && (
+        {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="w-32 h-32 flex items-center justify-center">
               <Donut data={donutData.map(d => ({ name: d.name, value: d.value }))} size={120} inner={40} />
@@ -847,6 +1058,46 @@ export default function PortfolioDashboard() {
           />
         )}
 
+        {/* TRANSACTIONS DROPDOWN */}
+        {showTransactions && (
+          <div className="mt-6 p-4 rounded bg-gray-900 border border-gray-800">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold">Transactions (Recent sells)</div>
+              <div className="text-xs text-gray-400">{transactions.length} records</div>
+            </div>
+            {transactions.length === 0 ? (
+              <div className="text-sm text-gray-500">No transactions yet</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="text-gray-400 border-b border-gray-800">
+                    <tr>
+                      <th className="text-left py-2 px-3">Date</th>
+                      <th className="text-left py-2 px-3">Asset</th>
+                      <th className="text-right py-2 px-3">Qty</th>
+                      <th className="text-right py-2 px-3">Proceeds</th>
+                      <th className="text-right py-2 px-3">Cost</th>
+                      <th className="text-right py-2 px-3">Realized</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map(tx => (
+                      <tr key={tx.id} className="border-b border-gray-900 hover:bg-gray-950">
+                        <td className="px-3 py-3">{new Date(tx.date).toLocaleString()}</td>
+                        <td className="px-3 py-3">{tx.symbol} <div className="text-xs text-gray-400">{tx.name}</div></td>
+                        <td className="px-3 py-3 text-right">{Number(tx.qty).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
+                        <td className="px-3 py-3 text-right">{displayCcy === "IDR" ? fmtMoney(tx.proceeds * usdIdr, "IDR") : fmtMoney(tx.proceeds, "USD")}</td>
+                        <td className="px-3 py-3 text-right">{displayCcy === "IDR" ? fmtMoney(tx.costOfSold * usdIdr, "IDR") : fmtMoney(tx.costOfSold, "USD")}</td>
+                        <td className="px-3 py-3 text-right">{displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* EXPORT / IMPORT CSV - responsive at bottom */}
         <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1">
@@ -861,7 +1112,7 @@ export default function PortfolioDashboard() {
             </label>
             <button onClick={() => {
               if (!confirm("This will clear your portfolio and realized P&L. Continue?")) return;
-              setAssets([]); setRealizedUSD(0);
+              setAssets([]); setRealizedUSD(0); setTransactions([]);
             }} className="bg-red-600 px-3 py-2 rounded font-semibold">Clear All</button>
           </div>
         </div>
