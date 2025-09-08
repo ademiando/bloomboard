@@ -6,10 +6,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 /**
  * app/dashboard/page.js
  *
- * Single-file Portfolio Dashboard — FINAL update:
- * - Portfolio Growth chart above donut: more detailed, interactive, moving average, grid, axes, hover
- * - Stocks: try Finnhub per-symbol first, fallback to Yahoo bulk
- * - Keep all previous behaviors: transactions, non-liquid assets, export/import, etc.
+ * Single-file Portfolio Dashboard — FINAL update with:
+ * - Portfolio Growth chart BELOW the assets table and ABOVE the donut.
+ * - Multi-line per category (All, Crypto, Stocks, Non-Liquid).
+ * - Timeline built from transaction log / purchase dates.
+ * - Finnhub-first stock price polling (fallback Yahoo).
+ * - All previous features preserved.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -63,7 +65,7 @@ function ensureNumericAsset(a) {
   };
 }
 
-/* deterministic hash -> number for reproducible noise per symbol */
+/* deterministic seed/hash */
 function hashStringToSeed(str) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) {
@@ -72,11 +74,9 @@ function hashStringToSeed(str) {
   }
   return h >>> 0;
 }
-/* seeded pseudo-random generator */
 function seededRng(seed) {
   let s = seed >>> 0;
   return function () {
-    // xorshift32
     s ^= s << 13;
     s ^= s >>> 17;
     s ^= s << 5;
@@ -84,7 +84,7 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== DONUT SVG ===================== */
+/* ===================== DONUT ===================== */
 function Donut({ data = [], size = 180, inner = 60 }) {
   const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2,
@@ -123,42 +123,54 @@ function Donut({ data = [], size = 180, inner = 60 }) {
   );
 }
 
-/* ===================== ENHANCED PORTFOLIO CHART ===================== */
-function EnhancedPortfolioChart({ series = [], width = 800, height = 200, onHover }) {
-  // series: [{t, v}, ...] chronological
-  const padding = { left: 48, right: 12, top: 12, bottom: 28 };
+/* ===================== MULTI-LINE ENHANCED CHART ===================== */
+function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) {
+  // seriesMap: { key: [{t,v}, ...], ... }, keys include 'all','crypto','stock','nonliquid'
+  const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = width;
   const h = height;
-  if (!series || series.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
-  const vals = series.map(s => s.v);
-  const max = Math.max(...vals);
-  const min = Math.min(...vals);
+  // find unified series length and times (assumes same t for all)
+  const keys = Object.keys(seriesMap);
+  if (keys.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
+  const baseSeries = seriesMap[keys[0]] || [];
+  if (!baseSeries || baseSeries.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
+  const times = baseSeries.map(p => p.t);
+  // compute value ranges across all keys
+  let min = Infinity, max = -Infinity;
+  keys.forEach(k => {
+    (seriesMap[k] || []).forEach(p => {
+      if (p.v < min) min = p.v;
+      if (p.v > max) max = p.v;
+    });
+  });
+  if (!isFinite(min) || !isFinite(max)) return <div className="text-xs text-gray-500">No chart data</div>;
   const range = Math.max(1e-8, max - min);
   const innerW = w - padding.left - padding.right;
   const innerH = h - padding.top - padding.bottom;
 
-  // compute points
-  const points = series.map((s, i) => {
-    const x = padding.left + (i / (series.length - 1)) * innerW;
-    const y = padding.top + (1 - (s.v - min) / range) * innerH;
-    return { x, y, t: s.t, v: s.v };
+  // map each series to path
+  const linePaths = {};
+  keys.forEach(k => {
+    const arr = seriesMap[k] || [];
+    const pts = arr.map((p, i) => {
+      const x = padding.left + (i / (arr.length - 1)) * innerW;
+      const y = padding.top + (1 - (p.v - min) / range) * innerH;
+      return { x, y, t: p.t, v: p.v };
+    });
+    const path = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
+    linePaths[k] = { path, pts };
   });
 
-  // compute SMA (window 7)
-  const smaWindow = Math.max(3, Math.round(points.length / 30));
-  const sma = points.map((p, i) => {
-    const start = Math.max(0, i - smaWindow + 1);
-    const seg = points.slice(start, i + 1);
-    const avg = seg.reduce((s, q) => s + q.v, 0) / seg.length;
-    return { x: p.x, y: padding.top + (1 - (avg - min) / range) * innerH, v: avg, t: p.t };
-  });
+  // color map
+  const colorFor = (k) => {
+    if (k === "all") return "#4D96FF";
+    if (k === "crypto") return "#FF6B6B";
+    if (k === "stock") return "#6BCB77";
+    if (k === "nonliquid") return "#FFD93D";
+    return "#B28DFF";
+  };
 
-  const areaPath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ") +
-    ` L ${points[points.length - 1].x.toFixed(2)} ${padding.top + innerH} L ${points[0].x.toFixed(2)} ${padding.top + innerH} Z`;
-  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
-  const smaPath = sma.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
-
-  // y ticks (5)
+  // y ticks
   const yTicks = [];
   for (let i = 0; i <= 4; i++) {
     const v = min + (i / 4) * range;
@@ -166,66 +178,69 @@ function EnhancedPortfolioChart({ series = [], width = 800, height = 200, onHove
     yTicks.push({ v, y });
   }
 
-  // hover state
-  const [hoverIndex, setHoverIndex] = useState(null);
-
+  const [hoverIdx, setHoverIdx] = useState(null);
   function handleMove(e) {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    // find closest point
+    // find closest index in base pts
+    const pts = (linePaths[keys[0]]?.pts) || [];
+    if (!pts.length) return;
     let best = 0, bestD = Infinity;
-    points.forEach((p, i) => {
+    pts.forEach((p, i) => {
       const d = Math.abs(p.x - x);
       if (d < bestD) { bestD = d; best = i; }
     });
-    setHoverIndex(best);
-    if (onHover) onHover(points[best]);
+    setHoverIdx(best);
+    if (onHover) {
+      const out = { t: pts[best].t };
+      keys.forEach(k => out[k] = (seriesMap[k] && seriesMap[k][best] ? seriesMap[k][best].v : 0));
+      onHover(out);
+    }
   }
   function handleLeave() {
-    setHoverIndex(null);
+    setHoverIdx(null);
     if (onHover) onHover(null);
   }
 
   return (
     <div className="w-full overflow-hidden">
-      <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
-        onMouseMove={handleMove} onMouseLeave={handleLeave}>
-        {/* background */}
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" onMouseMove={handleMove} onMouseLeave={handleLeave}>
         <rect x="0" y="0" width={w} height={h} fill="transparent" />
-        {/* grid horizontal */}
+        {/* gridlines */}
         {yTicks.map((t, i) => (
           <line key={i} x1={padding.left} x2={w - padding.right} y1={t.y} y2={t.y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
         ))}
-        {/* Y axis labels */}
+        {/* y labels */}
         {yTicks.map((t, i) => (
           <text key={i} x={padding.left - 8} y={t.y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{fmtMoney(t.v, "USD")}</text>
         ))}
 
-        <defs>
-          <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#4D96FF" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#4D96FF" stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
+        {/* lines */}
+        {keys.map(k => (
+          <path key={k} d={linePaths[k].path} stroke={colorFor(k)} strokeWidth={k==="all"?2.2:1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={k==="all"?1:0.95} />
+        ))}
 
-        {/* area */}
-        <path d={areaPath} fill="url(#areaGrad)" stroke="none" />
-
-        {/* main line */}
-        <path d={linePath} stroke="#4D96FF" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-
-        {/* sma line */}
-        <path d={smaPath} stroke="#FFD93D" strokeWidth="1.6" fill="none" strokeDasharray="6 4" />
-
-        {/* points on hover */}
-        {hoverIndex !== null && points[hoverIndex] && (
+        {/* hover markers */}
+        {hoverIdx !== null && linePaths[keys[0]]?.pts?.[hoverIdx] && (
           <>
-            <line x1={points[hoverIndex].x} y1={padding.top} x2={points[hoverIndex].x} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-            <circle cx={points[hoverIndex].x} cy={points[hoverIndex].y} r="4.5" fill="#fff" />
-            <circle cx={points[hoverIndex].x} cy={points[hoverIndex].y} r="3.1" fill="#4D96FF" />
+            <line x1={linePaths[keys[0]].pts[hoverIdx].x} y1={padding.top} x2={linePaths[keys[0]].pts[hoverIdx].x} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            {keys.map(k => {
+              const pt = linePaths[k].pts && linePaths[k].pts[hoverIdx];
+              if (!pt) return null;
+              return <circle key={k} cx={pt.x} cy={pt.y} r={k==="all"?4:3} fill={colorFor(k)} stroke="#000" strokeWidth="0.6" />;
+            })}
           </>
         )}
       </svg>
+      {/* legend */}
+      <div className="mt-2 flex items-center gap-3 text-xs text-gray-300">
+        {keys.map(k => (
+          <div key={k} className="flex items-center gap-2">
+            <div style={{ width: 10, height: 10, background: colorFor(k) }} className="rounded-sm" />
+            <div className="uppercase font-semibold">{k}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -336,7 +351,7 @@ export default function PortfolioDashboard() {
       if (!isBrowser) return [];
       const raw = JSON.parse(localStorage.getItem("pf_transactions_v2") || "[]");
       if (!Array.isArray(raw)) return [];
-      return raw;
+      return raw.map(t => ({ ...t }));
     } catch {
       return [];
     }
@@ -523,7 +538,7 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  // Stocks polling: FINNHUB per-symbol first, fallback to Yahoo bulk when missing
+  // Stocks polling: FINNHUB first, fallback to Yahoo bulk
   useEffect(() => {
     let mounted = true;
     async function pollStocks() {
@@ -536,14 +551,11 @@ export default function PortfolioDashboard() {
 
         const map = {};
 
-        // Try Finnhub per-symbol first
+        // Finnhub per-symbol first
         for (const s of symbols) {
           try {
             const res = await fetch(FINNHUB_QUOTE(s));
-            if (!res.ok) {
-              // try variant without .JK or with IDX prefix might be attempted by server itself; we'll just skip here
-              continue;
-            }
+            if (!res.ok) continue;
             const js = await res.json();
             const current = toNum(js?.c ?? js?.current ?? 0);
             if (current > 0) {
@@ -562,7 +574,7 @@ export default function PortfolioDashboard() {
           }
         }
 
-        // If some symbols still missing, try Yahoo bulk for those
+        // missing -> Yahoo bulk
         const missing = symbols.filter(s => !map[s]);
         if (missing.length > 0) {
           try {
@@ -594,7 +606,7 @@ export default function PortfolioDashboard() {
           }
         }
 
-        // Apply updates only for positive prices; convert IDR to USD when required
+        // apply updates
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
             const entry = map[a.symbol];
@@ -649,7 +661,6 @@ export default function PortfolioDashboard() {
 
   /* ===================== NON-LIQUID helpers ===================== */
   function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent, targetTime = Date.now()) {
-    // Compute price at targetTime using compounding
     const years = Math.max(0, (targetTime - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
     const r = toNum(yoyPercent) / 100;
     const last = avgPriceUSD * Math.pow(1 + r, years);
@@ -685,7 +696,6 @@ export default function PortfolioDashboard() {
         }
         return ensureNumericAsset(a);
       }));
-      // if asset not present, create
       const exists = assets.find(a => a.id === tx.assetId);
       if (!exists) {
         const avg = tx.cost / (tx.qty || 1);
@@ -910,7 +920,7 @@ export default function PortfolioDashboard() {
       date: Date.now(),
     };
 
-    applyTransactionEffects(tx); // this will decrease shares and increase realized
+    applyTransactionEffects(tx);
     setTransactions(prev => [tx, ...prev].slice(0, 1000));
     closeTradeModal();
   }
@@ -1005,7 +1015,7 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* ===================== CSV export/import ===================== */
+  /* ===================== CSV export/import (same) ===================== */
   function exportCSV() {
     const headers = ["id","type","coingeckoId","symbol","name","description","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt","purchaseDate","nonLiquidYoy"];
     const lines = [headers.join(",")];
@@ -1104,55 +1114,111 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* ===================== CHART SERIES BUILD (enhanced, non-flat) ===================== */
-  function buildChartSeries(rowsForChart, rangeKey) {
-    let points = 180;
-    let days = 365 * 3; // default all ~3y
-    if (rangeKey === "1d") { points = 48; days = 1; } // half-hourish sampling
-    if (rangeKey === "2d") { points = 96; days = 2; }
-    if (rangeKey === "1w") { points = 56; days = 7; }
-    if (rangeKey === "1m") { points = 90; days = 30; }
-    if (rangeKey === "1y") { points = 180; days = 365; }
-    if (rangeKey === "all") { points = 200; days = 365 * 3; }
-
+  /* ===================== BUILD MULTI-CATEGORY SERIES FROM TRANSACTIONS ===================== */
+  function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
+    // Determine start date: earliest transaction or earliest purchaseDate among assets; fallback to now - default window
     const now = Date.now();
-    const start = now - days * 24 * 3600 * 1000;
-    const series = [];
+    let earliest = now;
+    txs.forEach(t => { if (t.date && t.date < earliest) earliest = t.date; });
+    rowsForChart.forEach(r => { if (r.purchaseDate && r.purchaseDate < earliest) earliest = r.purchaseDate; });
+    // If no meaningful earliest (==now), default to 90 days for 1m/1y/all
+    const defaultDays = rangeKey === "1d" ? 1 : rangeKey === "2d" ? 2 : rangeKey === "1w" ? 7 : rangeKey === "1m" ? 30 : rangeKey === "1y" ? 365 : 365 * 3;
+    const start = (earliest < now) ? earliest : (now - defaultDays * 24 * 3600 * 1000);
+    // points count depending on rangeKey
+    let points = 180;
+    if (rangeKey === "1d") points = 48;
+    if (rangeKey === "2d") points = 96;
+    if (rangeKey === "1w") points = 56;
+    if (rangeKey === "1m") points = 90;
+    if (rangeKey === "1y") points = 180;
+    if (rangeKey === "all") points = 200;
 
-    // Precompute per-asset seed and price curve endpoints
-    const assetCurves = rowsForChart.map((r) => {
-      const seed = hashStringToSeed(r.symbol + String(r.createdAt || ""));
-      const rng = seededRng(seed);
-      const shares = toNum(r.shares || 0);
-      const avg = toNum(r.avgPrice || 0);
-      const last = toNum(r.lastPriceUSD || avg || 0);
-      // volatility factor: crypto > stock > nonliquid
-      const volBase = r.type === "crypto" ? 0.12 : (r.type === "stock" ? 0.04 : 0.01);
-      return { symbol: r.symbol, shares, avg, last, rng, volBase, purchaseDate: r.purchaseDate || r.createdAt || now };
+    // prepare synthetic initial transactions for assets that have no transactions
+    const txsByAsset = {};
+    txs.slice().forEach(t => {
+      if (!txsByAsset[t.assetId]) txsByAsset[t.assetId] = [];
+      txsByAsset[t.assetId].push(t);
     });
+
+    const syntheticTxs = [];
+    rowsForChart.forEach(r => {
+      const assetTxs = txsByAsset[r.id] || [];
+      // if no txs for that asset at all, create a synthetic buy at purchaseDate with current shares & investedUSD
+      if ((assetTxs.length === 0) && (toNum(r.shares || 0) > 0)) {
+        syntheticTxs.push({
+          id: `synth:${r.id}:${r.purchaseDate || r.createdAt || Date.now()}`,
+          assetId: r.id,
+          assetType: r.type,
+          symbol: r.symbol,
+          name: r.name,
+          type: "buy",
+          qty: toNum(r.shares || 0),
+          pricePerUnit: toNum(r.avgPrice || 0),
+          cost: toNum(r.investedUSD || (r.avgPrice * r.shares) || 0),
+          date: r.purchaseDate || r.createdAt || Date.now(),
+        });
+      }
+    });
+
+    const allTxs = [...txs, ...syntheticTxs].slice().sort((a,b) => (a.date||0) - (b.date||0));
+
+    // helper: compute shares for asset up to time t
+    function sharesUpTo(assetId, t) {
+      let s = 0;
+      for (const tx of allTxs) {
+        if (tx.assetId !== assetId) continue;
+        if ((tx.date || 0) <= t) {
+          if (tx.type === "buy") s += toNum(tx.qty || 0);
+          else if (tx.type === "sell") s -= toNum(tx.qty || 0);
+        }
+      }
+      return s;
+    }
+
+    // helper: price at time t for asset
+    function priceAtTime(asset, t) {
+      if (asset.type === "nonliquid") {
+        return computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || Date.now(), asset.nonLiquidYoy || 0, t);
+      }
+      // linear interpolate between avgPrice at purchaseDate and lastPrice at now
+      const pd = asset.purchaseDate || asset.createdAt || (now - defaultDays * 24 * 3600 * 1000);
+      const avg = toNum(asset.avgPrice || 0);
+      const last = toNum(asset.lastPriceUSD || avg || 0);
+      if (t <= pd) return avg || last;
+      if (t >= now) return last || avg;
+      const frac = (t - pd) / Math.max(1, (now - pd));
+      // optional mild noise based on asset symbol seed to avoid flat lines
+      const seed = hashStringToSeed(asset.symbol + String(asset.id || ""));
+      const rng = seededRng(seed);
+      const vol = asset.type === "crypto" ? 0.12 : asset.type === "stock" ? 0.04 : 0.01;
+      const base = avg + (last - avg) * frac;
+      const noise = (Math.sin(frac * 12 + rng() * 10) * 0.25 + (rng() - 0.5) * 0.4) * vol;
+      return Math.max(0, base * (1 + noise));
+    }
+
+    // build series per key
+    const seriesPerKey = { all: [], crypto: [], stock: [], nonliquid: [] };
 
     for (let i = 0; i < points; i++) {
       const t = start + (i / (points - 1)) * (now - start);
-      let total = 0;
-      assetCurves.forEach(ac => {
-        if (ac.shares <= 0) return;
-        // determine base price at time t: linear interpolation from avg(at purchaseDate) -> last (now)
-        const pd = ac.purchaseDate || start;
-        const progress = Math.min(1, Math.max(0, (t - start) / (now - start))); // global progress
-        // incorporate age weighting: older assets should have more of last reflected earlier
-        const ageWeight = Math.min(1, Math.max(0, (t - pd) / (now - pd + 1)));
-        const base = ac.avg + (ac.last - ac.avg) * (ageWeight * progress);
-        // deterministic noise: small sine + seeded random
-        const noise = (Math.sin((i + ac.rng() * 100) / Math.max(6, 20 * ac.volBase)) * 0.3 + (ac.rng() - 0.5)) * ac.volBase;
-        const priceT = Math.max(0, base * (1 + noise));
-        total += ac.shares * priceT;
+      let totals = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
+      rowsForChart.forEach(asset => {
+        const s = sharesUpTo(asset.id, t);
+        if (s <= 0) return;
+        const price = priceAtTime(asset, t);
+        const val = s * Math.max(0, price || 0);
+        totals.all += val;
+        if (asset.type === "crypto") totals.crypto += val;
+        else if (asset.type === "stock") totals.stock += val;
+        else if (asset.type === "nonliquid") totals.nonliquid += val;
       });
-      series.push({ t, v: total });
+      Object.keys(totals).forEach(k => seriesPerKey[k].push({ t, v: totals[k] }));
     }
-    return series;
+
+    return seriesPerKey;
   }
 
-  const chartSeries = useMemo(() => buildChartSeries(filteredRows, chartRange), [filteredRows, chartRange]);
+  const multiSeries = useMemo(() => buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
 
   /* ===================== RENDER ===================== */
   const titleForFilter = {
@@ -1172,7 +1238,7 @@ export default function PortfolioDashboard() {
           <div className="flex items-center gap-2 relative">
             <h1 className="text-2xl font-semibold">{headerTitle}</h1>
 
-            {/* styled dropdown box (non-transparent) */}
+            {/* dropdown caret (non-transparent) */}
             <div className="relative">
               <button
                 aria-label="Filter"
@@ -1251,7 +1317,6 @@ export default function PortfolioDashboard() {
             </div>
             <div className="flex items-center gap-2">
               <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
-              {/* small slanted arrow inside small box to indicate clickable */}
               <div className="w-6 h-6 bg-gray-800 rounded flex items-center justify-center">
                 <svg width="12" height="12" viewBox="0 0 24 24">
                   <path d="M6 14 L14 6" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -1262,23 +1327,87 @@ export default function PortfolioDashboard() {
           </div>
         </div>
 
-        {/* PORTFOLIO GROWTH (above donut) */}
-        <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold">Portfolio Growth</div>
-            <div className="flex items-center gap-2">
-              {["1d","2d","1w","1m","1y","all"].map(k => (
-                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"}`}>{k}</button>
-              ))}
+        {/* ADD PANEL */}
+        {openAdd && (
+          <div className="mt-6 bg-transparent p-3 rounded">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex bg-gray-900 rounded overflow-hidden">
+                <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""}`}>Crypto</button>
+                <button onClick={() => { setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "id" ? "bg-gray-800" : ""}`}>Stocks ID</button>
+                <button onClick={() => { setSearchMode("us"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "us" ? "bg-gray-800" : ""}`}>Stocks US</button>
+                <button onClick={() => { setSearchMode("nonliquid"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "nonliquid" ? "bg-gray-800" : ""}`}>Non-Liquid</button>
+              </div>
             </div>
-          </div>
 
-          <EnhancedPortfolioChart series={chartSeries} width={800} height={220} onHover={(p) => setChartHover(p)} />
-          <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
-            <div>{chartHover ? new Date(chartHover.t).toLocaleString() : ""}</div>
-            <div className="font-medium">{chartHover ? (displayCcy === "IDR" ? fmtMoney((chartHover.v || 0) * usdIdr, "IDR") : fmtMoney(chartHover.v || 0, "USD")) : ""}</div>
+            {searchMode !== "nonliquid" ? (
+              <div className="flex gap-3 flex-col sm:flex-row items-start">
+                <div className="relative w-full sm:max-w-lg">
+                  <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
+                  {suggestions.length > 0 && (
+                    <div className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
+                      {suggestions.map((s, i) => (
+                        <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
+                          <div>
+                            <div className="font-medium text-gray-100">{s.symbol} • {s.display}</div>
+                            <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto" : `Security • ${s.exchange || ''}`}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <input value={initQty} onChange={(e) => setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+                <input value={initPrice} onChange={(e) => setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+                <select value={initPriceCcy} onChange={(e) => setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                  <option value="USD">USD</option> <option value="IDR">IDR</option>
+                </select>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add</button>
+                  <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold">Add + Position</button>
+                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-400">Name (Land, Art, Rolex...)</label>
+                  <input value={nlName} onChange={(e) => setNlName(e.target.value)} placeholder="e.g. Land, Art, Rolex" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">Quantity</label>
+                  <input value={nlQty} onChange={(e) => setNlQty(e.target.value)} placeholder="1" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">Price (per unit)</label>
+                  <input value={nlPrice} onChange={(e) => setNlPrice(e.target.value)} placeholder="100000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">Currency</label>
+                  <select value={nlPriceCcy} onChange={(e) => setNlPriceCcy(e.target.value)} className="w-full rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                    <option value="USD">USD</option>
+                    <option value="IDR">IDR</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">Purchase date</label>
+                  <input type="date" value={nlPurchaseDate} onChange={(e) => setNlPurchaseDate(e.target.value)} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400">YoY gain (%)</label>
+                  <input value={nlYoy} onChange={(e) => setNlYoy(e.target.value)} placeholder="5" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs text-gray-400">Description (optional: address, serial...)</label>
+                  <input value={nlDesc} onChange={(e) => setNlDesc(e.target.value)} placeholder="Optional description" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                </div>
+                <div className="sm:col-span-2 flex gap-2">
+                  <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add Non-Liquid</button>
+                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* TABLE */}
         <div className="mt-6 overflow-x-auto">
@@ -1333,6 +1462,40 @@ export default function PortfolioDashboard() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* NEW: Portfolio Growth BELOW table and ABOVE donut */}
+        <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-semibold">Portfolio Growth (by category)</div>
+            <div className="flex items-center gap-2">
+              {["1d","2d","1w","1m","1y","all"].map(k => (
+                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"}`}>{k}</button>
+              ))}
+            </div>
+          </div>
+
+          <MultiLineChart seriesMap={multiSeries} width={860} height={260} onHover={(p) => {
+            if (!p) { setChartHover(null); return; }
+            setChartHover(p);
+          }} />
+
+          <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
+            <div>{chartHover ? new Date((chartHover.t || 0)).toLocaleString() : ""}</div>
+            <div className="text-right">
+              {chartHover ? (
+                <div>
+                  <div className="text-xs text-gray-300">Values</div>
+                  <div className="text-sm">
+                    All: {displayCcy === "IDR" ? fmtMoney((chartHover.all || 0) * usdIdr, "IDR") : fmtMoney(chartHover.all || 0, "USD")}
+                    {" • "}Crypto: {displayCcy === "IDR" ? fmtMoney((chartHover.crypto || 0) * usdIdr, "IDR") : fmtMoney(chartHover.crypto || 0, "USD")}
+                    {" • "}Stocks: {displayCcy === "IDR" ? fmtMoney((chartHover.stock || 0) * usdIdr, "IDR") : fmtMoney(chartHover.stock || 0, "USD")}
+                    {" • "}Non-Liquid: {displayCcy === "IDR" ? fmtMoney((chartHover.nonliquid || 0) * usdIdr, "IDR") : fmtMoney(chartHover.nonliquid || 0, "USD")}
+                  </div>
+                </div>
+              ) : <div className="text-xs text-gray-400">Hover on chart to see category values</div>}
+            </div>
+          </div>
         </div>
 
         {/* DONUT + LEGEND */}
