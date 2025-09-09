@@ -5,10 +5,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Single-file Portfolio Dashboard (page.js)
- * - Includes improvements:
- *   * Sort menu now scrollable (max-height + overflow)
- *   * Click outside any open popup (filter menu, sort menu, suggestions) closes it automatically
- * - All other features retained (Finnhub-first quotes, non-liquid, transactions, cake allocation, charts, CSV export/import)
+ * - Full feature set (crypto, stocks, non-liquid, transactions, cake allocation, multi-line growth, CSV export/import)
+ * - Updated header display value: shows numeric value + currency code + dropdown icon (e.g. "5,589,686 IDR >")
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -39,6 +37,17 @@ function fmtMoney(val, ccy = "USD") {
     currency: "USD",
     maximumFractionDigits: 2,
   }).format(n);
+}
+function fmtNumericForLabel(value, ccy = "USD") {
+  // Returns "5.589.686 IDR" or "330.12 USD" without currency symbols, using appropriate separators
+  const n = Number(value || 0);
+  if (ccy === "IDR") {
+    // no decimals for IDR, dot as thousand separator in Indonesian locale
+    return `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(n)} IDR`;
+  } else {
+    // keep 2 decimals for USD, use en-US separators
+    return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(n)} USD`;
+  }
 }
 function isoDate(ms) {
   try { return new Date(ms).toISOString(); } catch { return ""; }
@@ -122,7 +131,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
     const rect = wrapRef.current?.getBoundingClientRect();
     const px = (event.clientX - (rect?.left || 0)) + 12;
     const py = (event.clientY - (rect?.top || 0)) - 12;
-    setTooltip(t => ({ ...t, x: px, y: py }));
+    setTooltip(t => ({ ...t, x: px }));
   };
   const onSliceLeave = () => {
     setHoverIndex(null);
@@ -1505,17 +1514,22 @@ export default function PortfolioDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Inline display value (no label, no box). Click toggles currency */}
+            {/* Inline display value: numeric + code + dropdown caret icon (no extra label) */}
             <button
               aria-label="Toggle currency"
               onClick={() => setDisplayCcy(displayCcy === "USD" ? "IDR" : "USD")}
-              className="text-lg font-semibold hover:underline"
+              className="text-lg font-semibold hover:underline inline-flex items-center gap-2"
               style={{ background: "transparent", border: 0, padding: 0 }}
               title="Toggle currency (click)"
             >
-              {displayCcy === "IDR"
-                ? `${fmtMoney(totals.market * usdIdr, "IDR")} >`
-                : `${fmtMoney(totals.market, "USD")} >`}
+              <span style={{ whiteSpace: "nowrap" }}>
+                {displayCcy === "IDR"
+                  ? `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(totals.market * usdIdr)} IDR`
+                  : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(totals.market)} USD`}
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" className="ml-1" fill="none">
+                <path d="M6 9l6 6 6-6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
 
             <button
