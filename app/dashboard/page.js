@@ -5,16 +5,16 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * app/dashboard/page.js
- * Single-file Portfolio Dashboard — performance + UX fixes
+ * Single-file Portfolio Dashboard (updated)
  *
- * Changes in this iteration:
- * - Fix: sort/filter menus are scrollable (maxHeight + overflowY)
- * - Performance: chart heavy math memoized; mousemove throttled via rAF
- * - UI: Export/Import CSV buttons default white; hover colored
- * - Cake allocation uses sqrt scaling so big allocations look larger
- * - Various micro-optimizations to reduce jank while scrolling
+ * Changes in this update:
+ * - Larger header value display
+ * - Header filter button changed to icon-only without box
+ * - Removed small category labels under the growth chart
+ * - Fixed timeframe buttons so they change chart aggregation visibly
+ * - CandlesWithLines uses explicit bucket counts per timeframe
  *
- * Keep it as one file (page.js) as requested.
+ * Everything remains single-file and self-contained.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -91,22 +91,18 @@ function seededRng(seed) {
 }
 
 /* ===================== CAKE-STYLE ALLOCATION ===================== */
-/* uses sqrt scaling so larger allocations grow visibly larger */
-function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.08, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
+function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
   const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const n = Math.max(1, data.length);
   const cx = size / 2, cy = size / 2;
   const maxSliceOuter = size / 2 - 6;
   const minOuter = inner + 8;
   const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
-
-  // sqrt scaling to visually amplify big allocations
   const scaleOuter = (v) => {
     if (!v || v <= 0) return inner + 6;
-    const frac = Math.sqrt(v / maxValue); // sqrt
+    const frac = v / maxValue;
     return Math.round(minOuter + frac * (maxSliceOuter - minOuter));
   };
-
   const anglePer = (2 * Math.PI) / n;
   const colors = [
     "#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE",
@@ -152,7 +148,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.08, display
   }
 
   return (
-    <div ref={wrapRef} style={{ width: size, height: size, position: "relative", willChange: "transform" }}>
+    <div ref={wrapRef} style={{ width: size, height: size, position: "relative" }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {data.map((d, i) => {
           const outer = scaleOuter(d.value || 0);
@@ -168,7 +164,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.08, display
                 fill={colors[i % colors.length]}
                 stroke="#000"
                 strokeWidth={isHover ? 1.8 : 0.6}
-                style={{ transition: "transform 140ms, filter 120ms, stroke-width 120ms" }}
+                style={{ transition: "transform 180ms, filter 160ms, stroke-width 160ms" }}
                 onMouseEnter={(ev) => onSliceEnter(i, ev, d)}
                 onMouseMove={(ev) => onSliceMove(ev)}
                 onMouseLeave={onSliceLeave}
@@ -209,7 +205,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.08, display
   );
 }
 
-/* ===================== CANDLE + MULTI-LINE CHART (memoized, rAF throttle) ===================== */
+/* ===================== CANDLE + MULTI-LINE CHART (fixed timeframe buckets) ===================== */
 function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 960, height = 300, rangeKey = "all", onHover }) {
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = Math.min(width, 1200);
@@ -219,70 +215,41 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
 
   const conv = (v) => displayCcy === "IDR" ? v * usdIdr : v;
 
-  const convAllMemo = useMemo(() => (seriesMap["all"] || []).map(p => ({ t: p.t, v: conv(p.v) })), [seriesMap, displayCcy, usdIdr]);
+  const convAll = (seriesMap["all"] || []).map(p => ({ t: p.t, v: conv(p.v) }));
   const convKeys = ["crypto","stock","nonliquid"];
-  const convCatsMemo = useMemo(() => {
-    const out = {};
-    convKeys.forEach(k => out[k] = (seriesMap[k] || []).map(p => ({ t: p.t, v: conv(p.v) })));
-    return out;
-  }, [seriesMap, displayCcy, usdIdr]);
+  const convCats = {};
+  convKeys.forEach(k => convCats[k] = (seriesMap[k] || []).map(p => ({ t: p.t, v: conv(p.v) })));
 
-  if (!convAllMemo || convAllMemo.length < 2) return <div className="text-xs text-gray-500">Not enough data for chart</div>;
+  if (!convAll || convAll.length < 2) return <div className="text-xs text-gray-500">Not enough data for chart</div>;
 
-  const timeframeMap = { "1d": 48, "2d": 96, "1w": 56, "1m": 90, "1y": 180, "all": Math.min(200, convAllMemo.length) };
-  const candleCountTarget = timeframeMap[rangeKey] || Math.min(200, convAllMemo.length);
+  // explicit candle counts per timeframe for visible differences
+  const timeframeMap = { "1d": 48, "2d": 96, "1w": 56, "1m": 90, "1y": 180, "all": Math.min(200, convAll.length) };
+  const candleCountTarget = timeframeMap[rangeKey] || Math.min(200, convAll.length);
 
-  // memoize bucket/candles/overlay computations
-  const { candles, overlayPts, min, max } = useMemo(() => {
-    const buckets = Array.from({ length: Math.max(4, candleCountTarget) }, () => []);
-    for (let i = 0; i < convAllMemo.length; i++) {
-      const idx = Math.floor((i / convAllMemo.length) * buckets.length);
-      buckets[Math.min(buckets.length - 1, idx)].push(convAllMemo[i]);
-    }
-    const candlesLocal = buckets.map(arr => {
-      if (!arr || arr.length === 0) return null;
-      const open = arr[0].v;
-      const close = arr[arr.length - 1].v;
-      let high = -Infinity, low = Infinity;
-      arr.forEach(p => { if (p.v > high) high = p.v; if (p.v < low) low = p.v; });
-      const t = arr[Math.floor(arr.length / 2)].t;
-      return { t, open, high, low, close, count: arr.length };
-    }).filter(Boolean);
+  // create buckets by mapping convAll indices into candleCountTarget buckets
+  const buckets = Array.from({ length: Math.max(4, candleCountTarget) }, () => []);
+  for (let i = 0; i < convAll.length; i++) {
+    // map by time order: last points concentrated if series longer than buckets
+    const idx = Math.floor((i / convAll.length) * buckets.length);
+    buckets[Math.min(buckets.length - 1, idx)].push(convAll[i]);
+  }
+  const candles = buckets.map(arr => {
+    if (!arr || arr.length === 0) return null;
+    const open = arr[0].v;
+    const close = arr[arr.length - 1].v;
+    let high = -Infinity, low = Infinity;
+    arr.forEach(p => { if (p.v > high) high = p.v; if (p.v < low) low = p.v; });
+    const t = arr[Math.floor(arr.length / 2)].t;
+    return { t, open, high, low, close, count: arr.length };
+  }).filter(Boolean);
 
-    let minLoc = Infinity, maxLoc = -Infinity;
-    candlesLocal.forEach(c => { if (c.low < minLoc) minLoc = c.low; if (c.high > maxLoc) maxLoc = c.high; });
-    convKeys.forEach(k => (convCatsMemo[k] || []).forEach(p => { if (p.v < minLoc) minLoc = p.v; if (p.v > maxLoc) maxLoc = p.v; }));
+  // min/max across candles and overlays
+  let min = Infinity, max = -Infinity;
+  candles.forEach(c => { if (c.low < min) min = c.low; if (c.high > max) max = c.high; });
+  convKeys.forEach(k => (convCats[k] || []).forEach(p => { if (p.v < min) min = p.v; if (p.v > max) max = p.v; }));
+  if (!isFinite(min) || !isFinite(max)) return <div className="text-xs text-gray-500">No chart data</div>;
+  const range = Math.max(1e-8, max - min);
 
-    const overlayPtsLocal = {};
-    const yOfLocal = (v, mn, mx) => padding.top + (1 - (v - mn) / Math.max(1e-8, mx - mn)) * innerH;
-    const xOfCandleLocal = (i, count) => padding.left + (i + 0.5) * (innerW / count);
-
-    // build overlay points for each category
-    convKeys.forEach(k => {
-      const pts = [];
-      const cat = convCatsMemo[k] || [];
-      if (!cat || cat.length === 0) { overlayPtsLocal[k] = []; return; }
-      for (let i = 0; i < candlesLocal.length; i++) {
-        const midT = candlesLocal[i].t;
-        let nearest = cat[0];
-        let bestD = Math.abs(cat[0].t - midT);
-        for (let j = 1; j < cat.length; j++) {
-          const d = Math.abs(cat[j].t - midT);
-          if (d < bestD) { bestD = d; nearest = cat[j]; }
-        }
-        const x = xOfCandleLocal(i, candlesLocal.length);
-        const y = yOfLocal(nearest.v, minLoc, maxLoc);
-        pts.push({ x, y, v: nearest.v, t: nearest.t });
-      }
-      overlayPtsLocal[k] = pts;
-    });
-
-    return { candles: candlesLocal, overlayPts: overlayPtsLocal, min: minLoc, max: maxLoc };
-  }, [convAllMemo, convCatsMemo, candleCountTarget, innerW, innerH, padding.top]);
-
-  if (!candles || candles.length === 0) return <div className="text-xs text-gray-500">Not enough data for chart</div>;
-
-  const range = Math.max(1e-8, (max || 0) - (min || 0));
   const yOf = (v) => padding.top + (1 - (v - min) / range) * innerH;
   const xOfCandle = (i) => padding.left + (i + 0.5) * (innerW / candles.length);
 
@@ -295,108 +262,105 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   };
 
   const [hoverIndex, setHoverIndex] = useState(null);
-  const rafRef = useRef(null);
-  const targetXRef = useRef(null);
 
-  useEffect(() => {
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, []);
-
-  function scheduleHoverCompute() {
-    if (rafRef.current) return;
-    rafRef.current = requestAnimationFrame(() => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      const x = targetXRef.current - (rect?.left || 0);
-      let best = 0, bestD = Infinity;
-      for (let i = 0; i < candles.length; i++) {
-        const cx = xOfCandle(i);
-        const d = Math.abs(cx - x);
-        if (d < bestD) { bestD = d; best = i; }
-      }
-      setHoverIndex(best);
-      if (onHover) {
-        const c = candles[best];
-        onHover({ t: c.t, o: c.open, h: c.high, l: c.low, c: c.close });
-      }
-      rafRef.current = null;
-    });
-  }
-
-  const containerRef = useRef(null);
-  function handleMoveThrottled(e) {
-    targetXRef.current = e.clientX;
-    scheduleHoverCompute();
+  function handleMove(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < candles.length; i++) {
+      const cx = xOfCandle(i);
+      const d = Math.abs(cx - x);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    setHoverIndex(best);
+    if (onHover) {
+      const c = candles[best];
+      onHover({ t: c.t, o: c.open, h: c.high, l: c.low, c: c.close });
+    }
   }
   function handleLeave() {
     setHoverIndex(null);
     if (onHover) onHover(null);
   }
 
-  // overlay pts are precomputed above
-  const overlayPts = useMemo(() => overlayPtsMemoToArray(overlayPts), [overlayPts]);
-
-  function overlayPtsMemoToArray(obj) {
-    // convert object to simple mapping (already done) but preserve ref
-    return obj;
+  // overlay sampling: pick nearest point per bucket for each category
+  function seriesToLinePoints(catSeries) {
+    if (!catSeries || catSeries.length === 0) return [];
+    const pts = [];
+    for (let i = 0; i < candles.length; i++) {
+      const midT = candles[i].t;
+      let nearest = catSeries[0];
+      let bestD = Math.abs(catSeries[0].t - midT);
+      for (let j = 1; j < catSeries.length; j++) {
+        const d = Math.abs(catSeries[j].t - midT);
+        if (d < bestD) { bestD = d; nearest = catSeries[j]; }
+      }
+      const x = xOfCandle(i);
+      const y = yOf(nearest.v);
+      pts.push({ x, y, v: nearest.v, t: nearest.t });
+    }
+    return pts;
   }
+
+  const overlayPts = {};
+  convKeys.forEach(k => overlayPts[k] = seriesToLinePoints(convCats[k]));
 
   return (
     <div className="w-full overflow-hidden rounded" style={{ background: "transparent" }}>
-      <div ref={containerRef}>
-        <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" onMouseMove={handleMoveThrottled} onMouseLeave={handleLeave}>
-          <rect x="0" y="0" width={w} height={h} fill="transparent" />
-          {[0,1,2,3,4].map(i => {
-            const v = min + (i/4) * (range);
-            const y = yOf(v);
-            return <line key={i} x1={padding.left} x2={w - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
-          })}
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" onMouseMove={handleMove} onMouseLeave={handleLeave}>
+        <rect x="0" y="0" width={w} height={h} fill="transparent" />
+        {[0,1,2,3,4].map(i => {
+          const v = min + (i/4) * (range);
+          const y = yOf(v);
+          return <line key={i} x1={padding.left} x2={w - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
+        })}
 
-          {candles.map((c, i) => {
-            const cx = xOfCandle(i);
-            const candleWidth = Math.max(4, (innerW / candles.length) * 0.6);
-            const openY = yOf(c.open), closeY = yOf(c.close), highY = yOf(c.high), lowY = yOf(c.low);
-            const isUp = c.close >= c.open;
-            const color = isUp ? "#34D399" : "#F87171";
-            const bodyTop = Math.min(openY, closeY);
-            const bodyHeight = Math.max(1, Math.abs(closeY - openY));
-            return (
-              <g key={i}>
-                <line x1={cx} x2={cx} y1={highY} y2={lowY} stroke={color} strokeWidth={1.4} strokeLinecap="round" opacity={0.9} />
-                <rect x={cx - candleWidth/2} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} stroke="#000" strokeWidth={0.6} rx={1} />
-                {hoverIndex === i && (
-                  <rect x={padding.left} y={padding.top} width={innerW} height={innerH} fill="rgba(255,255,255,0.02)" />
-                )}
-              </g>
-            );
-          })}
+        {candles.map((c, i) => {
+          const cx = xOfCandle(i);
+          const candleWidth = Math.max(4, (innerW / candles.length) * 0.6);
+          const openY = yOf(c.open), closeY = yOf(c.close), highY = yOf(c.high), lowY = yOf(c.low);
+          const isUp = c.close >= c.open;
+          const color = isUp ? "#34D399" : "#F87171";
+          const bodyTop = Math.min(openY, closeY);
+          const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+          return (
+            <g key={i}>
+              <line x1={cx} x2={cx} y1={highY} y2={lowY} stroke={color} strokeWidth={1.4} strokeLinecap="round" opacity={0.9} />
+              <rect x={cx - candleWidth/2} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} stroke="#000" strokeWidth={0.6} rx={1} />
+              {hoverIndex === i && (
+                <rect x={padding.left} y={padding.top} width={innerW} height={innerH} fill="rgba(255,255,255,0.02)" />
+              )}
+            </g>
+          );
+        })}
 
-          {["crypto","stock","nonliquid"].map(k => {
-            const pts = (overlayPtsMemoToArray(overlayPts)[k] || []);
-            if (!pts.length) return null;
-            const path = pts.map((p, idx) => `${idx===0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
-            return (
-              <g key={k}>
-                <path d={path} stroke={colorFor(k)} strokeWidth={k==="stock"?1.8:1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.95} />
-                {pts.map((p, idx) => <circle key={idx} cx={p.x} cy={p.y} r={2} fill={colorFor(k)} stroke="#000" strokeWidth={0.4} />)}
-              </g>
-            );
-          })}
+        {["crypto","stock","nonliquid"].map(k => {
+          const pts = overlayPts[k] || [];
+          if (!pts.length) return null;
+          const path = pts.map((p, idx) => `${idx===0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
+          return (
+            <g key={k}>
+              <path d={path} stroke={colorFor(k)} strokeWidth={k==="stock"?1.8:1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.95} />
+              {pts.map((p, idx) => <circle key={idx} cx={p.x} cy={p.y} r={2} fill={colorFor(k)} stroke="#000" strokeWidth={0.4} />)}
+            </g>
+          );
+        })}
 
-          {[0,1,2,3,4].map(i => {
-            const v = min + (i/4) * (range);
-            const y = yOf(v);
-            return <text key={i} x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{displayCcy === "IDR" ? fmtMoney(v, "IDR") : fmtMoney(v, "USD")}</text>;
-          })}
+        {[0,1,2,3,4].map(i => {
+          const v = min + (i/4) * (range);
+          const y = yOf(v);
+          return <text key={i} x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{displayCcy === "IDR" ? fmtMoney(v, "IDR") : fmtMoney(v, "USD")}</text>;
+        })}
 
-          {hoverIndex !== null && candles[hoverIndex] && (
-            <>
-              <line x1={xOfCandle(hoverIndex)} x2={xOfCandle(hoverIndex)} y1={padding.top} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-            </>
-          )}
-        </svg>
-      </div>
+        {hoverIndex !== null && candles[hoverIndex] && (
+          <>
+            <line x1={xOfCandle(hoverIndex)} x2={xOfCandle(hoverIndex)} y1={padding.top} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+          </>
+        )}
+      </svg>
 
       <div className="mt-2 flex items-center gap-4 text-xs">
+        {/* legend only, no repeated numeric values */}
         <div className="flex items-center gap-2">
           <div style={{ width: 10, height: 10, background: "#4D96FF" }} className="rounded-sm" />
           <div className="text-xs text-gray-300">All</div>
@@ -418,7 +382,7 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   );
 }
 
-/* ===================== TRADE MODAL (unchanged) ===================== */
+/* ===================== TRADE MODAL ===================== */
 function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
@@ -600,7 +564,7 @@ export default function PortfolioDashboard() {
     try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {}
   }, [transactions]);
 
-  /* click outside (closes menus) */
+  /* click outside */
   useEffect(() => {
     function onPointerDown(e) {
       const target = e.target;
@@ -620,11 +584,11 @@ export default function PortfolioDashboard() {
         setCurrencyMenuOpen(false);
       }
     }
-    document.addEventListener("pointerdown", onPointerDown, { passive: true });
+    document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd, currencyMenuOpen]);
 
-  /* search logic (same as before) */
+  /* search (unchanged) */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
@@ -709,7 +673,7 @@ export default function PortfolioDashboard() {
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
-  /* POLLING (crypto + stocks) - robust fallback: finnhub first, yahoo fallback */
+  /* polling crypto & stocks unchanged aside from robust fallback logic */
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -854,7 +818,7 @@ export default function PortfolioDashboard() {
     return last;
   }
 
-  /* transactions effects helpers (same logic, careful math) */
+  /* transactions effects helpers */
   function applyTransactionEffects(tx) {
     if (!tx) return;
     if (tx.type === "sell") {
@@ -946,7 +910,7 @@ export default function PortfolioDashboard() {
     }
   }
 
-  /* add helpers */
+  /* add helpers (unchanged) */
   function addAssetFromSuggestion(s) {
     const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
     const asset = ensureNumericAsset({
@@ -1048,7 +1012,7 @@ export default function PortfolioDashboard() {
     setOpenAdd(false);
   }
 
-  /* BUY/SELL modal */
+  /* BUY/SELL (unchanged) */
   function openTradeModal(assetId, mode) {
     const asset = assets.find(a => a.id === assetId);
     if (!asset) return;
@@ -1145,7 +1109,7 @@ export default function PortfolioDashboard() {
     setAssets(prev => prev.filter(x => x.id !== id));
   }
 
-  /* computed rows & totals (careful math) */
+  /* computed rows & totals */
   const rows = useMemo(() => assets.map(a => {
     const aa = ensureNumericAsset(a);
 
@@ -1216,7 +1180,7 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* CSV combined export/import (with BOM and headers for cleaner spreadsheet import) */
+  /* CSV combined export/import (unchanged except BOM) */
   function csvQuote(v) {
     if (v === undefined || v === null) return "";
     if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -1263,7 +1227,7 @@ export default function PortfolioDashboard() {
     });
     lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},assets=${assets.length},transactions=${transactions.length}`);
 
-    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel-friendly import
+    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1423,7 +1387,7 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* build growth series */
+  /* build growth series (unchanged) */
   function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
     const now = Date.now();
     let earliest = now;
@@ -1544,15 +1508,13 @@ export default function PortfolioDashboard() {
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
       <style>{`
-        .btn { transition: transform 180ms, box-shadow 140ms, background-color 120ms; will-change: transform; }
-        .btn:hover { transform: translateY(-2px) scale(1.01); }
-        .btn-soft:hover { transform: translateY(-1px) scale(1.005); }
+        .btn { transition: transform 180ms, box-shadow 180ms, background-color 120ms; }
+        .btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
+        .btn-soft:hover { transform: translateY(-2px) scale(1.01); }
         .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
         .icon-box { transition: transform 160ms, background 120ms; }
         .slice { cursor: pointer; }
-        .menu-scroll { max-height: 18rem; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-        /* lighter shadows for less paint cost */
-        .soft-shadow { box-shadow: 0 6px 12px rgba(0,0,0,0.25); }
+        .menu-scroll { max-height: 17.5rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
       `}</style>
 
       <div className="max-w-6xl mx-auto">
@@ -1700,7 +1662,7 @@ export default function PortfolioDashboard() {
                 <div className="relative w-full sm:max-w-lg">
                   <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
                   {suggestions.length > 0 && (
-                    <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto menu-scroll">
+                    <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
                       {suggestions.map((s, i) => (
                         <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
                           <div>
@@ -1718,8 +1680,8 @@ export default function PortfolioDashboard() {
                   <option value="USD">USD</option> <option value="IDR">IDR</option>
                 </select>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-white text-black px-4 py-2 rounded font-semibold btn">Add</button>
-                  <button onClick={addAssetWithInitial} className="bg-white text-black px-4 py-2 rounded font-semibold btn">Add + Position</button>
+                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add</button>
+                  <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold btn">Add + Position</button>
                   <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
                 </div>
               </div>
@@ -1757,7 +1719,7 @@ export default function PortfolioDashboard() {
                   <input value={nlDesc} onChange={(e) => setNlDesc(e.target.value)} placeholder="Optional description" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
                 </div>
                 <div className="sm:col-span-2 flex gap-2">
-                  <button onClick={addNonLiquidAsset} className="bg-white text-black px-4 py-2 rounded font-semibold btn">Add Non-Liquid</button>
+                  <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Non-Liquid</button>
                   <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
                 </div>
               </div>
@@ -1849,7 +1811,7 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* PORTFOLIO GROWTH */}
+        {/* PORTFOLIO GROWTH (Candles + lines) */}
         <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Portfolio Growth</div>
@@ -1870,6 +1832,7 @@ export default function PortfolioDashboard() {
             onHover={(p) => { setChartHover(p); }}
           />
 
+          {/* NOTE: small category numeric labels removed as requested */}
         </div>
 
         {/* CAKE (donut replacement) + legend */}
@@ -1880,7 +1843,7 @@ export default function PortfolioDashboard() {
                 data={donutData}
                 size={176}
                 inner={48}
-                gap={0.08}
+                gap={0.06}
                 displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
                 displayCcy={displayCcy}
                 usdIdr={usdIdr}
@@ -1922,7 +1885,7 @@ export default function PortfolioDashboard() {
           />
         )}
 
-        {/* TRANSACTIONS MODAL */}
+        {/* TRANSACTIONS MODAL (unchanged) */}
         {transactionsOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[120]">
             <div className="bg-gray-900 p-6 rounded-lg w-full max-w-3xl border border-gray-800">
@@ -1942,7 +1905,7 @@ export default function PortfolioDashboard() {
               {transactions.length === 0 ? (
                 <div className="text-sm text-gray-500">No transactions yet.</div>
               ) : (
-                <div className="overflow-x-auto max-h-96 menu-scroll">
+                <div className="overflow-x-auto max-h-96">
                   <table className="min-w-full text-sm">
                     <thead className="text-gray-400 border-b border-gray-800">
                       <tr>
@@ -1999,9 +1962,9 @@ export default function PortfolioDashboard() {
           </div>
           <div className="flex gap-2">
             <div className="relative">
-              <button onClick={exportAllCSV} className="bg-white text-black px-3 py-2 rounded font-semibold btn">Export CSV</button>
+              <button onClick={exportAllCSV} className="bg-blue-600 px-3 py-2 rounded font-semibold btn">Export CSV</button>
             </div>
-            <label className="bg-white text-black px-3 py-2 rounded font-semibold cursor-pointer btn">
+            <label className="bg-emerald-500 px-3 py-2 rounded font-semibold cursor-pointer btn">
               Import CSV
               <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
             </label>
