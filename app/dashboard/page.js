@@ -4,9 +4,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Single-file Portfolio Dashboard (page.js)
- * - Full feature set (crypto, stocks, non-liquid, transactions, cake allocation, multi-line growth, CSV export/import)
- * - Updated header display value: shows numeric value + currency code + dropdown icon (e.g. "5,589,686 IDR >")
+ * app/dashboard/page.js
+ * Single-file Portfolio Dashboard (final)
+ *
+ * Changes in this version:
+ * - Currency display is a dropdown (nominal + currency code + caret).
+ * - Portfolio Growth: candlestick-like OHLC aggregated from portfolio series + multi-line overlay (per category).
+ * - Chart follows chosen currency (USD/IDR).
+ * - Math/logic keeps series consistent with transactions & assets.
+ *
+ * Keep everything else (CSV export/import, add non-liquid, transactions, trade modal, etc.)
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -39,14 +46,11 @@ function fmtMoney(val, ccy = "USD") {
   }).format(n);
 }
 function fmtNumericForLabel(value, ccy = "USD") {
-  // Returns "5.589.686 IDR" or "330.12 USD" without currency symbols, using appropriate separators
   const n = Number(value || 0);
   if (ccy === "IDR") {
-    // no decimals for IDR, dot as thousand separator in Indonesian locale
     return `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(n)} IDR`;
   } else {
-    // keep 2 decimals for USD, use en-US separators
-    return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(n)} USD`;
+    return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(n)} USD`;
   }
 }
 function isoDate(ms) {
@@ -93,7 +97,7 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== CAKE-STYLE ALLOCATION ===================== */
+/* ===================== CAKE-STYLE ALLOCATION (donut -> cake) ===================== */
 function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
   const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const n = Math.max(1, data.length);
@@ -130,7 +134,6 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
   const onSliceMove = (event) => {
     const rect = wrapRef.current?.getBoundingClientRect();
     const px = (event.clientX - (rect?.left || 0)) + 12;
-    const py = (event.clientY - (rect?.top || 0)) - 12;
     setTooltip(t => ({ ...t, x: px }));
   };
   const onSliceLeave = () => {
@@ -209,40 +212,62 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
   );
 }
 
-/* ===================== MULTI-LINE CHART ===================== */
-function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) {
+/* ===================== CANDLE + MULTI-LINE CHART ===================== */
+function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 960, height = 300, rangeKey = "all", onHover }) {
+  // seriesMap expected: { all: [{t,v}], crypto: [{t,v}], stock: [{t,v}], nonliquid: [{t,v}] }
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
-  const w = Math.min(width, 1000);
+  const w = Math.min(width, 1200);
   const h = height;
-  const keys = ["all", "crypto", "stock", "nonliquid"].filter(k => seriesMap[k] && seriesMap[k].length);
-  if (keys.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
-  const baseSeries = seriesMap["all"] || seriesMap[keys[0]] || [];
-  if (!baseSeries || baseSeries.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
-  let min = Infinity, max = -Infinity;
-  keys.forEach(k => {
-    (seriesMap[k] || []).forEach(p => {
-      if (p.v < min) min = p.v;
-      if (p.v > max) max = p.v;
-    });
-  });
-  if (!isFinite(min) || !isFinite(max)) return <div className="text-xs text-gray-500">No chart data</div>;
-  const range = Math.max(1e-8, max - min);
   const innerW = w - padding.left - padding.right;
   const innerH = h - padding.top - padding.bottom;
 
-  const linePaths = {};
-  const ptsMap = {};
-  keys.forEach(k => {
-    const arr = seriesMap[k] || [];
-    const pts = arr.map((p, i) => {
-      const x = padding.left + (i / (arr.length - 1 || 1)) * innerW;
-      const y = padding.top + (1 - (p.v - min) / range) * innerH;
-      return { x, y, t: p.t, v: p.v };
-    });
-    const path = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
-    linePaths[k] = { path, pts };
-    ptsMap[k] = pts;
+  const allSeries = seriesMap["all"] || [];
+  if (!allSeries || allSeries.length < 2) return <div className="text-xs text-gray-500">Not enough data for chart</div>;
+
+  // Convert values to chosen currency
+  const conv = (v) => displayCcy === "IDR" ? v * usdIdr : v;
+
+  const convAll = allSeries.map(p => ({ t: p.t, v: conv(p.v) }));
+  const convKeys = ["crypto","stock","nonliquid"];
+  const convCats = {};
+  convKeys.forEach(k => convCats[k] = (seriesMap[k] || []).map(p => ({ t: p.t, v: conv(p.v) })));
+
+  // Determine number of candles (max 80)
+  const maxCandles = 80;
+  const points = convAll.length;
+  const candleCount = Math.min(maxCandles, Math.max(8, Math.round(points / Math.max(1, Math.floor(points / 8)))));
+  // Build buckets
+  const buckets = [];
+  for (let i = 0; i < candleCount; i++) buckets.push([]);
+  for (let i = 0; i < convAll.length; i++) {
+    const idx = Math.floor((i / (convAll.length)) * candleCount);
+    buckets[Math.min(candleCount - 1, Math.max(0, idx))].push(convAll[i]);
+  }
+  // compute OHLC per bucket
+  const candles = buckets.map(arr => {
+    if (!arr || arr.length === 0) return null;
+    const open = arr[0].v;
+    const close = arr[arr.length - 1].v;
+    let high = -Infinity, low = Infinity;
+    arr.forEach(p => { if (p.v > high) high = p.v; if (p.v < low) low = p.v; });
+    const t = arr[Math.floor(arr.length / 2)].t;
+    return { t, open, high, low, close, count: arr.length };
+  }).filter(Boolean);
+
+  // compute min/max for y-scale
+  let min = Infinity, max = -Infinity;
+  candles.forEach(c => { if (c.low < min) min = c.low; if (c.high > max) max = c.high; });
+  // also include category lines extremes
+  convKeys.forEach(k => {
+    (convCats[k] || []).forEach(p => { if (p.v < min) min = p.v; if (p.v > max) max = p.v; });
   });
+  if (!isFinite(min) || !isFinite(max)) return <div className="text-xs text-gray-500">No chart data</div>;
+  const range = Math.max(1e-8, max - min);
+
+  // helper to map value to y
+  const yOf = (v) => padding.top + (1 - (v - min) / range) * innerH;
+  // helper to map candle index to x center
+  const xOfCandle = (i) => padding.left + (i + 0.5) * (innerW / candles.length);
 
   const colorFor = (k) => {
     if (k === "all") return "#4D96FF";
@@ -252,64 +277,117 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
     return "#B28DFF";
   };
 
-  const yTicks = [];
-  for (let i = 0; i <= 4; i++) {
-    const v = min + (i / 4) * range;
-    const y = padding.top + (1 - (v - min) / range) * innerH;
-    yTicks.push({ v, y });
-  }
+  const [hoverIndex, setHoverIndex] = useState(null);
 
-  const [hoverIdx, setHoverIdx] = useState(null);
   function handleMove(e) {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const pts = (linePaths["all"]?.pts) || linePaths[keys[0]]?.pts || [];
-    if (!pts.length) return;
+    // find nearest candle index
     let best = 0, bestD = Infinity;
-    pts.forEach((p, i) => {
-      const d = Math.abs(p.x - x);
+    for (let i = 0; i < candles.length; i++) {
+      const cx = xOfCandle(i);
+      const d = Math.abs(cx - x);
       if (d < bestD) { bestD = d; best = i; }
-    });
-    setHoverIdx(best);
+    }
+    setHoverIndex(best);
     if (onHover) {
-      const out = { t: pts[best].t };
-      ["all","crypto","stock","nonliquid"].forEach(k => out[k] = (seriesMap[k] && seriesMap[k][best] ? seriesMap[k][best].v : 0));
-      onHover(out);
+      const c = candles[best];
+      onHover({ t: c.t, o: c.open, h: c.high, l: c.low, c: c.close });
     }
   }
   function handleLeave() {
-    setHoverIdx(null);
+    setHoverIndex(null);
     if (onHover) onHover(null);
   }
+
+  // For overlays, we need to map each category series into the same candle index buckets by time
+  function seriesToLinePoints(catSeries) {
+    // sample at same indices as candles by finding nearest t
+    if (!catSeries || catSeries.length === 0) return [];
+    const pts = [];
+    for (let i = 0; i < candles.length; i++) {
+      const midT = candles[i].t;
+      // find nearest point in catSeries
+      let nearest = catSeries[0];
+      let bestD = Math.abs(catSeries[0].t - midT);
+      for (let j = 1; j < catSeries.length; j++) {
+        const d = Math.abs(catSeries[j].t - midT);
+        if (d < bestD) { bestD = d; nearest = catSeries[j]; }
+      }
+      const x = xOfCandle(i);
+      const y = yOf(nearest.v);
+      pts.push({ x, y, v: nearest.v, t: nearest.t });
+    }
+    return pts;
+  }
+
+  const overlayPts = {};
+  convKeys.forEach(k => overlayPts[k] = seriesToLinePoints(convCats[k]));
 
   return (
     <div className="w-full overflow-hidden rounded" style={{ background: "transparent" }}>
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" onMouseMove={handleMove} onMouseLeave={handleLeave}>
         <rect x="0" y="0" width={w} height={h} fill="transparent" />
-        {yTicks.map((t, i) => (
-          <line key={i} x1={padding.left} x2={w - padding.right} y1={t.y} y2={t.y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
-        ))}
-        {yTicks.map((t, i) => (
-          <text key={i} x={padding.left - 8} y={t.y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{fmtMoney(t.v, "USD")}</text>
-        ))}
+        {/* y grid */}
+        {[0,1,2,3,4].map(i => {
+          const v = min + (i/4) * (range);
+          const y = yOf(v);
+          return <line key={i} x1={padding.left} x2={w - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
+        })}
 
-        {Object.keys(linePaths).map(k => (
-          <path key={k} d={linePaths[k].path} stroke={colorFor(k)} strokeWidth={k==="all"?2.2:1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={1} />
-        ))}
+        {/* candles */}
+        {candles.map((c, i) => {
+          const cx = xOfCandle(i);
+          const candleWidth = Math.max(4, (innerW / candles.length) * 0.6);
+          const openY = yOf(c.open), closeY = yOf(c.close), highY = yOf(c.high), lowY = yOf(c.low);
+          const isUp = c.close >= c.open;
+          const color = isUp ? "#34D399" : "#F87171";
+          const bodyTop = Math.min(openY, closeY);
+          const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+          return (
+            <g key={i}>
+              {/* wick */}
+              <line x1={cx} x2={cx} y1={highY} y2={lowY} stroke={color} strokeWidth={1.4} strokeLinecap="round" opacity={0.9} />
+              {/* body */}
+              <rect x={cx - candleWidth/2} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} stroke="#000" strokeWidth={0.6} rx={1} />
+              {/* hover highlight */}
+              {hoverIndex === i && (
+                <rect x={padding.left} y={padding.top} width={innerW} height={innerH} fill="rgba(255,255,255,0.02)" />
+              )}
+            </g>
+          );
+        })}
 
-        {hoverIdx !== null && linePaths["all"]?.pts?.[hoverIdx] && (
+        {/* overlays (category lines) */}
+        {["crypto","stock","nonliquid"].map(k => {
+          const pts = overlayPts[k] || [];
+          if (!pts.length) return null;
+          const path = pts.map((p, idx) => `${idx===0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
+          return (
+            <g key={k}>
+              <path d={path} stroke={colorFor(k)} strokeWidth={k==="stock"?1.8:1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.95} />
+              {/* points */}
+              {pts.map((p, idx) => <circle key={idx} cx={p.x} cy={p.y} r={2} fill={colorFor(k)} stroke="#000" strokeWidth={0.4} />)}
+            </g>
+          );
+        })}
+
+        {/* y axis labels */}
+        {[0,1,2,3,4].map(i => {
+          const v = min + (i/4) * (range);
+          const y = yOf(v);
+          return <text key={i} x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{displayCcy === "IDR" ? fmtMoney(v, "IDR") : fmtMoney(v, "USD")}</text>;
+        })}
+
+        {/* hover vertical line + tooltip */}
+        {hoverIndex !== null && candles[hoverIndex] && (
           <>
-            <line x1={linePaths["all"].pts[hoverIdx].x} y1={padding.top} x2={linePaths["all"].pts[hoverIdx].x} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-            {["all","crypto","stock","nonliquid"].map(k => {
-              const pt = linePaths[k]?.pts && linePaths[k].pts[hoverIdx];
-              if (!pt) return null;
-              return <circle key={k} cx={pt.x} cy={pt.y} r={k==="all"?4:3} fill={colorFor(k)} stroke="#000" strokeWidth="0.6" />;
-            })}
+            <line x1={xOfCandle(hoverIndex)} x2={xOfCandle(hoverIndex)} y1={padding.top} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
           </>
         )}
       </svg>
 
-      {/* Legend */}
+      {/* legend */}
       <div className="mt-2 flex items-center gap-4 text-xs">
         {["all","crypto","stock","nonliquid"].map(k => (
           <div key={k} className="flex items-center gap-2">
@@ -465,6 +543,7 @@ export default function PortfolioDashboard() {
   /* ---------- filter & UI ---------- */
   const [portfolioFilter, setPortfolioFilter] = useState("all"); // all | crypto | stock | nonliquid
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
 
   /* ---------- table sort menu ---------- */
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -482,13 +561,13 @@ export default function PortfolioDashboard() {
 
   /* ---------- sorting ---------- */
   const [sortBy, setSortBy] = useState("market_desc"); // market_desc, invested_desc, pnl_desc, symbol_asc, oldest, newest
-  const [sortDir, setSortDir] = useState("desc");
 
   /* ---------- refs for click-outside behavior ---------- */
   const filterMenuRef = useRef(null);
   const sortMenuRef = useRef(null);
   const suggestionsRef = useRef(null);
   const addPanelRef = useRef(null);
+  const currencyMenuRef = useRef(null);
 
   /* ---------- persist to localStorage ---------- */
   useEffect(() => {
@@ -508,26 +587,25 @@ export default function PortfolioDashboard() {
   useEffect(() => {
     function onPointerDown(e) {
       const target = e.target;
-      // If click inside filter menu -> keep it
       if (filterMenuOpen && filterMenuRef.current && !filterMenuRef.current.contains(target) && !e.target.closest('[aria-label="Filter"]')) {
         setFilterMenuOpen(false);
       }
-      // If click inside sort menu -> keep it
       if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(target) && !e.target.closest('[aria-label="Sort"]')) {
         setSortMenuOpen(false);
       }
-      // If click outside suggestions (add panel) -> hide suggestions
       if (suggestions.length > 0 && suggestionsRef.current && !suggestionsRef.current.contains(target) && !addPanelRef.current?.contains(target)) {
         setSuggestions([]);
       }
-      // If add-panel is open and clicked outside the add panel -> close it
       if (openAdd && addPanelRef.current && !addPanelRef.current.contains(target) && !e.target.closest('[aria-label="Add asset"]')) {
         setOpenAdd(false);
+      }
+      if (currencyMenuOpen && currencyMenuRef.current && !currencyMenuRef.current.contains(target) && !e.target.closest('[aria-label="Currency"]')) {
+        setCurrencyMenuOpen(false);
       }
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd]);
+  }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd, currencyMenuOpen]);
 
   /* ===================== SEARCH (same as before) ===================== */
   const searchTimeoutRef = useRef(null);
@@ -730,7 +808,6 @@ export default function PortfolioDashboard() {
               const fx = usdIdrRef.current || 1;
               priceUSD = fx > 0 ? (priceRaw / fx) : priceRaw;
             }
-            // fallback: if priceUSD is invalid, keep avgPrice as lastPrice to avoid 0
             if (!(priceUSD > 0)) priceUSD = a.avgPrice || a.lastPriceUSD || 0;
             return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
           }
@@ -1141,7 +1218,7 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* ===================== CSV export/import improvements (combined file) ===================== */
+  /* ===================== CSV export/import (combined, BOM for Excel) ===================== */
   function csvQuote(v) {
     if (v === undefined || v === null) return "";
     if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -1476,7 +1553,6 @@ export default function PortfolioDashboard() {
         .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
         .icon-box { transition: transform 160ms, background 120ms; }
         .slice { cursor: pointer; }
-        /* ensure sort menu scroll area has visible scrollbar and constrained height */
         .menu-scroll { max-height: 17.5rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
       `}</style>
 
@@ -1514,23 +1590,32 @@ export default function PortfolioDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Inline display value: numeric + code + dropdown caret icon (no extra label) */}
-            <button
-              aria-label="Toggle currency"
-              onClick={() => setDisplayCcy(displayCcy === "USD" ? "IDR" : "USD")}
-              className="text-lg font-semibold hover:underline inline-flex items-center gap-2"
-              style={{ background: "transparent", border: 0, padding: 0 }}
-              title="Toggle currency (click)"
-            >
-              <span style={{ whiteSpace: "nowrap" }}>
-                {displayCcy === "IDR"
-                  ? `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(totals.market * usdIdr)} IDR`
-                  : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(totals.market)} USD`}
-              </span>
-              <svg width="14" height="14" viewBox="0 0 24 24" className="ml-1" fill="none">
-                <path d="M6 9l6 6 6-6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+            {/* Currency dropdown (nominal + code + caret) */}
+            <div className="relative">
+              <button
+                aria-label="Currency"
+                onClick={() => setCurrencyMenuOpen(v => !v)}
+                className="text-lg font-semibold inline-flex items-center gap-2"
+                style={{ background: "transparent", border: 0, padding: "6px 8px" }}
+                title="Currency"
+              >
+                <span style={{ whiteSpace: "nowrap", fontSize: 16 }}>
+                  {displayCcy === "IDR"
+                    ? `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(totals.market * usdIdr)} IDR`
+                    : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(totals.market)} USD`}
+                </span>
+                <svg width="14" height="14" viewBox="0 0 24 24" className="ml-1" fill="none">
+                  <path d="M6 9l6 6 6-6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+
+              {currencyMenuOpen && (
+                <div ref={currencyMenuRef} className="absolute mt-2 right-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-36">
+                  <button onClick={() => { setDisplayCcy("USD"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">USD</button>
+                  <button onClick={() => { setDisplayCcy("IDR"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">IDR</button>
+                </div>
+              )}
+            </div>
 
             <button
               aria-label="Add asset"
@@ -1707,11 +1792,6 @@ export default function PortfolioDashboard() {
                   <button onClick={() => { setSortBy("symbol_asc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">A → Z</button>
                   <button onClick={() => { setSortBy("oldest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Oldest</button>
                   <button onClick={() => { setSortBy("newest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Newest</button>
-                  {/* extra items to demonstrate scrolling if needed */}
-                  <div className="border-t border-gray-800 mt-1"></div>
-                  <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (duplicate)</button>
-                  <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (duplicate)</button>
-                  <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (duplicate)</button>
                 </div>
               )}
             </div>
@@ -1770,7 +1850,7 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* PORTFOLIO GROWTH */}
+        {/* PORTFOLIO GROWTH (Candles + lines) */}
         <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Portfolio Growth</div>
@@ -1781,10 +1861,25 @@ export default function PortfolioDashboard() {
             </div>
           </div>
 
-          <MultiLineChart seriesMap={multiSeries} width={860} height={260} onHover={(p) => {
-            if (!p) { setChartHover(null); return; }
-            setChartHover(p);
-          }} />
+          <CandlesWithLines
+            seriesMap={multiSeries}
+            displayCcy={displayCcy}
+            usdIdr={usdIdr}
+            width={900}
+            height={300}
+            rangeKey={chartRange}
+            onHover={(p) => {
+              setChartHover(p);
+            }}
+          />
+
+          {/* small category values under chart (nominal small labels) */}
+          <div className="mt-3 flex gap-6 text-xs text-gray-400">
+            <div>All: <span className="font-semibold text-gray-100">{displayCcy === "IDR" ? fmtMoney(categoryValuesNow.all * usdIdr, "IDR") : fmtMoney(categoryValuesNow.all, "USD")}</span></div>
+            <div>Crypto: <span className="font-semibold text-gray-100">{displayCcy === "IDR" ? fmtMoney(categoryValuesNow.crypto * usdIdr, "IDR") : fmtMoney(categoryValuesNow.crypto, "USD")}</span></div>
+            <div>Stocks: <span className="font-semibold text-gray-100">{displayCcy === "IDR" ? fmtMoney(categoryValuesNow.stock * usdIdr, "IDR") : fmtMoney(categoryValuesNow.stock, "USD")}</span></div>
+            <div>Non-Liquid: <span className="font-semibold text-gray-100">{displayCcy === "IDR" ? fmtMoney(categoryValuesNow.nonliquid * usdIdr, "IDR") : fmtMoney(categoryValuesNow.nonliquid, "USD")}</span></div>
+          </div>
         </div>
 
         {/* CAKE (donut replacement) + legend */}
@@ -1877,7 +1972,7 @@ export default function PortfolioDashboard() {
                           <td className="px-3 py-3 text-right">{Number(tx.qty).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
                           <td className="px-3 py-3 text-right">
                             {tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.proceeds * usdIdr, "IDR") : fmtMoney(tx.proceeds, "USD")) : (displayCcy === "IDR" ? fmtMoney(tx.cost * usdIdr, "IDR") : fmtMoney(tx.cost, "USD"))}
-                            <div className="text-xs">{tx.pricePerUnit ? `${fmtMoney(tx.pricePerUnit, "USD")} / unit` : ""}</div>
+                            <div className="text-xs">{tx.pricePerUnit ? `${displayCcy === "IDR" ? fmtMoney(tx.pricePerUnit * usdIdr, "IDR") : fmtMoney(tx.pricePerUnit, "USD")} / unit` : ""}</div>
                           </td>
                           <td className="px-3 py-3 text-right">{tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")) : "-"}</td>
                           <td className="px-3 py-3 text-right">
