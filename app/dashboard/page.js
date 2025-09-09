@@ -5,11 +5,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Single-file Portfolio Dashboard (page.js)
- * - Updated per user requests:
- *   * Removed labels/nominals under Portfolio Growth
- *   * Table filter is icon-only with dropdown menu
- *   * Display value is shown inline (e.g. "5,000,000 IDR >") and toggles USD/IDR on click
- * - All other features preserved: Finnhub-first stock quotes, non-liquid auto growth, transactions with restore/undo, combined CSV export/import, cake allocation, interactive growth chart.
+ * - Includes improvements:
+ *   * Sort menu now scrollable (max-height + overflow)
+ *   * Click outside any open popup (filter menu, sort menu, suggestions) closes it automatically
+ * - All other features retained (Finnhub-first quotes, non-liquid, transactions, cake allocation, charts, CSV export/import)
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -476,6 +475,12 @@ export default function PortfolioDashboard() {
   const [sortBy, setSortBy] = useState("market_desc"); // market_desc, invested_desc, pnl_desc, symbol_asc, oldest, newest
   const [sortDir, setSortDir] = useState("desc");
 
+  /* ---------- refs for click-outside behavior ---------- */
+  const filterMenuRef = useRef(null);
+  const sortMenuRef = useRef(null);
+  const suggestionsRef = useRef(null);
+  const addPanelRef = useRef(null);
+
   /* ---------- persist to localStorage ---------- */
   useEffect(() => {
     try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {}
@@ -489,6 +494,31 @@ export default function PortfolioDashboard() {
   useEffect(() => {
     try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {}
   }, [transactions]);
+
+  /* ===================== CLICK OUTSIDE HANDLER ===================== */
+  useEffect(() => {
+    function onPointerDown(e) {
+      const target = e.target;
+      // If click inside filter menu -> keep it
+      if (filterMenuOpen && filterMenuRef.current && !filterMenuRef.current.contains(target) && !e.target.closest('[aria-label="Filter"]')) {
+        setFilterMenuOpen(false);
+      }
+      // If click inside sort menu -> keep it
+      if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(target) && !e.target.closest('[aria-label="Sort"]')) {
+        setSortMenuOpen(false);
+      }
+      // If click outside suggestions (add panel) -> hide suggestions
+      if (suggestions.length > 0 && suggestionsRef.current && !suggestionsRef.current.contains(target) && !addPanelRef.current?.contains(target)) {
+        setSuggestions([]);
+      }
+      // If add-panel is open and clicked outside the add panel -> close it
+      if (openAdd && addPanelRef.current && !addPanelRef.current.contains(target) && !e.target.closest('[aria-label="Add asset"]')) {
+        setOpenAdd(false);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd]);
 
   /* ===================== SEARCH (same as before) ===================== */
   const searchTimeoutRef = useRef(null);
@@ -1437,6 +1467,8 @@ export default function PortfolioDashboard() {
         .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
         .icon-box { transition: transform 160ms, background 120ms; }
         .slice { cursor: pointer; }
+        /* ensure sort menu scroll area has visible scrollbar and constrained height */
+        .menu-scroll { max-height: 17.5rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
       `}</style>
 
       <div className="max-w-6xl mx-auto">
@@ -1462,7 +1494,7 @@ export default function PortfolioDashboard() {
               </button>
 
               {filterMenuOpen && (
-                <div className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-44">
+                <div ref={filterMenuRef} className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-44 menu-scroll">
                   <button onClick={() => { setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">All</button>
                   <button onClick={() => { setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Crypto</button>
                   <button onClick={() => { setPortfolioFilter("stock"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Stocks</button>
@@ -1485,8 +1517,6 @@ export default function PortfolioDashboard() {
                 ? `${fmtMoney(totals.market * usdIdr, "IDR")} >`
                 : `${fmtMoney(totals.market, "USD")} >`}
             </button>
-
-            {/* small space where select used to be (removed per request) */}
 
             <button
               aria-label="Add asset"
@@ -1557,7 +1587,7 @@ export default function PortfolioDashboard() {
 
         {/* ADD PANEL */}
         {openAdd && (
-          <div className="mt-6 bg-transparent p-3 rounded">
+          <div ref={addPanelRef} className="mt-6 bg-transparent p-3 rounded">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex bg-gray-900 rounded overflow-hidden">
                 <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""} btn-soft`}>Crypto</button>
@@ -1572,7 +1602,7 @@ export default function PortfolioDashboard() {
                 <div className="relative w-full sm:max-w-lg">
                   <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
                   {suggestions.length > 0 && (
-                    <div className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
+                    <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
                       {suggestions.map((s, i) => (
                         <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
                           <div>
@@ -1656,13 +1686,18 @@ export default function PortfolioDashboard() {
               </button>
 
               {sortMenuOpen && (
-                <div className="absolute right-0 mt-2 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-56 z-40">
+                <div ref={sortMenuRef} className="absolute right-0 mt-2 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-56 z-40 menu-scroll">
                   <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (high → low)</button>
                   <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (high → low)</button>
                   <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (high → low)</button>
                   <button onClick={() => { setSortBy("symbol_asc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">A → Z</button>
                   <button onClick={() => { setSortBy("oldest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Oldest</button>
                   <button onClick={() => { setSortBy("newest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Newest</button>
+                  {/* extra items to demonstrate scrolling if needed */}
+                  <div className="border-t border-gray-800 mt-1"></div>
+                  <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (duplicate)</button>
+                  <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (duplicate)</button>
+                  <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (duplicate)</button>
                 </div>
               )}
             </div>
@@ -1721,7 +1756,7 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* PORTFOLIO GROWTH (labels removed per request) */}
+        {/* PORTFOLIO GROWTH */}
         <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Portfolio Growth</div>
