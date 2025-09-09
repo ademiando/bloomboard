@@ -5,11 +5,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Single-file Portfolio Dashboard (page.js)
- * - Filter button is icon-only (clean)
- * - Single combined CSV export: assets + transactions in one file, spreadsheet-friendly
- * - Improved CSV formatting: BOM, clear section headers (#ASSETS, #TRANSACTIONS), ISO dates, quoted text where necessary
- * - Import handles combined CSV sections and merges/replaces appropriately
- * - All other functionality preserved (Finnhub-first stock quotes, non-liquid YoY, growth chart, cake allocation)
+ * - Updated per user requests:
+ *   * Removed labels/nominals under Portfolio Growth
+ *   * Table filter is icon-only with dropdown menu
+ *   * Display value is shown inline (e.g. "5,000,000 IDR >") and toggles USD/IDR on click
+ * - All other features preserved: Finnhub-first stock quotes, non-liquid auto growth, transactions with restore/undo, combined CSV export/import, cake allocation, interactive growth chart.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -85,7 +85,7 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== CAKE-STYLE ALLOCATION (same as previous) ===================== */
+/* ===================== CAKE-STYLE ALLOCATION ===================== */
 function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
   const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const n = Math.max(1, data.length);
@@ -201,7 +201,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
   );
 }
 
-/* ===================== MULTI-LINE CHART (same as previous) ===================== */
+/* ===================== MULTI-LINE CHART ===================== */
 function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) {
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = Math.min(width, 1000);
@@ -314,7 +314,7 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
   );
 }
 
-/* ===================== TRADE MODAL (unchanged) ===================== */
+/* ===================== TRADE MODAL ===================== */
 function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
@@ -457,6 +457,9 @@ export default function PortfolioDashboard() {
   /* ---------- filter & UI ---------- */
   const [portfolioFilter, setPortfolioFilter] = useState("all"); // all | crypto | stock | nonliquid
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+
+  /* ---------- table sort menu ---------- */
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
   /* ---------- transactions / undo ---------- */
   const [transactionsOpen, setTransactionsOpen] = useState(false);
@@ -1102,8 +1105,6 @@ export default function PortfolioDashboard() {
   /* ===================== CSV export/import improvements (combined file) ===================== */
   function csvQuote(v) {
     if (v === undefined || v === null) return "";
-    // Prefer not to put quotes around pure numbers/booleans for spreadsheet readability,
-    // but keep quotes if value contains comma/newline/quote.
     if (typeof v === "number" || typeof v === "boolean") return String(v);
     const s = String(v);
     if (s.includes(",") || s.includes("\n") || s.includes('"')) {
@@ -1113,7 +1114,6 @@ export default function PortfolioDashboard() {
   }
 
   function exportAllCSV() {
-    // Single file containing two sections: ASSETS then TRANSACTIONS
     const assetsHeaders = [
       "id","type","coingeckoId","symbol","name","description",
       "shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD",
@@ -1124,7 +1124,6 @@ export default function PortfolioDashboard() {
     const lines = [];
     lines.push(`#FILE:app/dashboard/page.js`);
     lines.push(`#EXPORT:CombinedPortfolioAndTransactions,generatedAt=${isoDate(Date.now())}`);
-    // ASSETS block
     lines.push(`#ASSETS`);
     lines.push(assetsHeaders.join(","));
     assets.forEach(a => {
@@ -1136,9 +1135,7 @@ export default function PortfolioDashboard() {
       }).join(",");
       lines.push(row);
     });
-    // blank line separator
     lines.push("");
-    // TRANSACTIONS block
     lines.push(`#TRANSACTIONS`);
     lines.push(txHeaders.join(","));
     transactions.forEach(t => {
@@ -1150,10 +1147,9 @@ export default function PortfolioDashboard() {
       }).join(",");
       lines.push(row);
     });
-    // META line
     lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},assets=${assets.length},transactions=${transactions.length}`);
 
-    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel compatibility
+    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1170,19 +1166,14 @@ export default function PortfolioDashboard() {
     reader.onload = (e) => {
       const text = e.target.result;
       const linesRaw = text.split(/\r?\n/);
-      // remove BOM if present
       if (linesRaw[0] && linesRaw[0].charCodeAt(0) === 0xFEFF) linesRaw[0] = linesRaw[0].slice(1);
       const lines = linesRaw.map(l => l.trimRight());
       if (lines.length === 0) return alert("Empty file");
-
-      // Find sections
       const idxAssets = lines.findIndex(l => l.startsWith("#ASSETS"));
       const idxTx = lines.findIndex(l => l.startsWith("#TRANSACTIONS"));
       const metaLine = lines.find(l => l.startsWith("#META"));
-      // parse assets block
       let importedAssets = [];
       if (idxAssets >= 0) {
-        // header is next non-empty line after #ASSETS
         let headerLineIdx = -1;
         for (let i = idxAssets + 1; i < lines.length; i++) {
           if (lines[i].trim() === "") continue;
@@ -1190,11 +1181,9 @@ export default function PortfolioDashboard() {
         }
         if (headerLineIdx >= 0) {
           const headers = lines[headerLineIdx].split(",").map(h => h.replace(/^"|"$/g,"").trim());
-          // data lines until blank or #TRANSACTIONS or #META
           for (let i = headerLineIdx + 1; i < lines.length; i++) {
             const l = lines[i];
             if (!l || l.startsWith("#TRANSACTIONS") || l.startsWith("#META") || l.startsWith("#FILE") || l.startsWith("#EXPORT")) break;
-            // parse CSV row robustly (respect quotes)
             const values = [];
             let cur = "";
             let insideQuote = false;
@@ -1229,10 +1218,8 @@ export default function PortfolioDashboard() {
         }
       }
 
-      // parse transactions block
       let importedTx = [];
       if (idxTx >= 0) {
-        // header is next non-empty line after #TRANSACTIONS
         let headerLineIdx = -1;
         for (let i = idxTx + 1; i < lines.length; i++) {
           if (lines[i].trim() === "") continue;
@@ -1276,7 +1263,6 @@ export default function PortfolioDashboard() {
         }
       }
 
-      // parse META if present
       if (metaLine) {
         try {
           const m = metaLine.replace(/^#META,?/, "");
@@ -1290,7 +1276,6 @@ export default function PortfolioDashboard() {
         } catch (e) { /* ignore */ }
       }
 
-      // merge or replace
       if (importedAssets.length > 0) {
         if (merge) {
           const map = {};
@@ -1305,7 +1290,6 @@ export default function PortfolioDashboard() {
 
       if (importedTx.length > 0) {
         if (merge) {
-          // append imported txs at top preserving order
           const mergedTx = [...importedTx, ...transactions];
           setTransactions(mergedTx.slice(0, 1000));
         } else {
@@ -1461,7 +1445,7 @@ export default function PortfolioDashboard() {
           <div className="flex items-center gap-2 relative">
             <h1 className="text-2xl font-semibold">{headerTitle}</h1>
 
-            {/* filter icon-only button (clean) */}
+            {/* header-level filter icon-only */}
             <div className="relative">
               <button
                 aria-label="Filter"
@@ -1470,7 +1454,6 @@ export default function PortfolioDashboard() {
                 style={{ fontSize: 16, lineHeight: 1 }}
                 title="Filter portfolio"
               >
-                {/* funnel icon */}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                   <path d="M3 5h18" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M7 12h10" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
@@ -1490,15 +1473,20 @@ export default function PortfolioDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="text-sm text-gray-400">Display</div>
-            <div className="text-lg font-semibold">
-              {displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
-            </div>
+            {/* Inline display value (no label, no box). Click toggles currency */}
+            <button
+              aria-label="Toggle currency"
+              onClick={() => setDisplayCcy(displayCcy === "USD" ? "IDR" : "USD")}
+              className="text-lg font-semibold hover:underline"
+              style={{ background: "transparent", border: 0, padding: 0 }}
+              title="Toggle currency (click)"
+            >
+              {displayCcy === "IDR"
+                ? `${fmtMoney(totals.market * usdIdr, "IDR")} >`
+                : `${fmtMoney(totals.market, "USD")} >`}
+            </button>
 
-            <select value={displayCcy} onChange={(e) => setDisplayCcy(e.target.value)} className="bg-gray-900 border border-gray-800 rounded px-3 py-2 text-sm">
-              <option value="USD">USD</option>
-              <option value="IDR">IDR</option>
-            </select>
+            {/* small space where select used to be (removed per request) */}
 
             <button
               aria-label="Add asset"
@@ -1567,7 +1555,7 @@ export default function PortfolioDashboard() {
           </div>
         </div>
 
-        {/* ADD PANEL (unchanged) */}
+        {/* ADD PANEL */}
         {openAdd && (
           <div className="mt-6 bg-transparent p-3 rounded">
             <div className="flex items-center gap-3 mb-3">
@@ -1649,19 +1637,34 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* TABLE + SORT */}
+        {/* TABLE + SORT (sort control = icon-only) */}
         <div className="mt-6 overflow-x-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm text-gray-400">Assets</div>
-            <div className="flex items-center gap-2">
-              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-gray-900 border border-gray-800 rounded px-3 py-1 text-sm">
-                <option value="market_desc">Value (high → low)</option>
-                <option value="invested_desc">Invested (high → low)</option>
-                <option value="pnl_desc">P&L (high → low)</option>
-                <option value="symbol_asc">A → Z</option>
-                <option value="oldest">Oldest</option>
-                <option value="newest">Newest</option>
-              </select>
+            <div className="flex items-center gap-2 relative">
+              <button
+                aria-label="Sort"
+                onClick={() => setSortMenuOpen(v => !v)}
+                className="inline-flex items-center justify-center rounded px-2 py-1 bg-gray-900 border border-gray-800 text-gray-200 btn"
+                title="Sort assets"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M6 6h12" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+                  <path d="M9 12h6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+                  <path d="M11 18h2" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
+
+              {sortMenuOpen && (
+                <div className="absolute right-0 mt-2 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-56 z-40">
+                  <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (high → low)</button>
+                  <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (high → low)</button>
+                  <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (high → low)</button>
+                  <button onClick={() => { setSortBy("symbol_asc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">A → Z</button>
+                  <button onClick={() => { setSortBy("oldest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Oldest</button>
+                  <button onClick={() => { setSortBy("newest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Newest</button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1718,7 +1721,7 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* PORTFOLIO GROWTH */}
+        {/* PORTFOLIO GROWTH (labels removed per request) */}
         <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Portfolio Growth</div>
@@ -1733,20 +1736,6 @@ export default function PortfolioDashboard() {
             if (!p) { setChartHover(null); return; }
             setChartHover(p);
           }} />
-
-          {/* small nominal values under each category */}
-          <div className="mt-3 grid grid-cols-4 gap-4 text-center">
-            <div className="text-xs text-gray-400">All</div>
-            <div className="text-xs text-gray-400">Crypto</div>
-            <div className="text-xs text-gray-400">Stocks</div>
-            <div className="text-xs text-gray-400">Non-Liquid</div>
-          </div>
-          <div className="mt-1 grid grid-cols-4 gap-4 text-center">
-            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.all || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.all || 0, "USD")}</div>
-            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.crypto || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.crypto || 0, "USD")}</div>
-            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.stock || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.stock || 0, "USD")}</div>
-            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.nonliquid || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.nonliquid || 0, "USD")}</div>
-          </div>
         </div>
 
         {/* CAKE (donut replacement) + legend */}
