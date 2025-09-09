@@ -5,14 +5,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Single-file Portfolio Dashboard (page.js)
- * - Cake-style allocation (center shows total)
- * - Growth chart with labels on top and values under labels
- * - Finnhub-first stock polling
- * - Non-liquid assets with YoY growth
- * - Transactions modal with restore/undo
- * - CSV export/import
+ * - Cake allocation with gaps + hover tooltip + center smaller total
+ * - Growth chart (no duplicated legend) — small nominal below each category
+ * - Button animations (add rotates + -> ×, hover effects)
+ * - Finnhub-first stock quotes; fallback to Yahoo; fallback to avgPrice to avoid 0
+ * - Non-liquid assets with YoY growth logic
  *
- * Keep as single file per user request.
+ * Keep as one file per request.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -66,7 +65,7 @@ function ensureNumericAsset(a) {
   };
 }
 
-/* simple seeded RNG for slight chart noise */
+/* seeded RNG for synthetic growth chart noise */
 function hashStringToSeed(str) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) {
@@ -85,75 +84,129 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== CAKE-STYLE ALLOCATION (Donut -> Cake) ===================== */
-function CakeAllocation({ data = [], size = 180, inner = 40, gap = 0.04, displayTotal }) {
+/* ===================== CAKE-STYLE ALLOCATION WITH GAPS + TOOLTIP ===================== */
+function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, displayTotal }) {
   // data: [{name, value}]
-  const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0);
-  const n = data.length || 1;
+  const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
+  const n = Math.max(1, data.length);
   const cx = size / 2, cy = size / 2;
 
-  // we set inner radius and build outer radius scale
   const maxSliceOuter = size / 2 - 6;
-  const minOuter = inner + 6;
+  const minOuter = inner + 8;
   const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
   const scaleOuter = (v) => {
-    if (!v || v <= 0) return inner + 4;
+    if (!v || v <= 0) return inner + 6;
     const frac = v / maxValue;
     return Math.round(minOuter + frac * (maxSliceOuter - minOuter));
   };
 
-  // equal-angle slices
   const anglePer = (2 * Math.PI) / n;
-  let start = -Math.PI / 2; // start at top
-
   const colors = [
     "#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE",
     "#B28DFF", "#FFB26B", "#6BFFA0", "#FF6BE5", "#00C49F",
   ];
 
+  const [hoverIndex, setHoverIndex] = useState(null);
+  const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, html: "" });
+
+  // wrapper ref to compute tooltip position
+  const wrapRef = useRef(null);
+
+  const onSliceEnter = (i, event, d) => {
+    setHoverIndex(i);
+    const rect = wrapRef.current?.getBoundingClientRect();
+    const px = (event.clientX - (rect?.left || 0)) + 12;
+    const py = (event.clientY - (rect?.top || 0)) - 12;
+    setTooltip({ show: true, x: px, y: py, html: `${d.name} • ${fmtMoney(d.value, "USD")}` });
+  };
+  const onSliceMove = (event) => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    const px = (event.clientX - (rect?.left || 0)) + 12;
+    const py = (event.clientY - (rect?.top || 0)) - 12;
+    setTooltip(t => ({ ...t, x: px, y: py }));
+  };
+  const onSliceLeave = () => {
+    setHoverIndex(null);
+    setTooltip({ show: false, x: 0, y: 0, html: "" });
+  };
+
   function arcPath(cx, cy, rInner, rOuter, startAngle, endAngle) {
-    // build path for donut-like slice with variable outer radius and constant inner radius
     const x1 = cx + rOuter * Math.cos(startAngle);
     const y1 = cy + rOuter * Math.sin(startAngle);
     const x2 = cx + rOuter * Math.cos(endAngle);
     const y2 = cy + rOuter * Math.sin(endAngle);
-
     const xi2 = cx + rInner * Math.cos(endAngle);
     const yi2 = cy + rInner * Math.sin(endAngle);
     const xi1 = cx + rInner * Math.cos(startAngle);
     const yi1 = cy + rInner * Math.sin(startAngle);
-
     const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
-
     return `M ${cx} ${cy} L ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${rInner} ${rInner} 0 ${large} 0 ${xi1} ${yi1} Z`;
   }
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {data.map((d, i) => {
-        const outer = scaleOuter(d.value || 0);
-        const sAng = start + i * anglePer;
-        const eAng = sAng + anglePer - gap;
-        const path = arcPath(cx, cy, inner, outer, sAng, eAng);
-        return (
-          <path key={i} d={path} fill={colors[i % colors.length]} stroke="rgba(0,0,0,0.06)" strokeWidth="0.6" className="slice" />
-        );
-      })}
+    <div ref={wrapRef} style={{ width: size, height: size, position: "relative" }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {data.map((d, i) => {
+          const outer = scaleOuter(d.value || 0);
+          const start = -Math.PI / 2 + i * anglePer;
+          const end = start + anglePer - gap;
+          const path = arcPath(cx, cy, inner, outer, start, end);
+          const isHover = hoverIndex === i;
+          const transform = isHover ? `translate(${Math.cos((start+end)/2)*6},${Math.sin((start+end)/2)*6})` : undefined;
+          return (
+            <g key={i} transform={transform}>
+              <path
+                d={path}
+                fill={colors[i % colors.length]}
+                stroke="#000"
+                strokeWidth={isHover ? 1.8 : 0.6}
+                style={{ transition: "transform 180ms, filter 160ms, stroke-width 160ms" }}
+                onMouseEnter={(ev) => onSliceEnter(i, ev, d)}
+                onMouseMove={(ev) => onSliceMove(ev)}
+                onMouseLeave={onSliceLeave}
+                className="slice"
+              />
+            </g>
+          );
+        })}
 
-      {/* center circle to mask and label */}
-      <circle cx={cx} cy={cy} r={inner - 2} fill="#070707" />
-      <text x={cx} y={cy - 6} textAnchor="middle" fontSize="11" fill="#9CA3AF">Total</text>
-      <text x={cx} y={cy + 14} textAnchor="middle" fontSize="14" fontWeight={700} fill="#E5E7EB">
-        {displayTotal}
-      </text>
-    </svg>
+        {/* center mask + smaller total */}
+        <circle cx={cx} cy={cy} r={inner - 4} fill="#070707" />
+        <text x={cx} y={cy - 6} textAnchor="middle" fontSize="10" fill="#9CA3AF">Total</text>
+        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="12" fontWeight={700} fill="#E5E7EB">
+          {displayTotal}
+        </text>
+      </svg>
+
+      {/* tooltip */}
+      <div style={{
+        position: "absolute",
+        left: tooltip.x,
+        top: tooltip.y,
+        transform: "translate(-6px,-100%)",
+        padding: "8px 10px",
+        background: "#111827",
+        border: "1px solid rgba(255,255,255,0.06)",
+        color: "#E5E7EB",
+        borderRadius: 8,
+        fontSize: 12,
+        boxShadow: "0 6px 18px rgba(0,0,0,0.5)",
+        pointerEvents: "none",
+        opacity: tooltip.show ? 1 : 0,
+        transition: "opacity 140ms, transform 120ms",
+        whiteSpace: "nowrap",
+        zIndex: 40
+      }}>
+        {tooltip.html}
+      </div>
+    </div>
   );
 }
 
-/* ===================== MULTI-LINE CHART (unchanged logic but legend+values separated) ===================== */
+/* ===================== MULTI-LINE CHART (legend simplified) ===================== */
 function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) {
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
-  const w = width;
+  const w = Math.min(width, 1000);
   const h = height;
   const keys = Object.keys(seriesMap);
   if (keys.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
@@ -225,7 +278,7 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
   }
 
   return (
-    <div className="w-full overflow-hidden">
+    <div className="w-full overflow-hidden rounded" style={{ background: "transparent" }}>
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" onMouseMove={handleMove} onMouseLeave={handleLeave}>
         <rect x="0" y="0" width={w} height={h} fill="transparent" />
         {yTicks.map((t, i) => (
@@ -236,7 +289,7 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
         ))}
 
         {keys.map(k => (
-          <path key={k} d={linePaths[k].path} stroke={colorFor(k)} strokeWidth={k==="all"?2.2:1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={k==="all"?1:0.95} />
+          <path key={k} d={linePaths[k].path} stroke={colorFor(k)} strokeWidth={k==="all"?2.2:1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={k==="all"?1:0.85} />
         ))}
 
         {hoverIdx !== null && linePaths["all"]?.pts?.[hoverIdx] && (
@@ -250,20 +303,11 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
           </>
         )}
       </svg>
-      {/* legend labels only (values will be displayed separately below by parent) */}
-      <div className="mt-2 flex items-center gap-6 text-xs text-gray-300">
-        {["all","crypto","stock","nonliquid"].map(k => (
-          <div key={k} className="flex items-center gap-2">
-            <div style={{ width: 10, height: 10, background: colorFor(k) }} className="rounded-sm" />
-            <div className="uppercase font-semibold">{k}</div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
-/* ===================== TRADE MODAL ===================== */
+/* ===================== TRADE MODAL (unchanged) ===================== */
 function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
@@ -432,7 +476,7 @@ export default function PortfolioDashboard() {
     try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {}
   }, [transactions]);
 
-  /* ===================== SEARCH (same) ===================== */
+  /* ===================== SEARCH (same as before) ===================== */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
@@ -519,7 +563,7 @@ export default function PortfolioDashboard() {
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
-  /* ===================== POLLING PRICES ===================== */
+  /* ===================== POLLING PRICES (crypto & stocks) ===================== */
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -556,7 +600,7 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  // Stocks polling: FINNHUB first, fallback to Yahoo bulk
+  // Stocks polling: Finnhub first, fallback to Yahoo
   useEffect(() => {
     let mounted = true;
     async function pollStocks() {
@@ -569,7 +613,6 @@ export default function PortfolioDashboard() {
 
         const map = {};
 
-        // Finnhub per-symbol first
         for (const s of symbols) {
           try {
             const res = await fetch(FINNHUB_QUOTE(s));
@@ -592,7 +635,6 @@ export default function PortfolioDashboard() {
           }
         }
 
-        // missing -> Yahoo bulk
         const missing = symbols.filter(s => !map[s]);
         if (missing.length > 0) {
           try {
@@ -624,7 +666,6 @@ export default function PortfolioDashboard() {
           }
         }
 
-        // apply updates
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
             const entry = map[a.symbol];
@@ -636,9 +677,9 @@ export default function PortfolioDashboard() {
               const fx = usdIdrRef.current || 1;
               priceUSD = fx > 0 ? (priceRaw / fx) : priceRaw;
             }
-            if (priceUSD > 0 && Number.isFinite(priceUSD)) {
-              return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
-            }
+            // fallback: if priceUSD is invalid, keep avgPrice as lastPrice to avoid 0
+            if (!(priceUSD > 0)) priceUSD = a.avgPrice || a.lastPriceUSD || 0;
+            return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
           }
           return ensureNumericAsset(a);
         }));
@@ -654,7 +695,7 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  /* FX for IDR */
+  /* FX tether -> IDR */
   useEffect(() => {
     let mounted = true;
     async function fetchFx() {
@@ -677,7 +718,7 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, []);
 
-  /* ===================== NON-LIQUID helpers ===================== */
+  /* ===================== NON-LIQUID last price computation ===================== */
   function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent, targetTime = Date.now()) {
     const years = Math.max(0, (targetTime - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
     const r = toNum(yoyPercent) / 100;
@@ -685,7 +726,7 @@ export default function PortfolioDashboard() {
     return last;
   }
 
-  /* ===================== TRANSACTION EFFECTS HELPERS ===================== */
+  /* ===================== TRANSACTION APPLY / REVERSE helpers ===================== */
   function applyTransactionEffects(tx) {
     if (!tx) return;
     if (tx.type === "sell") {
@@ -777,7 +818,7 @@ export default function PortfolioDashboard() {
     }
   }
 
-  /* ===================== ADD ASSET ===================== */
+  /* ===================== ADD ASSET helpers (including non-liquid) ===================== */
   function addAssetFromSuggestion(s) {
     const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
     const asset = ensureNumericAsset({
@@ -879,7 +920,7 @@ export default function PortfolioDashboard() {
     setOpenAdd(false);
   }
 
-  /* ===================== BUY / SELL (record transactions) ===================== */
+  /* ===================== BUY / SELL (record tx) ===================== */
   function openTradeModal(assetId, mode) {
     const asset = assets.find(a => a.id === assetId);
     if (!asset) return;
@@ -1132,7 +1173,7 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* ===================== BUILD MULTI-CATEGORY SERIES FROM TRANSACTIONS ===================== */
+  /* ===================== Build multi-category series for growth chart ===================== */
   function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
     const now = Date.now();
     let earliest = now;
@@ -1189,7 +1230,7 @@ export default function PortfolioDashboard() {
 
     function priceAtTime(asset, t) {
       if (asset.type === "nonliquid") {
-        return computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || Date.now(), asset.nonLiquidYoy || 0, t);
+        return computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || 0, asset.nonLiquidYoy || 0, t);
       }
       const pd = asset.purchaseDate || asset.createdAt || (now - defaultDays * 24 * 3600 * 1000);
       const avg = toNum(asset.avgPrice || 0);
@@ -1228,7 +1269,7 @@ export default function PortfolioDashboard() {
 
   const multiSeries = useMemo(() => buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
 
-  // category values for current/latest point (used under legend labels)
+  /* current/latest category values (for small labels below chart) */
   const categoryValuesNow = useMemo(() => {
     const out = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
     try {
@@ -1241,7 +1282,8 @@ export default function PortfolioDashboard() {
     return out;
   }, [multiSeries]);
 
-  /* ===================== RENDER ===================== */
+  /* ===================== RENDER (final) ===================== */
+
   const titleForFilter = {
     all: "All Portfolio",
     crypto: "Crypto Portfolio",
@@ -1252,26 +1294,35 @@ export default function PortfolioDashboard() {
 
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
-      <div className="max-w-6xl mx-auto">
+      <style>{`
+        /* small interactive styles */
+        .btn { transition: transform 180ms, box-shadow 180ms, background-color 120ms; }
+        .btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
+        .btn-soft:hover { transform: translateY(-2px) scale(1.01); }
+        .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
+        .icon-box { transition: transform 160ms, background 120ms; }
+        .slice { cursor: pointer; }
+      `}</style>
 
+      <div className="max-w-6xl mx-auto">
         {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2 relative">
             <h1 className="text-2xl font-semibold">{headerTitle}</h1>
 
-            {/* dropdown caret (non-transparent, small icon) */}
+            {/* dropdown caret (non-transparent, bigger) */}
             <div className="relative">
               <button
                 aria-label="Filter"
                 onClick={() => setFilterMenuOpen(v => !v)}
-                className="ml-2 inline-flex items-center justify-center rounded px-2 py-1 bg-gray-800 border border-gray-700 text-gray-200 hover:bg-gray-700"
+                className={`ml-2 inline-flex items-center justify-center rounded px-3 py-1 bg-gray-800 border border-gray-700 text-gray-200 btn`}
                 style={{ fontSize: 16, lineHeight: 1 }}
               >
                 ▾
               </button>
 
               {filterMenuOpen && (
-                <div className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-40">
+                <div className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-44">
                   <button onClick={() => { setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">All</button>
                   <button onClick={() => { setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Crypto</button>
                   <button onClick={() => { setPortfolioFilter("stock"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Stocks</button>
@@ -1286,11 +1337,23 @@ export default function PortfolioDashboard() {
             <div className="text-lg font-semibold">
               {displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
             </div>
+
             <select value={displayCcy} onChange={(e) => setDisplayCcy(e.target.value)} className="bg-gray-900 border border-gray-800 rounded px-3 py-2 text-sm">
               <option value="USD">USD</option>
               <option value="IDR">IDR</option>
             </select>
-            <button onClick={() => setOpenAdd(v => !v)} className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold">+</button>
+
+            {/* add button rotates + -> x */}
+            <button
+              aria-label="Add asset"
+              onClick={() => setOpenAdd(v => !v)}
+              className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold btn`}
+              title="Add asset"
+            >
+              <span style={{ display: "inline-block", transformOrigin: "50% 50%", transition: "transform 220ms" }} className={openAdd ? "rotate-open" : ""}>
+                +
+              </span>
+            </button>
           </div>
         </div>
 
@@ -1338,7 +1401,7 @@ export default function PortfolioDashboard() {
             </div>
             <div className="flex items-center gap-2">
               <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
-              <div className="w-6 h-6 bg-gray-800 rounded flex items-center justify-center">
+              <div className="w-6 h-6 bg-gray-800 rounded flex items-center justify-center icon-box">
                 <svg width="12" height="12" viewBox="0 0 24 24">
                   <path d="M6 14 L14 6" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   <path d="M14 6 v8 h-8" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -1353,10 +1416,10 @@ export default function PortfolioDashboard() {
           <div className="mt-6 bg-transparent p-3 rounded">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex bg-gray-900 rounded overflow-hidden">
-                <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""}`}>Crypto</button>
-                <button onClick={() => { setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "id" ? "bg-gray-800" : ""}`}>Stocks ID</button>
-                <button onClick={() => { setSearchMode("us"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "us" ? "bg-gray-800" : ""}`}>Stocks US</button>
-                <button onClick={() => { setSearchMode("nonliquid"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "nonliquid" ? "bg-gray-800" : ""}`}>Non-Liquid</button>
+                <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""} btn-soft`}>Crypto</button>
+                <button onClick={() => { setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "id" ? "bg-gray-800" : ""} btn-soft`}>Stocks ID</button>
+                <button onClick={() => { setSearchMode("us"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "us" ? "bg-gray-800" : ""} btn-soft`}>Stocks US</button>
+                <button onClick={() => { setSearchMode("nonliquid"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "nonliquid" ? "bg-gray-800" : ""} btn-soft`}>Non-Liquid</button>
               </div>
             </div>
 
@@ -1383,9 +1446,9 @@ export default function PortfolioDashboard() {
                   <option value="USD">USD</option> <option value="IDR">IDR</option>
                 </select>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add</button>
-                  <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold">Add + Position</button>
-                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button>
+                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add</button>
+                  <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold btn">Add + Position</button>
+                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
                 </div>
               </div>
             ) : (
@@ -1422,8 +1485,8 @@ export default function PortfolioDashboard() {
                   <input value={nlDesc} onChange={(e) => setNlDesc(e.target.value)} placeholder="Optional description" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
                 </div>
                 <div className="sm:col-span-2 flex gap-2">
-                  <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add Non-Liquid</button>
-                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button>
+                  <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Non-Liquid</button>
+                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
                 </div>
               </div>
             )}
@@ -1474,9 +1537,9 @@ export default function PortfolioDashboard() {
 
                   <td className="px-3 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black">Buy</button>
-                      <button onClick={() => openTradeModal(r.id, "sell")} className="bg-yellow-600 px-2 py-1 rounded text-xs">Sell</button>
-                      <button onClick={() => removeAsset(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black">Del</button>
+                      <button onClick={() => openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Buy</button>
+                      <button onClick={() => openTradeModal(r.id, "sell")} className="bg-yellow-600 px-2 py-1 rounded text-xs btn">Sell</button>
+                      <button onClick={() => removeAsset(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Del</button>
                     </div>
                   </td>
                 </tr>
@@ -1485,13 +1548,13 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* PORTFOLIO GROWTH (chart) - BELOW table and ABOVE cake/donut */}
+        {/* PORTFOLIO GROWTH */}
         <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Portfolio Growth</div>
             <div className="flex items-center gap-2">
               {["1d","2d","1w","1m","1y","all"].map(k => (
-                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"}`}>{k}</button>
+                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"} btn`}>{k}</button>
               ))}
             </div>
           </div>
@@ -1501,26 +1564,26 @@ export default function PortfolioDashboard() {
             setChartHover(p);
           }} />
 
-          {/* labels row and values row below (single place, no duplication) */}
+          {/* show only small nominal values below each category (no duplicated labels) */}
           <div className="mt-3 grid grid-cols-4 gap-4 text-center">
-            <div className="text-xs text-gray-400 uppercase">All</div>
-            <div className="text-xs text-gray-400 uppercase">Crypto</div>
-            <div className="text-xs text-gray-400 uppercase">Stocks</div>
-            <div className="text-xs text-gray-400 uppercase">Non-Liquid</div>
+            <div className="text-xs text-gray-400">All</div>
+            <div className="text-xs text-gray-400">Crypto</div>
+            <div className="text-xs text-gray-400">Stocks</div>
+            <div className="text-xs text-gray-400">Non-Liquid</div>
           </div>
           <div className="mt-1 grid grid-cols-4 gap-4 text-center">
-            <div className="text-sm font-semibold">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.all || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.all || 0, "USD")}</div>
-            <div className="text-sm font-semibold">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.crypto || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.crypto || 0, "USD")}</div>
-            <div className="text-sm font-semibold">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.stock || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.stock || 0, "USD")}</div>
-            <div className="text-sm font-semibold">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.nonliquid || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.nonliquid || 0, "USD")}</div>
+            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.all || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.all || 0, "USD")}</div>
+            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.crypto || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.crypto || 0, "USD")}</div>
+            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.stock || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.stock || 0, "USD")}</div>
+            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.nonliquid || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.nonliquid || 0, "USD")}</div>
           </div>
         </div>
 
         {/* CAKE (donut replacement) + legend */}
         {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
-            <div className="w-40 h-40 flex items-center justify-center">
-              <CakeAllocation data={donutData} size={160} inner={44} gap={0.04} displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")} />
+            <div className="w-44 h-44 flex items-center justify-center">
+              <CakeAllocation data={donutData} size={176} inner={48} gap={0.06} displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")} />
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -1569,9 +1632,9 @@ export default function PortfolioDashboard() {
                 </div>
                 <div className="flex items-center gap-2">
                   {lastDeletedTx && (
-                    <button onClick={() => undoLastDeletedTransaction()} className="bg-amber-500 px-3 py-1 rounded text-sm">Undo Delete</button>
+                    <button onClick={() => undoLastDeletedTransaction()} className="bg-amber-500 px-3 py-1 rounded text-sm btn">Undo Delete</button>
                   )}
-                  <button onClick={() => { setTransactionsOpen(false); purgeLastDeletedTransaction(); }} className="bg-gray-800 px-3 py-1 rounded">Close</button>
+                  <button onClick={() => { setTransactionsOpen(false); }} className="bg-gray-800 px-3 py-1 rounded btn-soft">Close</button>
                 </div>
               </div>
 
@@ -1603,8 +1666,8 @@ export default function PortfolioDashboard() {
                           <td className="px-3 py-3 text-right">{tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")) : "-"}</td>
                           <td className="px-3 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <button onClick={() => { restoreTransaction(tx.id); }} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black">Restore</button>
-                              <button onClick={() => deleteTransaction(tx.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black">Delete</button>
+                              <button onClick={() => { restoreTransaction(tx.id); }} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Restore</button>
+                              <button onClick={() => deleteTransaction(tx.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Delete</button>
                             </div>
                           </td>
                         </tr>
@@ -1618,8 +1681,8 @@ export default function PortfolioDashboard() {
                 <div className="mt-4 flex items-center justify-between">
                   <div className="text-sm text-gray-300">Last deleted: {lastDeletedTx.symbol} ({new Date(lastDeletedTx.date).toLocaleString()})</div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => undoLastDeletedTransaction()} className="bg-emerald-500 px-3 py-1 rounded text-sm">Undo</button>
-                    <button onClick={() => purgeLastDeletedTransaction()} className="bg-gray-700 px-3 py-1 rounded text-sm">Forget</button>
+                    <button onClick={() => undoLastDeletedTransaction()} className="bg-emerald-500 px-3 py-1 rounded text-sm btn">Undo</button>
+                    <button onClick={() => purgeLastDeletedTransaction()} className="bg-gray-700 px-3 py-1 rounded text-sm btn-soft">Forget</button>
                   </div>
                 </div>
               )}
@@ -1634,15 +1697,15 @@ export default function PortfolioDashboard() {
             <div className="text-xs text-gray-500">Export includes portfolio rows + metadata (realized, displayCcy, usdIdr).</div>
           </div>
           <div className="flex gap-2">
-            <button onClick={exportCSV} className="bg-blue-600 px-3 py-2 rounded font-semibold">Export CSV</button>
-            <label className="bg-emerald-500 px-3 py-2 rounded font-semibold cursor-pointer">
+            <button onClick={exportCSV} className="bg-blue-600 px-3 py-2 rounded font-semibold btn">Export CSV</button>
+            <label className="bg-emerald-500 px-3 py-2 rounded font-semibold cursor-pointer btn">
               Import CSV
               <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
             </label>
             <button onClick={() => {
               if (!confirm("This will clear your portfolio and realized P&L. Continue?")) return;
               setAssets([]); setRealizedUSD(0); setTransactions([]); setLastDeletedTx(null);
-            }} className="bg-red-600 px-3 py-2 rounded font-semibold">Clear All</button>
+            }} className="bg-red-600 px-3 py-2 rounded font-semibold btn">Clear All</button>
           </div>
         </div>
 
