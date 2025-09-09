@@ -4,14 +4,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * app/dashboard/page.js
+ * Single-file Portfolio Dashboard (page.js)
+ * - Cake-style allocation (center shows total)
+ * - Growth chart with labels on top and values under labels
+ * - Finnhub-first stock polling
+ * - Non-liquid assets with YoY growth
+ * - Transactions modal with restore/undo
+ * - CSV export/import
  *
- * Single-file Portfolio Dashboard — FINAL update with:
- * - Portfolio Growth chart BELOW the assets table and ABOVE the donut.
- * - Multi-line per category (All, Crypto, Stocks, Non-Liquid).
- * - Timeline built from transaction log / purchase dates.
- * - Finnhub-first stock price polling (fallback Yahoo).
- * - All previous features preserved.
+ * Keep as single file per user request.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -65,7 +66,7 @@ function ensureNumericAsset(a) {
   };
 }
 
-/* deterministic seed/hash */
+/* simple seeded RNG for slight chart noise */
 function hashStringToSeed(str) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) {
@@ -84,58 +85,81 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== DONUT ===================== */
-function Donut({ data = [], size = 180, inner = 60 }) {
-  const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
-  const cx = size / 2,
-    cy = size / 2,
-    r = size / 2 - 6;
-  let start = -90;
+/* ===================== CAKE-STYLE ALLOCATION (Donut -> Cake) ===================== */
+function CakeAllocation({ data = [], size = 180, inner = 40, gap = 0.04, displayTotal }) {
+  // data: [{name, value}]
+  const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0);
+  const n = data.length || 1;
+  const cx = size / 2, cy = size / 2;
+
+  // we set inner radius and build outer radius scale
+  const maxSliceOuter = size / 2 - 6;
+  const minOuter = inner + 6;
+  const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
+  const scaleOuter = (v) => {
+    if (!v || v <= 0) return inner + 4;
+    const frac = v / maxValue;
+    return Math.round(minOuter + frac * (maxSliceOuter - minOuter));
+  };
+
+  // equal-angle slices
+  const anglePer = (2 * Math.PI) / n;
+  let start = -Math.PI / 2; // start at top
+
   const colors = [
     "#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE",
     "#B28DFF", "#FFB26B", "#6BFFA0", "#FF6BE5", "#00C49F",
   ];
+
+  function arcPath(cx, cy, rInner, rOuter, startAngle, endAngle) {
+    // build path for donut-like slice with variable outer radius and constant inner radius
+    const x1 = cx + rOuter * Math.cos(startAngle);
+    const y1 = cy + rOuter * Math.sin(startAngle);
+    const x2 = cx + rOuter * Math.cos(endAngle);
+    const y2 = cy + rOuter * Math.sin(endAngle);
+
+    const xi2 = cx + rInner * Math.cos(endAngle);
+    const yi2 = cy + rInner * Math.sin(endAngle);
+    const xi1 = cx + rInner * Math.cos(startAngle);
+    const yi1 = cy + rInner * Math.sin(startAngle);
+
+    const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
+
+    return `M ${cx} ${cy} L ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${rInner} ${rInner} 0 ${large} 0 ${xi1} ${yi1} Z`;
+  }
+
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {data.map((d, i) => {
-        const portion = Math.max(0, d.value || 0) / total;
-        const angle = portion * 360;
-        const end = start + angle;
-        const large = angle > 180 ? 1 : 0;
-        const sRad = (Math.PI * start) / 180;
-        const eRad = (Math.PI * end) / 180;
-        const x1 = cx + r * Math.cos(sRad), y1 = cy + r * Math.sin(sRad);
-        const x2 = cx + r * Math.cos(eRad), y2 = cy + r * Math.sin(eRad);
-        const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-        start = end;
+        const outer = scaleOuter(d.value || 0);
+        const sAng = start + i * anglePer;
+        const eAng = sAng + anglePer - gap;
+        const path = arcPath(cx, cy, inner, outer, sAng, eAng);
         return (
-          <path
-            key={i}
-            d={path}
-            fill={colors[i % colors.length]}
-            stroke="rgba(0,0,0,0.06)"
-            strokeWidth="0.6"
-          />
+          <path key={i} d={path} fill={colors[i % colors.length]} stroke="rgba(0,0,0,0.06)" strokeWidth="0.6" className="slice" />
         );
       })}
-      <circle cx={cx} cy={cy} r={inner} fill="#070707" />
+
+      {/* center circle to mask and label */}
+      <circle cx={cx} cy={cy} r={inner - 2} fill="#070707" />
+      <text x={cx} y={cy - 6} textAnchor="middle" fontSize="11" fill="#9CA3AF">Total</text>
+      <text x={cx} y={cy + 14} textAnchor="middle" fontSize="14" fontWeight={700} fill="#E5E7EB">
+        {displayTotal}
+      </text>
     </svg>
   );
 }
 
-/* ===================== MULTI-LINE ENHANCED CHART ===================== */
+/* ===================== MULTI-LINE CHART (unchanged logic but legend+values separated) ===================== */
 function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) {
-  // seriesMap: { key: [{t,v}, ...], ... }, keys include 'all','crypto','stock','nonliquid'
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = width;
   const h = height;
-  // find unified series length and times (assumes same t for all)
   const keys = Object.keys(seriesMap);
   if (keys.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
-  const baseSeries = seriesMap[keys[0]] || [];
+  const baseSeries = seriesMap["all"] || seriesMap[keys[0]] || [];
   if (!baseSeries || baseSeries.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
   const times = baseSeries.map(p => p.t);
-  // compute value ranges across all keys
   let min = Infinity, max = -Infinity;
   keys.forEach(k => {
     (seriesMap[k] || []).forEach(p => {
@@ -148,20 +172,20 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
   const innerW = w - padding.left - padding.right;
   const innerH = h - padding.top - padding.bottom;
 
-  // map each series to path
   const linePaths = {};
+  const ptsMap = {};
   keys.forEach(k => {
     const arr = seriesMap[k] || [];
     const pts = arr.map((p, i) => {
-      const x = padding.left + (i / (arr.length - 1)) * innerW;
+      const x = padding.left + (i / (arr.length - 1 || 1)) * innerW;
       const y = padding.top + (1 - (p.v - min) / range) * innerH;
       return { x, y, t: p.t, v: p.v };
     });
     const path = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
     linePaths[k] = { path, pts };
+    ptsMap[k] = pts;
   });
 
-  // color map
   const colorFor = (k) => {
     if (k === "all") return "#4D96FF";
     if (k === "crypto") return "#FF6B6B";
@@ -170,7 +194,6 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
     return "#B28DFF";
   };
 
-  // y ticks
   const yTicks = [];
   for (let i = 0; i <= 4; i++) {
     const v = min + (i / 4) * range;
@@ -182,8 +205,7 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
   function handleMove(e) {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    // find closest index in base pts
-    const pts = (linePaths[keys[0]]?.pts) || [];
+    const pts = (linePaths["all"]?.pts) || linePaths[keys[0]]?.pts || [];
     if (!pts.length) return;
     let best = 0, bestD = Infinity;
     pts.forEach((p, i) => {
@@ -206,24 +228,20 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
     <div className="w-full overflow-hidden">
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" onMouseMove={handleMove} onMouseLeave={handleLeave}>
         <rect x="0" y="0" width={w} height={h} fill="transparent" />
-        {/* gridlines */}
         {yTicks.map((t, i) => (
           <line key={i} x1={padding.left} x2={w - padding.right} y1={t.y} y2={t.y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
         ))}
-        {/* y labels */}
         {yTicks.map((t, i) => (
           <text key={i} x={padding.left - 8} y={t.y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{fmtMoney(t.v, "USD")}</text>
         ))}
 
-        {/* lines */}
         {keys.map(k => (
           <path key={k} d={linePaths[k].path} stroke={colorFor(k)} strokeWidth={k==="all"?2.2:1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={k==="all"?1:0.95} />
         ))}
 
-        {/* hover markers */}
-        {hoverIdx !== null && linePaths[keys[0]]?.pts?.[hoverIdx] && (
+        {hoverIdx !== null && linePaths["all"]?.pts?.[hoverIdx] && (
           <>
-            <line x1={linePaths[keys[0]].pts[hoverIdx].x} y1={padding.top} x2={linePaths[keys[0]].pts[hoverIdx].x} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <line x1={linePaths["all"].pts[hoverIdx].x} y1={padding.top} x2={linePaths["all"].pts[hoverIdx].x} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
             {keys.map(k => {
               const pt = linePaths[k].pts && linePaths[k].pts[hoverIdx];
               if (!pt) return null;
@@ -232,9 +250,9 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
           </>
         )}
       </svg>
-      {/* legend */}
-      <div className="mt-2 flex items-center gap-3 text-xs text-gray-300">
-        {keys.map(k => (
+      {/* legend labels only (values will be displayed separately below by parent) */}
+      <div className="mt-2 flex items-center gap-6 text-xs text-gray-300">
+        {["all","crypto","stock","nonliquid"].map(k => (
           <div key={k} className="flex items-center gap-2">
             <div style={{ width: 10, height: 10, background: colorFor(k) }} className="rounded-sm" />
             <div className="uppercase font-semibold">{k}</div>
@@ -998,11 +1016,11 @@ export default function PortfolioDashboard() {
     return { invested, market, pnl, pnlPct };
   }, [filteredRows]);
 
-  /* ===================== donut data ===================== */
+  /* ===================== donut/cake data ===================== */
   const donutData = useMemo(() => {
     const sortedRows = filteredRows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
-    const top = sortedRows.slice(0, 4);
-    const other = sortedRows.slice(4);
+    const top = sortedRows.slice(0, 6);
+    const other = sortedRows.slice(6);
     const otherTotal = other.reduce((s, r) => s + (r.marketValueUSD || 0), 0);
     const otherSymbols = other.map(r => r.symbol);
     const data = top.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
@@ -1116,15 +1134,12 @@ export default function PortfolioDashboard() {
 
   /* ===================== BUILD MULTI-CATEGORY SERIES FROM TRANSACTIONS ===================== */
   function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
-    // Determine start date: earliest transaction or earliest purchaseDate among assets; fallback to now - default window
     const now = Date.now();
     let earliest = now;
     txs.forEach(t => { if (t.date && t.date < earliest) earliest = t.date; });
     rowsForChart.forEach(r => { if (r.purchaseDate && r.purchaseDate < earliest) earliest = r.purchaseDate; });
-    // If no meaningful earliest (==now), default to 90 days for 1m/1y/all
     const defaultDays = rangeKey === "1d" ? 1 : rangeKey === "2d" ? 2 : rangeKey === "1w" ? 7 : rangeKey === "1m" ? 30 : rangeKey === "1y" ? 365 : 365 * 3;
     const start = (earliest < now) ? earliest : (now - defaultDays * 24 * 3600 * 1000);
-    // points count depending on rangeKey
     let points = 180;
     if (rangeKey === "1d") points = 48;
     if (rangeKey === "2d") points = 96;
@@ -1133,7 +1148,6 @@ export default function PortfolioDashboard() {
     if (rangeKey === "1y") points = 180;
     if (rangeKey === "all") points = 200;
 
-    // prepare synthetic initial transactions for assets that have no transactions
     const txsByAsset = {};
     txs.slice().forEach(t => {
       if (!txsByAsset[t.assetId]) txsByAsset[t.assetId] = [];
@@ -1143,7 +1157,6 @@ export default function PortfolioDashboard() {
     const syntheticTxs = [];
     rowsForChart.forEach(r => {
       const assetTxs = txsByAsset[r.id] || [];
-      // if no txs for that asset at all, create a synthetic buy at purchaseDate with current shares & investedUSD
       if ((assetTxs.length === 0) && (toNum(r.shares || 0) > 0)) {
         syntheticTxs.push({
           id: `synth:${r.id}:${r.purchaseDate || r.createdAt || Date.now()}`,
@@ -1162,7 +1175,6 @@ export default function PortfolioDashboard() {
 
     const allTxs = [...txs, ...syntheticTxs].slice().sort((a,b) => (a.date||0) - (b.date||0));
 
-    // helper: compute shares for asset up to time t
     function sharesUpTo(assetId, t) {
       let s = 0;
       for (const tx of allTxs) {
@@ -1175,19 +1187,16 @@ export default function PortfolioDashboard() {
       return s;
     }
 
-    // helper: price at time t for asset
     function priceAtTime(asset, t) {
       if (asset.type === "nonliquid") {
         return computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || Date.now(), asset.nonLiquidYoy || 0, t);
       }
-      // linear interpolate between avgPrice at purchaseDate and lastPrice at now
       const pd = asset.purchaseDate || asset.createdAt || (now - defaultDays * 24 * 3600 * 1000);
       const avg = toNum(asset.avgPrice || 0);
       const last = toNum(asset.lastPriceUSD || avg || 0);
       if (t <= pd) return avg || last;
       if (t >= now) return last || avg;
       const frac = (t - pd) / Math.max(1, (now - pd));
-      // optional mild noise based on asset symbol seed to avoid flat lines
       const seed = hashStringToSeed(asset.symbol + String(asset.id || ""));
       const rng = seededRng(seed);
       const vol = asset.type === "crypto" ? 0.12 : asset.type === "stock" ? 0.04 : 0.01;
@@ -1196,7 +1205,6 @@ export default function PortfolioDashboard() {
       return Math.max(0, base * (1 + noise));
     }
 
-    // build series per key
     const seriesPerKey = { all: [], crypto: [], stock: [], nonliquid: [] };
 
     for (let i = 0; i < points; i++) {
@@ -1220,6 +1228,19 @@ export default function PortfolioDashboard() {
 
   const multiSeries = useMemo(() => buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
 
+  // category values for current/latest point (used under legend labels)
+  const categoryValuesNow = useMemo(() => {
+    const out = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
+    try {
+      Object.keys(multiSeries).forEach(k => {
+        const arr = multiSeries[k] || [];
+        const last = arr[arr.length - 1];
+        out[k] = last ? last.v : 0;
+      });
+    } catch (e) {}
+    return out;
+  }, [multiSeries]);
+
   /* ===================== RENDER ===================== */
   const titleForFilter = {
     all: "All Portfolio",
@@ -1238,7 +1259,7 @@ export default function PortfolioDashboard() {
           <div className="flex items-center gap-2 relative">
             <h1 className="text-2xl font-semibold">{headerTitle}</h1>
 
-            {/* dropdown caret (non-transparent) */}
+            {/* dropdown caret (non-transparent, small icon) */}
             <div className="relative">
               <button
                 aria-label="Filter"
@@ -1464,10 +1485,10 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* NEW: Portfolio Growth BELOW table and ABOVE donut */}
+        {/* PORTFOLIO GROWTH (chart) - BELOW table and ABOVE cake/donut */}
         <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold">Portfolio Growth (by category)</div>
+            <div className="text-sm font-semibold">Portfolio Growth</div>
             <div className="flex items-center gap-2">
               {["1d","2d","1w","1m","1y","all"].map(k => (
                 <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"}`}>{k}</button>
@@ -1480,29 +1501,26 @@ export default function PortfolioDashboard() {
             setChartHover(p);
           }} />
 
-          <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
-            <div>{chartHover ? new Date((chartHover.t || 0)).toLocaleString() : ""}</div>
-            <div className="text-right">
-              {chartHover ? (
-                <div>
-                  <div className="text-xs text-gray-300">Values</div>
-                  <div className="text-sm">
-                    All: {displayCcy === "IDR" ? fmtMoney((chartHover.all || 0) * usdIdr, "IDR") : fmtMoney(chartHover.all || 0, "USD")}
-                    {" • "}Crypto: {displayCcy === "IDR" ? fmtMoney((chartHover.crypto || 0) * usdIdr, "IDR") : fmtMoney(chartHover.crypto || 0, "USD")}
-                    {" • "}Stocks: {displayCcy === "IDR" ? fmtMoney((chartHover.stock || 0) * usdIdr, "IDR") : fmtMoney(chartHover.stock || 0, "USD")}
-                    {" • "}Non-Liquid: {displayCcy === "IDR" ? fmtMoney((chartHover.nonliquid || 0) * usdIdr, "IDR") : fmtMoney(chartHover.nonliquid || 0, "USD")}
-                  </div>
-                </div>
-              ) : <div className="text-xs text-gray-400">Hover on chart to see category values</div>}
-            </div>
+          {/* labels row and values row below (single place, no duplication) */}
+          <div className="mt-3 grid grid-cols-4 gap-4 text-center">
+            <div className="text-xs text-gray-400 uppercase">All</div>
+            <div className="text-xs text-gray-400 uppercase">Crypto</div>
+            <div className="text-xs text-gray-400 uppercase">Stocks</div>
+            <div className="text-xs text-gray-400 uppercase">Non-Liquid</div>
+          </div>
+          <div className="mt-1 grid grid-cols-4 gap-4 text-center">
+            <div className="text-sm font-semibold">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.all || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.all || 0, "USD")}</div>
+            <div className="text-sm font-semibold">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.crypto || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.crypto || 0, "USD")}</div>
+            <div className="text-sm font-semibold">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.stock || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.stock || 0, "USD")}</div>
+            <div className="text-sm font-semibold">{displayCcy === "IDR" ? fmtMoney((categoryValuesNow.nonliquid || 0) * usdIdr, "IDR") : fmtMoney(categoryValuesNow.nonliquid || 0, "USD")}</div>
           </div>
         </div>
 
-        {/* DONUT + LEGEND */}
+        {/* CAKE (donut replacement) + legend */}
         {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
-            <div className="w-32 h-32 flex items-center justify-center">
-              <Donut data={donutData.map(d => ({ name: d.name, value: d.value }))} size={120} inner={40} />
+            <div className="w-40 h-40 flex items-center justify-center">
+              <CakeAllocation data={donutData} size={160} inner={44} gap={0.04} displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")} />
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
