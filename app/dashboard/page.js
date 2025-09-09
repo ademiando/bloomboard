@@ -5,14 +5,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Single-file Portfolio Dashboard (page.js)
- * - Cake allocation with gaps + hover tooltip + center smaller total (currency matches displayCcy)
- * - Growth chart colored lines for all/crypto/stock/nonliquid, legend and hover
- * - Table sorting controls
- * - Export: Portfolio CSV & Transactions CSV (separate files). CSV includes header/comment with file path and BOM for Excel.
- * - Finnhub-first stock quotes; fallback to Yahoo; fallback to avgPrice to avoid zero P&L
- * - Non-liquid assets with YoY growth logic
- *
- * Keep as one file per request.
+ * - Filter button is icon-only (clean)
+ * - Single combined CSV export: assets + transactions in one file, spreadsheet-friendly
+ * - Improved CSV formatting: BOM, clear section headers (#ASSETS, #TRANSACTIONS), ISO dates, quoted text where necessary
+ * - Import handles combined CSV sections and merges/replaces appropriately
+ * - All other functionality preserved (Finnhub-first stock quotes, non-liquid YoY, growth chart, cake allocation)
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -88,7 +85,7 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== CAKE-STYLE ALLOCATION WITH GAPS + TOOLTIP ===================== */
+/* ===================== CAKE-STYLE ALLOCATION (same as previous) ===================== */
 function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
   const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const n = Math.max(1, data.length);
@@ -204,7 +201,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
   );
 }
 
-/* ===================== MULTI-LINE CHART (legend simplified) ===================== */
+/* ===================== MULTI-LINE CHART (same as previous) ===================== */
 function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) {
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = Math.min(width, 1000);
@@ -1102,9 +1099,12 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* ===================== CSV export/import improvements ===================== */
+  /* ===================== CSV export/import improvements (combined file) ===================== */
   function csvQuote(v) {
     if (v === undefined || v === null) return "";
+    // Prefer not to put quotes around pure numbers/booleans for spreadsheet readability,
+    // but keep quotes if value contains comma/newline/quote.
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
     const s = String(v);
     if (s.includes(",") || s.includes("\n") || s.includes('"')) {
       return `"${s.replace(/"/g, '""')}"`;
@@ -1112,46 +1112,37 @@ export default function PortfolioDashboard() {
     return s;
   }
 
-  function exportCSVPortfolio() {
-    const headers = [
+  function exportAllCSV() {
+    // Single file containing two sections: ASSETS then TRANSACTIONS
+    const assetsHeaders = [
       "id","type","coingeckoId","symbol","name","description",
       "shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD",
       "createdAt","purchaseDate","nonLiquidYoy"
     ];
-    const metaLine = `#FILE:app/dashboard/page.js,#EXPORT:Portfolio,generatedAt=${isoDate(Date.now())}`;
-    const headerRow = headers.map(h => csvQuote(h)).join(",");
-    const lines = [metaLine, headerRow];
+    const txHeaders = ["id","type","assetId","assetType","symbol","name","qty","pricePerUnit","cost","proceeds","costOfSold","realized","date"];
+
+    const lines = [];
+    lines.push(`#FILE:app/dashboard/page.js`);
+    lines.push(`#EXPORT:CombinedPortfolioAndTransactions,generatedAt=${isoDate(Date.now())}`);
+    // ASSETS block
+    lines.push(`#ASSETS`);
+    lines.push(assetsHeaders.join(","));
     assets.forEach(a => {
       const aa = ensureNumericAsset(a);
-      const row = headers.map(h => {
+      const row = assetsHeaders.map(h => {
         const v = aa[h];
         if (h === "createdAt" || h === "purchaseDate") return csvQuote(isoDate(v));
-        if (typeof v === "number") return String(v);
         return csvQuote(v);
       }).join(",");
       lines.push(row);
     });
-    // add realized + displayCcy metadata row
-    lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},transactions=${transactions.length}`);
-    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `portfolio_export_${Date.now()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function exportCSVTransactions() {
-    const headers = ["id","type","assetId","assetType","symbol","name","qty","pricePerUnit","cost","proceeds","costOfSold","realized","date"];
-    const metaLine = `#FILE:app/dashboard/transactions.csv,#EXPORT:Transactions,generatedAt=${isoDate(Date.now())}`;
-    const headerRow = headers.map(h => csvQuote(h)).join(",");
-    const lines = [metaLine, headerRow];
+    // blank line separator
+    lines.push("");
+    // TRANSACTIONS block
+    lines.push(`#TRANSACTIONS`);
+    lines.push(txHeaders.join(","));
     transactions.forEach(t => {
-      const row = headers.map(h => {
+      const row = txHeaders.map(h => {
         const v = t[h];
         if (h === "date") return csvQuote(isoDate(v));
         if (typeof v === "number") return String(v);
@@ -1159,12 +1150,15 @@ export default function PortfolioDashboard() {
       }).join(",");
       lines.push(row);
     });
-    const csv = "\uFEFF" + lines.join("\n");
+    // META line
+    lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},assets=${assets.length},transactions=${transactions.length}`);
+
+    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel compatibility
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `transactions_export_${Date.now()}.csv`;
+    a.download = `portfolio_combined_export_${Date.now()}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -1175,43 +1169,114 @@ export default function PortfolioDashboard() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target.result;
-      const lines = text.split(/\r?\n/).filter(Boolean);
+      const linesRaw = text.split(/\r?\n/);
+      // remove BOM if present
+      if (linesRaw[0] && linesRaw[0].charCodeAt(0) === 0xFEFF) linesRaw[0] = linesRaw[0].slice(1);
+      const lines = linesRaw.map(l => l.trimRight());
       if (lines.length === 0) return alert("Empty file");
-      const header = lines[0].startsWith("#") ? lines[1].split(",").map(h => h.replace(/^"|"$/g,"").trim()) : lines[0].split(",").map(h => h.replace(/^"|"$/g,"").trim());
-      const dataLines = lines.slice(lines[0].startsWith("#") ? 2 : 1).filter(l => !l.startsWith("#META") && !l.startsWith("#FILE"));
-      const imported = dataLines.map(line => {
-        const values = [];
-        let cur = "";
-        let insideQuote = false;
-        for (let i = 0; i < line.length; i++) {
-          const ch = line[i];
-          if (ch === '"' && line[i+1] === '"') { cur += '"'; i++; continue; }
-          if (ch === '"') { insideQuote = !insideQuote; continue; }
-          if (ch === "," && !insideQuote) { values.push(cur); cur = ""; continue; }
-          cur += ch;
-        }
-        values.push(cur);
-        const obj = {};
-        header.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
-        const parsed = {
-          id: obj.id || `imp:${obj.symbol || ""}:${Date.now()}`,
-          type: obj.type || "stock",
-          coingeckoId: obj.coingeckoId || undefined,
-          symbol: (obj.symbol || "").toString().toUpperCase(),
-          name: obj.name || obj.symbol || "",
-          description: obj.description || "",
-          shares: toNum(obj.shares || 0),
-          avgPrice: toNum(obj.avgPrice || 0),
-          investedUSD: toNum(obj.investedUSD || 0),
-          lastPriceUSD: toNum(obj.lastPriceUSD || 0),
-          marketValueUSD: toNum(obj.marketValueUSD || 0),
-          createdAt: obj.createdAt ? Date.parse(obj.createdAt) || Date.now() : Date.now(),
-          purchaseDate: obj.purchaseDate ? Date.parse(obj.purchaseDate) || undefined : undefined,
-          nonLiquidYoy: toNum(obj.nonLiquidYoy) || 0,
-        };
-        return ensureNumericAsset(parsed);
-      });
+
+      // Find sections
+      const idxAssets = lines.findIndex(l => l.startsWith("#ASSETS"));
+      const idxTx = lines.findIndex(l => l.startsWith("#TRANSACTIONS"));
       const metaLine = lines.find(l => l.startsWith("#META"));
+      // parse assets block
+      let importedAssets = [];
+      if (idxAssets >= 0) {
+        // header is next non-empty line after #ASSETS
+        let headerLineIdx = -1;
+        for (let i = idxAssets + 1; i < lines.length; i++) {
+          if (lines[i].trim() === "") continue;
+          headerLineIdx = i; break;
+        }
+        if (headerLineIdx >= 0) {
+          const headers = lines[headerLineIdx].split(",").map(h => h.replace(/^"|"$/g,"").trim());
+          // data lines until blank or #TRANSACTIONS or #META
+          for (let i = headerLineIdx + 1; i < lines.length; i++) {
+            const l = lines[i];
+            if (!l || l.startsWith("#TRANSACTIONS") || l.startsWith("#META") || l.startsWith("#FILE") || l.startsWith("#EXPORT")) break;
+            // parse CSV row robustly (respect quotes)
+            const values = [];
+            let cur = "";
+            let insideQuote = false;
+            for (let k = 0; k < l.length; k++) {
+              const ch = l[k];
+              if (ch === '"' && l[k+1] === '"') { cur += '"'; k++; continue; }
+              if (ch === '"') { insideQuote = !insideQuote; continue; }
+              if (ch === "," && !insideQuote) { values.push(cur); cur = ""; continue; }
+              cur += ch;
+            }
+            values.push(cur);
+            const obj = {};
+            headers.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
+            const parsed = {
+              id: obj.id || `imp:${obj.symbol || ""}:${Date.now()}`,
+              type: obj.type || "stock",
+              coingeckoId: obj.coingeckoId || undefined,
+              symbol: (obj.symbol || "").toString().toUpperCase(),
+              name: obj.name || obj.symbol || "",
+              description: obj.description || "",
+              shares: toNum(obj.shares || 0),
+              avgPrice: toNum(obj.avgPrice || 0),
+              investedUSD: toNum(obj.investedUSD || 0),
+              lastPriceUSD: toNum(obj.lastPriceUSD || 0),
+              marketValueUSD: toNum(obj.marketValueUSD || 0),
+              createdAt: obj.createdAt ? Date.parse(obj.createdAt) || Date.now() : Date.now(),
+              purchaseDate: obj.purchaseDate ? (Date.parse(obj.purchaseDate) || undefined) : undefined,
+              nonLiquidYoy: toNum(obj.nonLiquidYoy) || 0,
+            };
+            importedAssets.push(ensureNumericAsset(parsed));
+          }
+        }
+      }
+
+      // parse transactions block
+      let importedTx = [];
+      if (idxTx >= 0) {
+        // header is next non-empty line after #TRANSACTIONS
+        let headerLineIdx = -1;
+        for (let i = idxTx + 1; i < lines.length; i++) {
+          if (lines[i].trim() === "") continue;
+          headerLineIdx = i; break;
+        }
+        if (headerLineIdx >= 0) {
+          const headers = lines[headerLineIdx].split(",").map(h => h.replace(/^"|"$/g,"").trim());
+          for (let i = headerLineIdx + 1; i < lines.length; i++) {
+            const l = lines[i];
+            if (!l || l.startsWith("#META") || l.startsWith("#FILE") || l.startsWith("#EXPORT")) break;
+            const values = [];
+            let cur = "";
+            let insideQuote = false;
+            for (let k = 0; k < l.length; k++) {
+              const ch = l[k];
+              if (ch === '"' && l[k+1] === '"') { cur += '"'; k++; continue; }
+              if (ch === '"') { insideQuote = !insideQuote; continue; }
+              if (ch === "," && !insideQuote) { values.push(cur); cur = ""; continue; }
+              cur += ch;
+            }
+            values.push(cur);
+            const obj = {};
+            headers.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
+            const parsed = {
+              id: obj.id || `imp_tx:${Date.now()}:${Math.random().toString(36).slice(2,6)}`,
+              type: obj.type || "buy",
+              assetId: obj.assetId || obj.assetId,
+              assetType: obj.assetType || "stock",
+              symbol: (obj.symbol || "").toString().toUpperCase(),
+              name: obj.name || obj.symbol || "",
+              qty: toNum(obj.qty || 0),
+              pricePerUnit: toNum(obj.pricePerUnit || 0),
+              cost: toNum(obj.cost || 0),
+              proceeds: toNum(obj.proceeds || 0),
+              costOfSold: toNum(obj.costOfSold || 0),
+              realized: toNum(obj.realized || 0),
+              date: obj.date ? (Date.parse(obj.date) || Date.now()) : Date.now(),
+            };
+            importedTx.push(parsed);
+          }
+        }
+      }
+
+      // parse META if present
       if (metaLine) {
         try {
           const m = metaLine.replace(/^#META,?/, "");
@@ -1224,15 +1289,30 @@ export default function PortfolioDashboard() {
           });
         } catch (e) { /* ignore */ }
       }
-      if (merge) {
-        const map = {};
-        assets.forEach(a => map[a.symbol] = ensureNumericAsset(a));
-        imported.forEach(i => map[i.symbol] = ensureNumericAsset(i));
-        const merged = Object.values(map);
-        setAssets(merged);
-      } else {
-        setAssets(imported);
+
+      // merge or replace
+      if (importedAssets.length > 0) {
+        if (merge) {
+          const map = {};
+          assets.forEach(a => map[a.symbol] = ensureNumericAsset(a));
+          importedAssets.forEach(i => map[i.symbol] = ensureNumericAsset(i));
+          const merged = Object.values(map);
+          setAssets(merged);
+        } else {
+          setAssets(importedAssets);
+        }
       }
+
+      if (importedTx.length > 0) {
+        if (merge) {
+          // append imported txs at top preserving order
+          const mergedTx = [...importedTx, ...transactions];
+          setTransactions(mergedTx.slice(0, 1000));
+        } else {
+          setTransactions(importedTx.slice(0, 1000));
+        }
+      }
+
       alert("Import complete");
     };
     reader.readAsText(file);
@@ -1240,7 +1320,7 @@ export default function PortfolioDashboard() {
   function onImportClick(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const replace = confirm("Replace existing portfolio? (OK = replace, Cancel = merge)");
+    const replace = confirm("Replace existing portfolio & transactions? (OK = replace, Cancel = merge)");
     handleImportFile(file, { merge: !replace });
     e.target.value = "";
   }
@@ -1381,15 +1461,21 @@ export default function PortfolioDashboard() {
           <div className="flex items-center gap-2 relative">
             <h1 className="text-2xl font-semibold">{headerTitle}</h1>
 
-            {/* dropdown caret (non-transparent, bigger) */}
+            {/* filter icon-only button (clean) */}
             <div className="relative">
               <button
                 aria-label="Filter"
                 onClick={() => setFilterMenuOpen(v => !v)}
                 className={`ml-2 inline-flex items-center justify-center rounded px-3 py-1 bg-gray-800 border border-gray-700 text-gray-200 btn`}
                 style={{ fontSize: 16, lineHeight: 1 }}
+                title="Filter portfolio"
               >
-                ▾
+                {/* funnel icon */}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M3 5h18" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+                  <path d="M7 12h10" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+                  <path d="M10 19h4" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
               </button>
 
               {filterMenuOpen && (
@@ -1481,7 +1567,7 @@ export default function PortfolioDashboard() {
           </div>
         </div>
 
-        {/* ADD PANEL */}
+        {/* ADD PANEL (unchanged) */}
         {openAdd && (
           <div className="mt-6 bg-transparent p-3 rounded">
             <div className="flex items-center gap-3 mb-3">
@@ -1782,18 +1868,15 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* EXPORT / IMPORT CSV */}
+        {/* EXPORT / IMPORT CSV (combined single file) */}
         <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1">
-            <div className="text-sm text-gray-300">CSV: export / import (merge or replace)</div>
-            <div className="text-xs text-gray-500">Export includes portfolio rows + metadata (realized, displayCcy, usdIdr). Files include top header with file path for reference.</div>
+            <div className="text-sm text-gray-300">CSV: export / import (combined)</div>
+            <div className="text-xs text-gray-500">Export contains ASSETS and TRANSACTIONS in one CSV file. File includes header markers (#ASSETS, #TRANSACTIONS) and ISO dates for clean spreadsheet import.</div>
           </div>
           <div className="flex gap-2">
             <div className="relative">
-              <button onClick={exportCSVPortfolio} className="bg-blue-600 px-3 py-2 rounded font-semibold btn">Export Portfolio CSV</button>
-            </div>
-            <div className="relative">
-              <button onClick={exportCSVTransactions} className="bg-indigo-600 px-3 py-2 rounded font-semibold btn">Export Transactions CSV</button>
+              <button onClick={exportAllCSV} className="bg-blue-600 px-3 py-2 rounded font-semibold btn">Export CSV</button>
             </div>
             <label className="bg-emerald-500 px-3 py-2 rounded font-semibold cursor-pointer btn">
               Import CSV
