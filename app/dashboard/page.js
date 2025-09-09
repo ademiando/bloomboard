@@ -5,10 +5,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Single-file Portfolio Dashboard (page.js)
- * - Cake allocation with gaps + hover tooltip + center smaller total
- * - Growth chart (no duplicated legend) — small nominal below each category
- * - Button animations (add rotates + -> ×, hover effects)
- * - Finnhub-first stock quotes; fallback to Yahoo; fallback to avgPrice to avoid 0
+ * - Cake allocation with gaps + hover tooltip + center smaller total (currency matches displayCcy)
+ * - Growth chart colored lines for all/crypto/stock/nonliquid, legend and hover
+ * - Table sorting controls
+ * - Export: Portfolio CSV & Transactions CSV (separate files). CSV includes header/comment with file path and BOM for Excel.
+ * - Finnhub-first stock quotes; fallback to Yahoo; fallback to avgPrice to avoid zero P&L
  * - Non-liquid assets with YoY growth logic
  *
  * Keep as one file per request.
@@ -42,6 +43,9 @@ function fmtMoney(val, ccy = "USD") {
     currency: "USD",
     maximumFractionDigits: 2,
   }).format(n);
+}
+function isoDate(ms) {
+  try { return new Date(ms).toISOString(); } catch { return ""; }
 }
 function normalizeIdr(v) {
   const n = Number(v);
@@ -85,12 +89,10 @@ function seededRng(seed) {
 }
 
 /* ===================== CAKE-STYLE ALLOCATION WITH GAPS + TOOLTIP ===================== */
-function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, displayTotal }) {
-  // data: [{name, value}]
+function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
   const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const n = Math.max(1, data.length);
   const cx = size / 2, cy = size / 2;
-
   const maxSliceOuter = size / 2 - 6;
   const minOuter = inner + 8;
   const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
@@ -99,25 +101,26 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
     const frac = v / maxValue;
     return Math.round(minOuter + frac * (maxSliceOuter - minOuter));
   };
-
   const anglePer = (2 * Math.PI) / n;
   const colors = [
     "#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE",
     "#B28DFF", "#FFB26B", "#6BFFA0", "#FF6BE5", "#00C49F",
   ];
-
   const [hoverIndex, setHoverIndex] = useState(null);
   const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, html: "" });
-
-  // wrapper ref to compute tooltip position
   const wrapRef = useRef(null);
+
+  const formatForDisplayCcy = (v) => {
+    if (displayCcy === "IDR") return fmtMoney((v || 0) * usdIdr, "IDR");
+    return fmtMoney(v || 0, "USD");
+  };
 
   const onSliceEnter = (i, event, d) => {
     setHoverIndex(i);
     const rect = wrapRef.current?.getBoundingClientRect();
     const px = (event.clientX - (rect?.left || 0)) + 12;
     const py = (event.clientY - (rect?.top || 0)) - 12;
-    setTooltip({ show: true, x: px, y: py, html: `${d.name} • ${fmtMoney(d.value, "USD")}` });
+    setTooltip({ show: true, x: px, y: py, html: `${d.name} • ${formatForDisplayCcy(d.value)}` });
   };
   const onSliceMove = (event) => {
     const rect = wrapRef.current?.getBoundingClientRect();
@@ -152,7 +155,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
           const end = start + anglePer - gap;
           const path = arcPath(cx, cy, inner, outer, start, end);
           const isHover = hoverIndex === i;
-          const transform = isHover ? `translate(${Math.cos((start+end)/2)*6},${Math.sin((start+end)/2)*6})` : undefined;
+          const transform = isHover ? `translate(${Math.cos((start + end) / 2) * 6},${Math.sin((start + end) / 2) * 6})` : undefined;
           return (
             <g key={i} transform={transform}>
               <path
@@ -170,15 +173,13 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
           );
         })}
 
-        {/* center mask + smaller total */}
         <circle cx={cx} cy={cy} r={inner - 4} fill="#070707" />
-        <text x={cx} y={cy - 6} textAnchor="middle" fontSize="10" fill="#9CA3AF">Total</text>
-        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="12" fontWeight={700} fill="#E5E7EB">
+        <text x={cx} y={cy - 8} textAnchor="middle" fontSize="10" fill="#9CA3AF">Total</text>
+        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="11" fontWeight={700} fill="#E5E7EB">
           {displayTotal}
         </text>
       </svg>
 
-      {/* tooltip */}
       <div style={{
         position: "absolute",
         left: tooltip.x,
@@ -208,11 +209,10 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = Math.min(width, 1000);
   const h = height;
-  const keys = Object.keys(seriesMap);
+  const keys = ["all", "crypto", "stock", "nonliquid"].filter(k => seriesMap[k] && seriesMap[k].length);
   if (keys.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
   const baseSeries = seriesMap["all"] || seriesMap[keys[0]] || [];
   if (!baseSeries || baseSeries.length === 0) return <div className="text-xs text-gray-500">No chart data</div>;
-  const times = baseSeries.map(p => p.t);
   let min = Infinity, max = -Infinity;
   keys.forEach(k => {
     (seriesMap[k] || []).forEach(p => {
@@ -268,7 +268,7 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
     setHoverIdx(best);
     if (onHover) {
       const out = { t: pts[best].t };
-      keys.forEach(k => out[k] = (seriesMap[k] && seriesMap[k][best] ? seriesMap[k][best].v : 0));
+      ["all","crypto","stock","nonliquid"].forEach(k => out[k] = (seriesMap[k] && seriesMap[k][best] ? seriesMap[k][best].v : 0));
       onHover(out);
     }
   }
@@ -288,21 +288,31 @@ function MultiLineChart({ seriesMap = {}, width = 860, height = 240, onHover }) 
           <text key={i} x={padding.left - 8} y={t.y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{fmtMoney(t.v, "USD")}</text>
         ))}
 
-        {keys.map(k => (
-          <path key={k} d={linePaths[k].path} stroke={colorFor(k)} strokeWidth={k==="all"?2.2:1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={k==="all"?1:0.85} />
+        {Object.keys(linePaths).map(k => (
+          <path key={k} d={linePaths[k].path} stroke={colorFor(k)} strokeWidth={k==="all"?2.2:1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={1} />
         ))}
 
         {hoverIdx !== null && linePaths["all"]?.pts?.[hoverIdx] && (
           <>
             <line x1={linePaths["all"].pts[hoverIdx].x} y1={padding.top} x2={linePaths["all"].pts[hoverIdx].x} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-            {keys.map(k => {
-              const pt = linePaths[k].pts && linePaths[k].pts[hoverIdx];
+            {["all","crypto","stock","nonliquid"].map(k => {
+              const pt = linePaths[k]?.pts && linePaths[k].pts[hoverIdx];
               if (!pt) return null;
               return <circle key={k} cx={pt.x} cy={pt.y} r={k==="all"?4:3} fill={colorFor(k)} stroke="#000" strokeWidth="0.6" />;
             })}
           </>
         )}
       </svg>
+
+      {/* Legend */}
+      <div className="mt-2 flex items-center gap-4 text-xs">
+        {["all","crypto","stock","nonliquid"].map(k => (
+          <div key={k} className="flex items-center gap-2">
+            <div style={{ width: 10, height: 10, background: colorFor(k) }} className="rounded-sm" />
+            <div className="text-xs text-gray-300">{k === "all" ? "All" : (k === "nonliquid" ? "Non-Liquid" : (k.charAt(0).toUpperCase() + k.slice(1)))}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -461,6 +471,10 @@ export default function PortfolioDashboard() {
   /* ---------- chart timeframe ---------- */
   const [chartRange, setChartRange] = useState("all"); // 1d,2d,1w,1m,1y,all
   const [chartHover, setChartHover] = useState(null);
+
+  /* ---------- sorting ---------- */
+  const [sortBy, setSortBy] = useState("market_desc"); // market_desc, invested_desc, pnl_desc, symbol_asc, oldest, newest
+  const [sortDir, setSortDir] = useState("desc");
 
   /* ---------- persist to localStorage ---------- */
   useEffect(() => {
@@ -627,7 +641,7 @@ export default function PortfolioDashboard() {
                 priceUSD = fx > 0 ? (current / fx) : current;
               }
               if (priceUSD > 0) {
-                map[s] = { symbol: s, priceRaw: current, priceUSD, _source: "finnhub", currency: looksLikeId ? "IDR" : js?.currency || "USD" };
+                map[s] = { symbol: s, priceRaw: current, priceUSD, _source: "finnhub", currency: looksLikeId ? "IDR" : js?.currency || "USD", fullExchangeName: js?.exchange || "" };
               }
             }
           } catch (e) {
@@ -1049,6 +1063,20 @@ export default function PortfolioDashboard() {
     return rows;
   }, [rows, portfolioFilter]);
 
+  const sortedRows = useMemo(() => {
+    const copy = [...filteredRows];
+    switch (sortBy) {
+      case "market_desc": copy.sort((a,b) => b.marketValueUSD - a.marketValueUSD); break;
+      case "invested_desc": copy.sort((a,b) => b.investedUSD - a.investedUSD); break;
+      case "pnl_desc": copy.sort((a,b) => (b.pnlUSD || 0) - (a.pnlUSD || 0)); break;
+      case "symbol_asc": copy.sort((a,b) => (a.symbol||"").localeCompare(b.symbol||"")); break;
+      case "oldest": copy.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); break;
+      case "newest": copy.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); break;
+      default: break;
+    }
+    return copy;
+  }, [filteredRows, sortBy]);
+
   const totals = useMemo(() => {
     const invested = filteredRows.reduce((s, r) => s + toNum(r.investedUSD || 0), 0);
     const market = filteredRows.reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
@@ -1074,21 +1102,38 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* ===================== CSV export/import (same) ===================== */
-  function exportCSV() {
-    const headers = ["id","type","coingeckoId","symbol","name","description","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt","purchaseDate","nonLiquidYoy"];
-    const lines = [headers.join(",")];
+  /* ===================== CSV export/import improvements ===================== */
+  function csvQuote(v) {
+    if (v === undefined || v === null) return "";
+    const s = String(v);
+    if (s.includes(",") || s.includes("\n") || s.includes('"')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  }
+
+  function exportCSVPortfolio() {
+    const headers = [
+      "id","type","coingeckoId","symbol","name","description",
+      "shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD",
+      "createdAt","purchaseDate","nonLiquidYoy"
+    ];
+    const metaLine = `#FILE:app/dashboard/page.js,#EXPORT:Portfolio,generatedAt=${isoDate(Date.now())}`;
+    const headerRow = headers.map(h => csvQuote(h)).join(",");
+    const lines = [metaLine, headerRow];
     assets.forEach(a => {
       const aa = ensureNumericAsset(a);
       const row = headers.map(h => {
         const v = aa[h];
-        if (typeof v === "string" && v.includes(",")) return `"${v.replace(/"/g, '""')}"`;
-        return (v === undefined || v === null) ? "" : String(v);
+        if (h === "createdAt" || h === "purchaseDate") return csvQuote(isoDate(v));
+        if (typeof v === "number") return String(v);
+        return csvQuote(v);
       }).join(",");
       lines.push(row);
     });
+    // add realized + displayCcy metadata row
     lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},transactions=${transactions.length}`);
-    const csv = lines.join("\n");
+    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1099,14 +1144,41 @@ export default function PortfolioDashboard() {
     a.remove();
     URL.revokeObjectURL(url);
   }
+
+  function exportCSVTransactions() {
+    const headers = ["id","type","assetId","assetType","symbol","name","qty","pricePerUnit","cost","proceeds","costOfSold","realized","date"];
+    const metaLine = `#FILE:app/dashboard/transactions.csv,#EXPORT:Transactions,generatedAt=${isoDate(Date.now())}`;
+    const headerRow = headers.map(h => csvQuote(h)).join(",");
+    const lines = [metaLine, headerRow];
+    transactions.forEach(t => {
+      const row = headers.map(h => {
+        const v = t[h];
+        if (h === "date") return csvQuote(isoDate(v));
+        if (typeof v === "number") return String(v);
+        return csvQuote(v);
+      }).join(",");
+      lines.push(row);
+    });
+    const csv = "\uFEFF" + lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `transactions_export_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   function handleImportFile(file, { merge = true } = {}) {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target.result;
       const lines = text.split(/\r?\n/).filter(Boolean);
       if (lines.length === 0) return alert("Empty file");
-      const header = lines[0].split(",").map(h => h.replace(/^"|"$/g,"").trim());
-      const dataLines = lines.slice(1).filter(l => !l.startsWith("#META"));
+      const header = lines[0].startsWith("#") ? lines[1].split(",").map(h => h.replace(/^"|"$/g,"").trim()) : lines[0].split(",").map(h => h.replace(/^"|"$/g,"").trim());
+      const dataLines = lines.slice(lines[0].startsWith("#") ? 2 : 1).filter(l => !l.startsWith("#META") && !l.startsWith("#FILE"));
       const imported = dataLines.map(line => {
         const values = [];
         let cur = "";
@@ -1133,8 +1205,8 @@ export default function PortfolioDashboard() {
           investedUSD: toNum(obj.investedUSD || 0),
           lastPriceUSD: toNum(obj.lastPriceUSD || 0),
           marketValueUSD: toNum(obj.marketValueUSD || 0),
-          createdAt: toNum(obj.createdAt) || Date.now(),
-          purchaseDate: toNum(obj.purchaseDate) || undefined,
+          createdAt: obj.createdAt ? Date.parse(obj.createdAt) || Date.now() : Date.now(),
+          purchaseDate: obj.purchaseDate ? Date.parse(obj.purchaseDate) || undefined : undefined,
           nonLiquidYoy: toNum(obj.nonLiquidYoy) || 0,
         };
         return ensureNumericAsset(parsed);
@@ -1295,7 +1367,6 @@ export default function PortfolioDashboard() {
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
       <style>{`
-        /* small interactive styles */
         .btn { transition: transform 180ms, box-shadow 180ms, background-color 120ms; }
         .btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
         .btn-soft:hover { transform: translateY(-2px) scale(1.01); }
@@ -1343,7 +1414,6 @@ export default function PortfolioDashboard() {
               <option value="IDR">IDR</option>
             </select>
 
-            {/* add button rotates + -> x */}
             <button
               aria-label="Add asset"
               onClick={() => setOpenAdd(v => !v)}
@@ -1493,8 +1563,22 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* TABLE */}
+        {/* TABLE + SORT */}
         <div className="mt-6 overflow-x-auto">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm text-gray-400">Assets</div>
+            <div className="flex items-center gap-2">
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-gray-900 border border-gray-800 rounded px-3 py-1 text-sm">
+                <option value="market_desc">Value (high → low)</option>
+                <option value="invested_desc">Invested (high → low)</option>
+                <option value="pnl_desc">P&L (high → low)</option>
+                <option value="symbol_asc">A → Z</option>
+                <option value="oldest">Oldest</option>
+                <option value="newest">Newest</option>
+              </select>
+            </div>
+          </div>
+
           <table className="min-w-full text-sm">
             <thead className="text-gray-400 border-b border-gray-800">
               <tr>
@@ -1507,9 +1591,9 @@ export default function PortfolioDashboard() {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.length === 0 ? (
+              {sortedRows.length === 0 ? (
                 <tr><td colSpan={6} className="py-8 text-center text-gray-500">No assets — add one with the + button</td></tr>
-              ) : filteredRows.map((r) => (
+              ) : sortedRows.map((r) => (
                 <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
                   <td className="px-3 py-3">
                     <div className="font-semibold text-gray-100">{r.symbol}</div>
@@ -1564,7 +1648,7 @@ export default function PortfolioDashboard() {
             setChartHover(p);
           }} />
 
-          {/* show only small nominal values below each category (no duplicated labels) */}
+          {/* small nominal values under each category */}
           <div className="mt-3 grid grid-cols-4 gap-4 text-center">
             <div className="text-xs text-gray-400">All</div>
             <div className="text-xs text-gray-400">Crypto</div>
@@ -1583,7 +1667,15 @@ export default function PortfolioDashboard() {
         {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="w-44 h-44 flex items-center justify-center">
-              <CakeAllocation data={donutData} size={176} inner={48} gap={0.06} displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")} />
+              <CakeAllocation
+                data={donutData}
+                size={176}
+                inner={48}
+                gap={0.06}
+                displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
+                displayCcy={displayCcy}
+                usdIdr={usdIdr}
+              />
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -1694,10 +1786,15 @@ export default function PortfolioDashboard() {
         <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1">
             <div className="text-sm text-gray-300">CSV: export / import (merge or replace)</div>
-            <div className="text-xs text-gray-500">Export includes portfolio rows + metadata (realized, displayCcy, usdIdr).</div>
+            <div className="text-xs text-gray-500">Export includes portfolio rows + metadata (realized, displayCcy, usdIdr). Files include top header with file path for reference.</div>
           </div>
           <div className="flex gap-2">
-            <button onClick={exportCSV} className="bg-blue-600 px-3 py-2 rounded font-semibold btn">Export CSV</button>
+            <div className="relative">
+              <button onClick={exportCSVPortfolio} className="bg-blue-600 px-3 py-2 rounded font-semibold btn">Export Portfolio CSV</button>
+            </div>
+            <div className="relative">
+              <button onClick={exportCSVTransactions} className="bg-indigo-600 px-3 py-2 rounded font-semibold btn">Export Transactions CSV</button>
+            </div>
             <label className="bg-emerald-500 px-3 py-2 rounded font-semibold cursor-pointer btn">
               Import CSV
               <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
