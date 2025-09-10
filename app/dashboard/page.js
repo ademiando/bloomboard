@@ -5,16 +5,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * app/dashboard/page.js
- * Single-file Portfolio Dashboard (updated)
+ * Single-file Portfolio Dashboard — updated fixes:
+ * - Fix sort/filter dropdown scrolling (not clipped) — uses overflow-y: visible on table wrapper
+ * - Throttle chart mousemove with requestAnimationFrame for smoother interactivity
+ * - CSV/Export/Import buttons: white background, hover colored
+ * - Cake allocation: slices sized proportionally (angle) and radius scales with value
  *
- * Changes in this update:
- * - Larger header value display
- * - Header filter button changed to icon-only without box
- * - Removed small category labels under the growth chart
- * - Fixed timeframe buttons so they change chart aggregation visibly
- * - CandlesWithLines uses explicit bucket counts per timeframe
- *
- * Everything remains single-file and self-contained.
+ * Keep everything in this single file as requested.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -90,24 +87,26 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== CAKE-STYLE ALLOCATION ===================== */
-function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
-  const totalVal = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
-  const n = Math.max(1, data.length);
+/* ===================== CAKE-STYLE ALLOCATION (PROPORTIONAL ANGLE + RADIUS) ===================== */
+function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
+  // compute total and angles proportional to value
+  const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2, cy = size / 2;
-  const maxSliceOuter = size / 2 - 6;
+  const maxOuter = size / 2 - 6;
   const minOuter = inner + 8;
   const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
+
   const scaleOuter = (v) => {
     if (!v || v <= 0) return inner + 6;
     const frac = v / maxValue;
-    return Math.round(minOuter + frac * (maxSliceOuter - minOuter));
+    return Math.round(minOuter + frac * (maxOuter - minOuter));
   };
-  const anglePer = (2 * Math.PI) / n;
+
   const colors = [
     "#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE",
     "#B28DFF", "#FFB26B", "#6BFFA0", "#FF6BE5", "#00C49F",
   ];
+
   const [hoverIndex, setHoverIndex] = useState(null);
   const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, html: "" });
   const wrapRef = useRef(null);
@@ -134,7 +133,20 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
     setTooltip({ show: false, x: 0, y: 0, html: "" });
   };
 
+  // build arcs proportional to values
+  let start = -Math.PI / 2;
+  const arcs = data.map((d) => {
+    const portion = Math.max(0, d.value || 0) / total;
+    const angle = portion * Math.PI * 2;
+    const end = start + angle;
+    const rOuter = scaleOuter(d.value || 0);
+    const arc = { start, end, outer: rOuter };
+    start = end;
+    return arc;
+  });
+
   function arcPath(cx, cy, rInner, rOuter, startAngle, endAngle) {
+    const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
     const x1 = cx + rOuter * Math.cos(startAngle);
     const y1 = cy + rOuter * Math.sin(startAngle);
     const x2 = cx + rOuter * Math.cos(endAngle);
@@ -143,7 +155,6 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
     const yi2 = cy + rInner * Math.sin(endAngle);
     const xi1 = cx + rInner * Math.cos(startAngle);
     const yi1 = cy + rInner * Math.sin(startAngle);
-    const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
     return `M ${cx} ${cy} L ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${rInner} ${rInner} 0 ${large} 0 ${xi1} ${yi1} Z`;
   }
 
@@ -151,12 +162,15 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
     <div ref={wrapRef} style={{ width: size, height: size, position: "relative" }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {data.map((d, i) => {
-          const outer = scaleOuter(d.value || 0);
-          const start = -Math.PI / 2 + i * anglePer;
-          const end = start + anglePer - gap;
-          const path = arcPath(cx, cy, inner, outer, start, end);
+          const arc = arcs[i];
+          // apply small gap by shrinking end angle inward
+          const gapAngle = Math.min(arc.end - arc.start, 0.02);
+          const s = arc.start + gapAngle / 2;
+          const e = arc.end - gapAngle / 2;
+          const path = arcPath(cx, cy, inner, arc.outer, s, e);
           const isHover = hoverIndex === i;
-          const transform = isHover ? `translate(${Math.cos((start + end) / 2) * 6},${Math.sin((start + end) / 2) * 6})` : undefined;
+          const mid = (s + e) / 2;
+          const transform = isHover ? `translate(${Math.cos(mid) * 6},${Math.sin(mid) * 6})` : undefined;
           return (
             <g key={i} transform={transform}>
               <path
@@ -205,7 +219,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.06, display
   );
 }
 
-/* ===================== CANDLE + MULTI-LINE CHART (fixed timeframe buckets) ===================== */
+/* ===================== CANDLE + MULTI-LINE CHART (throttled mousemove) ===================== */
 function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 960, height = 300, rangeKey = "all", onHover }) {
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = Math.min(width, 1200);
@@ -222,14 +236,12 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
 
   if (!convAll || convAll.length < 2) return <div className="text-xs text-gray-500">Not enough data for chart</div>;
 
-  // explicit candle counts per timeframe for visible differences
   const timeframeMap = { "1d": 48, "2d": 96, "1w": 56, "1m": 90, "1y": 180, "all": Math.min(200, convAll.length) };
   const candleCountTarget = timeframeMap[rangeKey] || Math.min(200, convAll.length);
 
-  // create buckets by mapping convAll indices into candleCountTarget buckets
+  // buckets
   const buckets = Array.from({ length: Math.max(4, candleCountTarget) }, () => []);
   for (let i = 0; i < convAll.length; i++) {
-    // map by time order: last points concentrated if series longer than buckets
     const idx = Math.floor((i / convAll.length) * buckets.length);
     buckets[Math.min(buckets.length - 1, idx)].push(convAll[i]);
   }
@@ -243,7 +255,6 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
     return { t, open, high, low, close, count: arr.length };
   }).filter(Boolean);
 
-  // min/max across candles and overlays
   let min = Infinity, max = -Infinity;
   candles.forEach(c => { if (c.low < min) min = c.low; if (c.high > max) max = c.high; });
   convKeys.forEach(k => (convCats[k] || []).forEach(p => { if (p.v < min) min = p.v; if (p.v > max) max = p.v; }));
@@ -262,28 +273,40 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   };
 
   const [hoverIndex, setHoverIndex] = useState(null);
+  const rafRef = useRef(null);
+  const lastXRef = useRef(null);
+
+  function scheduleHover(x, rect) {
+    lastXRef.current = { x, rect };
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      const info = lastXRef.current;
+      rafRef.current = null;
+      if (!info) return;
+      const px = info.x - (info.rect.left || 0);
+      let best = 0, bestD = Infinity;
+      for (let i = 0; i < candles.length; i++) {
+        const cx = xOfCandle(i);
+        const d = Math.abs(cx - px);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      setHoverIndex(best);
+      if (onHover) {
+        const c = candles[best];
+        onHover({ t: c.t, o: c.open, h: c.high, l: c.low, c: c.close });
+      }
+    });
+  }
 
   function handleMove(e) {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    let best = 0, bestD = Infinity;
-    for (let i = 0; i < candles.length; i++) {
-      const cx = xOfCandle(i);
-      const d = Math.abs(cx - x);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    setHoverIndex(best);
-    if (onHover) {
-      const c = candles[best];
-      onHover({ t: c.t, o: c.open, h: c.high, l: c.low, c: c.close });
-    }
+    scheduleHover(e.clientX, rect);
   }
   function handleLeave() {
     setHoverIndex(null);
     if (onHover) onHover(null);
   }
 
-  // overlay sampling: pick nearest point per bucket for each category
   function seriesToLinePoints(catSeries) {
     if (!catSeries || catSeries.length === 0) return [];
     const pts = [];
@@ -360,7 +383,6 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
       </svg>
 
       <div className="mt-2 flex items-center gap-4 text-xs">
-        {/* legend only, no repeated numeric values */}
         <div className="flex items-center gap-2">
           <div style={{ width: 10, height: 10, background: "#4D96FF" }} className="rounded-sm" />
           <div className="text-xs text-gray-300">All</div>
@@ -564,7 +586,7 @@ export default function PortfolioDashboard() {
     try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {}
   }, [transactions]);
 
-  /* click outside */
+  /* click outside (close menus) */
   useEffect(() => {
     function onPointerDown(e) {
       const target = e.target;
@@ -584,7 +606,7 @@ export default function PortfolioDashboard() {
         setCurrencyMenuOpen(false);
       }
     }
-    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerdown", onPointerDown, { passive: true });
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd, currencyMenuOpen]);
 
@@ -673,7 +695,7 @@ export default function PortfolioDashboard() {
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
-  /* polling crypto & stocks unchanged aside from robust fallback logic */
+  /* polling crypto & stocks (unchanged logic) */
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -910,7 +932,7 @@ export default function PortfolioDashboard() {
     }
   }
 
-  /* add helpers (unchanged) */
+  /* add helpers */
   function addAssetFromSuggestion(s) {
     const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
     const asset = ensureNumericAsset({
@@ -1012,7 +1034,7 @@ export default function PortfolioDashboard() {
     setOpenAdd(false);
   }
 
-  /* BUY/SELL (unchanged) */
+  /* BUY/SELL */
   function openTradeModal(assetId, mode) {
     const asset = assets.find(a => a.id === assetId);
     if (!asset) return;
@@ -1180,7 +1202,7 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* CSV combined export/import (unchanged except BOM) */
+  /* CSV combined export/import (BOM + headers for spreadsheet) */
   function csvQuote(v) {
     if (v === undefined || v === null) return "";
     if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -1387,7 +1409,7 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* build growth series (unchanged) */
+  /* build growth series */
   function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
     const now = Date.now();
     let earliest = now;
@@ -1514,7 +1536,7 @@ export default function PortfolioDashboard() {
         .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
         .icon-box { transition: transform 160ms, background 120ms; }
         .slice { cursor: pointer; }
-        .menu-scroll { max-height: 17.5rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
+        .menu-scroll { max-height: 16rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
       `}</style>
 
       <div className="max-w-6xl mx-auto">
@@ -1727,8 +1749,10 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* TABLE + SORT */}
-        <div className="mt-6 overflow-x-auto">
+        {/* TABLE + SORT
+            IMPORTANT: container uses overflow-x:auto but overflow-y:visible so dropdown won't be clipped.
+        */}
+        <div className="mt-6" style={{ overflowX: 'auto', overflowY: 'visible' }}>
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm text-gray-400">Assets</div>
             <div className="flex items-center gap-2 relative">
@@ -1811,7 +1835,7 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* PORTFOLIO GROWTH (Candles + lines) */}
+        {/* PORTFOLIO GROWTH */}
         <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Portfolio Growth</div>
@@ -1831,8 +1855,6 @@ export default function PortfolioDashboard() {
             rangeKey={chartRange}
             onHover={(p) => { setChartHover(p); }}
           />
-
-          {/* NOTE: small category numeric labels removed as requested */}
         </div>
 
         {/* CAKE (donut replacement) + legend */}
@@ -1885,7 +1907,7 @@ export default function PortfolioDashboard() {
           />
         )}
 
-        {/* TRANSACTIONS MODAL (unchanged) */}
+        {/* TRANSACTIONS MODAL */}
         {transactionsOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[120]">
             <div className="bg-gray-900 p-6 rounded-lg w-full max-w-3xl border border-gray-800">
@@ -1954,7 +1976,7 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* EXPORT / IMPORT CSV */}
+        {/* EXPORT / IMPORT CSV (buttons white) */}
         <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1">
             <div className="text-sm text-gray-300">CSV: export / import (combined)</div>
@@ -1962,16 +1984,16 @@ export default function PortfolioDashboard() {
           </div>
           <div className="flex gap-2">
             <div className="relative">
-              <button onClick={exportAllCSV} className="bg-blue-600 px-3 py-2 rounded font-semibold btn">Export CSV</button>
+              <button onClick={exportAllCSV} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-blue-600 hover:text-white">Export CSV</button>
             </div>
-            <label className="bg-emerald-500 px-3 py-2 rounded font-semibold cursor-pointer btn">
+            <label className="bg-white text-black px-3 py-2 rounded font-semibold cursor-pointer btn hover:bg-emerald-500 hover:text-white">
               Import CSV
               <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
             </label>
             <button onClick={() => {
               if (!confirm("This will clear your portfolio and realized P&L. Continue?")) return;
               setAssets([]); setRealizedUSD(0); setTransactions([]); setLastDeletedTx(null);
-            }} className="bg-red-600 px-3 py-2 rounded font-semibold btn">Clear All</button>
+            }} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-red-600 hover:text-white">Clear All</button>
           </div>
         </div>
 
