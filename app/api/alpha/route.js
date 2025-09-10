@@ -1,4 +1,3 @@
-
 // app/api/alpha/route.js
 import { NextResponse } from "next/server";
 
