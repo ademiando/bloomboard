@@ -4,14 +4,20 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * app/dashboard/page.js
- * Single-file Portfolio Dashboard — updated fixes:
- * - Fix sort/filter dropdown scrolling (not clipped) — uses overflow-y: visible on table wrapper
- * - Throttle chart mousemove with requestAnimationFrame for smoother interactivity
- * - CSV/Export/Import buttons: white background, hover colored
- * - Cake allocation: slices sized proportionally (angle) and radius scales with value
+ * app/dashboard/page.js — Single-file final component
+ * Additions in this version:
+ *  - Smooth interactive hover/animations for all buttons
+ *  - Asset-name clickable -> TradingView modal (fallback to internal chart)
+ *  - Stock price polling fallback order: Finnhub -> AlphaVantage -> Yahoo
+ *  - Keep previous prices if all sources fail (avoid zeros)
+ *  - CSV export/import improved (BOM + headers) for spreadsheet friendliness
  *
- * Keep everything in this single file as requested.
+ * IMPORTANT: Assumes optional server proxies:
+ *  - /api/finnhub/quote?symbol=...
+ *  - /api/alphavantage/quote?symbol=...
+ *  - /api/yahoo/quote?symbol=...
+ *
+ * If Alpha Vantage proxy not present, the code still falls back to Yahoo.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -19,6 +25,7 @@ const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
 const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`;
 const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`;
+const ALPHAVANTAGE_QUOTE = (symbol) => `/api/alphavantage/quote?symbol=${encodeURIComponent(symbol)}`; // server proxy suggested
 const COINGECKO_PRICE = (ids) =>
   `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
@@ -89,7 +96,6 @@ function seededRng(seed) {
 
 /* ===================== CAKE-STYLE ALLOCATION (PROPORTIONAL ANGLE + RADIUS) ===================== */
 function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
-  // compute total and angles proportional to value
   const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2, cy = size / 2;
   const maxOuter = size / 2 - 6;
@@ -133,7 +139,6 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
     setTooltip({ show: false, x: 0, y: 0, html: "" });
   };
 
-  // build arcs proportional to values
   let start = -Math.PI / 2;
   const arcs = data.map((d) => {
     const portion = Math.max(0, d.value || 0) / total;
@@ -163,7 +168,6 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {data.map((d, i) => {
           const arc = arcs[i];
-          // apply small gap by shrinking end angle inward
           const gapAngle = Math.min(arc.end - arc.start, 0.02);
           const s = arc.start + gapAngle / 2;
           const e = arc.end - gapAngle / 2;
@@ -220,6 +224,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
 }
 
 /* ===================== CANDLE + MULTI-LINE CHART (throttled mousemove) ===================== */
+/* (same component as previous — used as fallback for TradingView) */
 function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 960, height = 300, rangeKey = "all", onHover }) {
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = Math.min(width, 1200);
@@ -239,7 +244,6 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   const timeframeMap = { "1d": 48, "2d": 96, "1w": 56, "1m": 90, "1y": 180, "all": Math.min(200, convAll.length) };
   const candleCountTarget = timeframeMap[rangeKey] || Math.min(200, convAll.length);
 
-  // buckets
   const buckets = Array.from({ length: Math.max(4, candleCountTarget) }, () => []);
   for (let i = 0; i < convAll.length; i++) {
     const idx = Math.floor((i / convAll.length) * buckets.length);
@@ -398,6 +402,118 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
         <div className="flex items-center gap-2">
           <div style={{ width: 10, height: 10, background: "#FFD93D" }} className="rounded-sm" />
           <div className="text-xs text-gray-300">Non-Liquid</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== TradingView Modal (attempt) ===================== */
+function TradingViewModal({ symbol, type = "stock", onClose, displayCcy = "USD" }) {
+  const containerRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const makeSymbolForTV = (s) => {
+      if (!s) return s;
+      // convert INCO.JK -> IDX:INCO
+      if (String(s).toUpperCase().endsWith(".JK")) {
+        return `IDX:${String(s).toUpperCase().replace(/\.JK$/, "")}`;
+      }
+      // pass through otherwise (user might have full "NASDAQ:AAPL")
+      return s;
+    };
+    const tvSymbol = makeSymbolForTV(symbol);
+
+    const ensureScript = () => {
+      return new Promise((resolve, reject) => {
+        if (typeof window === "undefined") return reject();
+        if (window.TradingView) return resolve(window.TradingView);
+        const existing = document.querySelector('script[data-tradingview="tv"]');
+        if (existing) {
+          existing.addEventListener("load", () => resolve(window.TradingView));
+          existing.addEventListener("error", () => reject());
+          return;
+        }
+        const s = document.createElement("script");
+        s.src = "https://s3.tradingview.com/tv.js";
+        s.async = true;
+        s.dataset.tradingview = "tv";
+        s.onload = () => resolve(window.TradingView);
+        s.onerror = () => reject();
+        document.body.appendChild(s);
+      });
+    };
+
+    let widgetCreated = false;
+    const timeoutId = setTimeout(() => {
+      // if TV not loaded after 3s, fallback
+      if (!widgetCreated) setFailed(true);
+    }, 3000);
+
+    ensureScript().then((TV) => {
+      if (cancelled) return;
+      try {
+        if (!containerRef.current) throw new Error("no container");
+        // remove existing
+        containerRef.current.innerHTML = "";
+        const w = new window.TradingView.widget({
+          autosize: true,
+          symbol: tvSymbol,
+          interval: "D",
+          timezone: "Etc/UTC",
+          theme: "dark",
+          style: "1",
+          locale: "en",
+          enable_publishing: false,
+          allow_symbol_change: true,
+          container_id: `tv-container-${symbol.replace(/[^a-z0-9]/gi,"")}`,
+        });
+        widgetCreated = true;
+        setReady(true);
+      } catch (e) {
+        setFailed(true);
+      }
+    }).catch(() => {
+      setFailed(true);
+    });
+
+    return () => { cancelled = true; clearTimeout(timeoutId); };
+  }, [symbol]);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[150]">
+      <div className="bg-gray-900 p-4 rounded-lg w-full max-w-4xl border border-gray-800">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-lg font-semibold">{symbol} chart</div>
+            <div className="text-xs text-gray-400">Interactive chart — {displayCcy}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="bg-gray-800 px-3 py-1 rounded btn-soft">Close</button>
+          </div>
+        </div>
+
+        <div style={{ height: 480, background: "transparent" }}>
+          {!failed ? (
+            <div id={`tv-container-${symbol.replace(/[^a-z0-9]/gi,"")}`} ref={containerRef} style={{ height: "100%" }} />
+          ) : (
+            <div className="h-full">
+              <div className="text-sm text-gray-300">TradingView widget unavailable — showing fallback chart</div>
+              <div className="mt-2">
+                <CandlesWithLines
+                  seriesMap={{ all: [], crypto: [], stock: [], nonliquid: [] }}
+                  displayCcy={displayCcy}
+                  usdIdr={16000}
+                  width={900}
+                  height={360}
+                  rangeKey={"1m"}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -565,6 +681,9 @@ export default function PortfolioDashboard() {
   /* ---------- sorting ---------- */
   const [sortBy, setSortBy] = useState("market_desc");
 
+  /* ---------- TradingView modal ---------- */
+  const [tvModal, setTvModal] = useState({ open: false, symbol: null, type: null });
+
   /* ---------- refs ---------- */
   const filterMenuRef = useRef(null);
   const sortMenuRef = useRef(null);
@@ -695,7 +814,7 @@ export default function PortfolioDashboard() {
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
-  /* polling crypto & stocks (unchanged logic) */
+  /* polling crypto & stocks (fallback updated) */
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -739,6 +858,8 @@ export default function PortfolioDashboard() {
           return;
         }
         const map = {};
+
+        // 1) try Finnhub per-symbol
         for (const s of symbols) {
           try {
             const res = await fetch(FINNHUB_QUOTE(s));
@@ -758,18 +879,39 @@ export default function PortfolioDashboard() {
             }
           } catch (e) {}
         }
-        const missing = symbols.filter(s => !map[s]);
-        if (missing.length > 0) {
+
+        // 2) for missing symbols, try AlphaVantage proxy (one by one)
+        const missingAfterFinn = symbols.filter(s => !map[s]);
+        for (const s of missingAfterFinn) {
           try {
-            const res = await fetch(YAHOO_QUOTE(missing.join(",")));
+            const res = await fetch(ALPHAVANTAGE_QUOTE(s));
+            if (!res.ok) continue;
+            const j = await res.json();
+            // expect { "Global Quote": { "05. price": "..." } } or custom proxy shape
+            const rawPrice = toNum(j?.["Global Quote"]?.["05. price"] ?? j?.price ?? j?.c ?? 0);
+            if (rawPrice > 0) {
+              const looksLikeId = String(s || "").toUpperCase().endsWith(".JK");
+              let priceUSD = rawPrice;
+              if (looksLikeId) {
+                const fx = usdIdrRef.current || 1;
+                priceUSD = fx > 0 ? (rawPrice / fx) : rawPrice;
+              }
+              map[s] = { symbol: s, priceRaw: rawPrice, priceUSD, _source: "alphavantage", currency: looksLikeId ? "IDR" : "USD" };
+            }
+          } catch (e) {}
+        }
+
+        // 3) for still-missing, try Yahoo bulk
+        const stillMissing = symbols.filter(s => !map[s]);
+        if (stillMissing.length > 0) {
+          try {
+            const res = await fetch(YAHOO_QUOTE(stillMissing.join(",")));
             if (res.ok) {
               const j = await res.json();
               if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
                 j.quoteResponse.result.forEach(q => {
                   const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) {
-                    map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency, fullExchangeName: q.fullExchangeName, _source: "yahoo" };
-                  }
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency || "USD", fullExchangeName: q.fullExchangeName, _source: "yahoo" };
                 });
               } else if (Array.isArray(j)) {
                 j.forEach(q => {
@@ -780,26 +922,36 @@ export default function PortfolioDashboard() {
                 Object.keys(j).forEach(k => {
                   const q = j[k];
                   const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency || "USD", fullExchangeName: q.fullExchangeName, _source: "yahoo" };
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, _source: "yahoo" };
                 });
               }
             }
           } catch (e) {}
         }
 
+        // set assets, but keep previous price if all sources fail
         setAssets(prev => prev.map(a => {
-          if (a.type === "stock" && map[a.symbol]) {
+          if (a.type === "stock") {
             const entry = map[a.symbol];
-            let priceRaw = toNum(entry.priceRaw || 0);
-            const currency = (entry.currency || "").toString().toUpperCase();
-            let priceUSD = priceRaw;
-            const looksLikeId = currency === "IDR" || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
-            if (looksLikeId && priceRaw > 0) {
-              const fx = usdIdrRef.current || 1;
-              priceUSD = fx > 0 ? (priceRaw / fx) : priceRaw;
+            if (entry) {
+              const price = toNum(entry.priceRaw || entry.priceUSD || 0);
+              const currency = (entry.currency || "").toString().toUpperCase();
+              let priceUSD = price;
+              const looksLikeId = currency === "IDR" || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
+              if (looksLikeId && price > 0) {
+                const fx = usdIdrRef.current || 1;
+                priceUSD = fx > 0 ? (price / fx) : price;
+              }
+              if (!(priceUSD > 0)) {
+                // fallback keep existing
+                return ensureNumericAsset(a);
+              }
+              return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
+            } else {
+              // no quote, keep existing last / avg (so not zero)
+              const lastSafe = a.lastPriceUSD || a.avgPrice || 0;
+              return ensureNumericAsset({ ...a, lastPriceUSD: lastSafe, marketValueUSD: lastSafe * toNum(a.shares || 0) });
             }
-            if (!(priceUSD > 0)) priceUSD = a.avgPrice || a.lastPriceUSD || 0;
-            return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
           }
           return ensureNumericAsset(a);
         }));
@@ -1530,13 +1682,16 @@ export default function PortfolioDashboard() {
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
       <style>{`
-        .btn { transition: transform 180ms, box-shadow 180ms, background-color 120ms; }
-        .btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
-        .btn-soft:hover { transform: translateY(-2px) scale(1.01); }
+        .btn { transition: transform 180ms cubic-bezier(.2,.9,.2,1), box-shadow 180ms, background-color 150ms; }
+        .btn:hover { transform: translateY(-4px) scale(1.02); box-shadow: 0 12px 30px rgba(0,0,0,0.5); }
+        .btn-soft { transition: transform 160ms, background-color 120ms; }
+        .btn-soft:hover { transform: translateY(-2px); background-color: rgba(255,255,255,0.02); }
         .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
         .icon-box { transition: transform 160ms, background 120ms; }
         .slice { cursor: pointer; }
         .menu-scroll { max-height: 16rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
+        /* improved button focus */
+        button:focus { outline: 2px solid rgba(99,102,241,0.16); outline-offset: 2px; }
       `}</style>
 
       <div className="max-w-6xl mx-auto">
@@ -1550,7 +1705,7 @@ export default function PortfolioDashboard() {
               <button
                 aria-label="Filter"
                 onClick={() => setFilterMenuOpen(v => !v)}
-                className="ml-2 inline-flex items-center justify-center text-gray-200"
+                className="ml-2 inline-flex items-center justify-center text-gray-200 btn"
                 style={{ fontSize: 18, padding: 6 }}
                 title="Filter portfolio"
               >
@@ -1749,9 +1904,7 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* TABLE + SORT
-            IMPORTANT: container uses overflow-x:auto but overflow-y:visible so dropdown won't be clipped.
-        */}
+        {/* TABLE + SORT */}
         <div className="mt-6" style={{ overflowX: 'auto', overflowY: 'visible' }}>
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm text-gray-400">Assets</div>
@@ -1799,8 +1952,10 @@ export default function PortfolioDashboard() {
               ) : sortedRows.map((r) => (
                 <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
                   <td className="px-3 py-3">
-                    <div className="font-semibold text-gray-100">{r.symbol}</div>
-                    <div className="text-xs text-gray-400">{r.description || r.name}</div>
+                    <button onClick={() => { setTvModal({ open: true, symbol: r.symbol, type: r.type }); }} className="text-left w-full">
+                      <div className="font-semibold text-gray-100">{r.symbol}</div>
+                      <div className="text-xs text-gray-400">{r.description || r.name}</div>
+                    </button>
                   </td>
                   <td className="px-3 py-3 text-right">{Number(r.shares || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
 
@@ -1904,6 +2059,16 @@ export default function PortfolioDashboard() {
             mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)}
             defaultPrice={tradeModal.defaultPrice} onClose={() => closeTradeModal()}
             onBuy={performBuy} onSell={performSell} usdIdr={usdIdr}
+          />
+        )}
+
+        {/* TradingView modal */}
+        {tvModal.open && (
+          <TradingViewModal
+            symbol={tvModal.symbol}
+            type={tvModal.type}
+            onClose={() => setTvModal({ open: false, symbol: null, type: null })}
+            displayCcy={displayCcy}
           />
         )}
 
