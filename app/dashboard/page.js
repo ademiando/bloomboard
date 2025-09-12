@@ -5,20 +5,18 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Single-file Portfolio Dashboard (page.js)
- * - Animated interactive controls
- * - Asset chart modal (coin: coingecko; stocks: finnhub -> alphavantage -> yahoo)
- * - Added AssetChartModal, button animations
- * - Keep single-file as requested
+ * - All features in one file: cake allocation, portfolio growth, asset table, transactions, combined CSV import/export, non-liquid assets, interactive buttons, animations.
+ * - AssetChartModal uses an "i" circular info button for source and a boxed close button.
  *
- * NOTE about stock history endpoints:
- * - This component attempts to call proxy endpoints like:
- *    /api/finnhub/history?symbol=...
+ * NOTE: For production-grade stock history/prices, provide server-side proxy endpoints:
+ *    /api/finnhub/quote?symbol=...
+ *    /api/finnhub/history?symbol=...&range=...
  *    /api/alphavantage/history?symbol=...
- *    /api/yahoo/history?symbols=...
- *   You must provide server-side proxy routes that call the actual APIs (with API keys as needed).
+ *    /api/yahoo/quote?symbol=...
+ * This file will fallback gracefully when endpoints aren't available.
  */
 
-/* ========== ENDPOINTS ========== */
+/* ===================== ENDPOINTS / CONSTANTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
 const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`;
@@ -30,7 +28,7 @@ const COINGECKO_PRICE = (ids) =>
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
 const COINGECKO_COIN_MARKETCHART = (id, days) => `${COINGECKO_API}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${encodeURIComponent(days)}`;
 
-/* ========== HELPERS ========== */
+/* ===================== HELPERS ===================== */
 const isBrowser = typeof window !== "undefined";
 const toNum = (v) => {
   const n = Number(v);
@@ -72,10 +70,13 @@ function ensureNumericAsset(a) {
     nonLiquidYoy: toNum(a.nonLiquidYoy || 0),
     description: a.description || "",
     type: a.type || "stock",
+    symbol: a.symbol || "",
+    name: a.name || "",
+    id: a.id || `asset:${Math.random().toString(36).slice(2,9)}`,
   };
 }
 
-/* seeded RNG for synthetic series */
+/* lightweight seeded RNG for synthetic series */
 function hashStringToSeed(str) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) {
@@ -94,7 +95,7 @@ function seededRng(seed) {
   };
 }
 
-/* ========== SIMPLE LINE CHART (SVG) ========== */
+/* ===================== SIMPLE LINE CHART (SVG) ===================== */
 function SimpleLineChart({ series = [], width = 800, height = 240, displayCcy = "USD", usdIdr = 16000 }) {
   if (!series || series.length < 2) return <div className="text-xs text-gray-500">No chart data</div>;
   const padding = { left: 36, right: 12, top: 12, bottom: 28 };
@@ -116,7 +117,6 @@ function SimpleLineChart({ series = [], width = 800, height = 240, displayCcy = 
       })}
       <path d={path} stroke="#4D96FF" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
       {series.map((p, i) => <circle key={i} cx={xOf(i)} cy={yOf(p.v)} r={2.2} fill="#4D96FF" />)}
-      {/* y labels */}
       {[0,0.25,0.5,0.75,1].map((t, i) => {
         const v = min + t * range;
         const y = yOf(v);
@@ -126,12 +126,13 @@ function SimpleLineChart({ series = [], width = 800, height = 240, displayCcy = 
   );
 }
 
-/* ========== ASSET CHART MODAL ========== */
+/* ===================== ASSET CHART MODAL (with circular "i" info button and boxed close) ===================== */
 function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, defaultRange = "30" }) {
   const [loading, setLoading] = useState(false);
   const [series, setSeries] = useState([]); // {t, v}
   const [rangeDays, setRangeDays] = useState(defaultRange); // days param for coingecko
   const [err, setErr] = useState(null);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   useEffect(() => {
     if (!asset) return;
@@ -139,14 +140,13 @@ function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, d
     async function fetchHistory() {
       setLoading(true); setErr(null);
       try {
-        // CRYPTO -> CoinGecko market_chart
+        // Crypto: CoinGecko
         if (asset.type === "crypto" && asset.coingeckoId) {
           try {
             const days = rangeDays;
             const res = await fetch(COINGECKO_COIN_MARKETCHART(asset.coingeckoId, days));
             if (res.ok) {
               const j = await res.json();
-              // j.prices = [ [ts, price], ... ]
               const s = (j.prices || []).map(p => ({ t: p[0], v: toNum(p[1]) }));
               if (mounted && s.length) setSeries(s);
               setLoading(false);
@@ -155,7 +155,7 @@ function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, d
           } catch (e) {}
         }
 
-        // STOCKS: try finnhub history -> alphavantage -> yahoo
+        // Stocks: try Finnhub -> AlphaVantage -> Yahoo
         if (asset.type === "stock") {
           const attemptUrls = [
             FINNHUB_HISTORY(asset.symbol, rangeDays),
@@ -168,12 +168,10 @@ function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, d
               const res = await fetch(url);
               if (!res.ok) continue;
               const j = await res.json();
-              // Expecting object with timeseries array of [ [ts, price], ... ] or similar
               let arr = [];
               if (Array.isArray(j.prices)) arr = j.prices.map(p => ({ t: p[0], v: toNum(p[1]) }));
               else if (Array.isArray(j)) arr = j.map(p => ({ t: p.t || p[0] || Date.now(), v: toNum(p.v || p[1] || p.close || 0) }));
               else if (j && typeof j === "object") {
-                // try common shapes
                 if (j["Time Series (Daily)"]) {
                   const ts = j["Time Series (Daily)"];
                   arr = Object.keys(ts).map(d => ({ t: new Date(d).getTime(), v: toNum(ts[d]["4. close"] || ts[d].close || 0) })).sort((a,b)=>a.t-b.t);
@@ -192,12 +190,12 @@ function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, d
             } catch (e) { /* continue */ }
           }
           if (!got) {
-            // fallback synthetic using purchase/avg/last
+            // fallback synthetic
             const now = Date.now();
             const pts = [];
             const seed = hashStringToSeed(asset.symbol || asset.id || "synth");
             const rng = seededRng(seed);
-            const avg = toNum(asset.avgPrice || asset.lastPriceUSD || 0) || 1;
+            const avg = toNum(asset.avgPrice || asset.lastPriceUSD || 1) || 1;
             for (let i = 0; i <= 60; i++) {
               const t = now - (60 - i) * 24 * 3600 * 1000;
               const noise = (rng() - 0.5) * 0.2;
@@ -208,7 +206,7 @@ function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, d
           }
         }
 
-        // NONLIQUID fallback: show growth based on YoY
+        // NON-LIQUID: generate based on YoY
         if (asset.type === "nonliquid") {
           const now = Date.now();
           const pts = [];
@@ -234,6 +232,8 @@ function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, d
   }, [asset, rangeDays]);
 
   if (!asset) return null;
+  const sourceText = asset.type === "crypto" ? "CoinGecko" : "Finnhub → AlphaVantage → Yahoo (fallback)";
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[220]">
       <div className="bg-gray-900 p-4 rounded-lg w-full max-w-4xl border border-gray-800">
@@ -242,9 +242,30 @@ function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, d
             <h3 className="text-lg font-semibold">{asset.symbol} — {asset.name}</h3>
             <div className="text-xs text-gray-400">{asset.description || (asset.type === "nonliquid" ? "Non-liquid asset" : "")}</div>
           </div>
+
           <div className="flex items-center gap-2">
-            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? `${fmtMoney((series.length?series[series.length-1].v:asset.lastPriceUSD) * usdIdr, "IDR")}` : fmtMoney(series.length?series[series.length-1].v:asset.lastPriceUSD, "USD")}</div>
-            <button onClick={onClose} className="text-gray-400 hover:text-white">Close</button>
+            {/* info circular button */}
+            <div className="relative">
+              <button onClick={()=>setInfoOpen(v=>!v)} title="Data source" className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-200 border border-gray-700">
+                <span style={{ fontSize: 12, fontWeight: 700 }}>i</span>
+              </button>
+              {infoOpen && (
+                <div className="absolute right-0 mt-2 w-64 p-2 bg-gray-800 border border-gray-700 rounded text-xs text-gray-200 z-60">
+                  <div className="font-semibold text-sm">Source</div>
+                  <div className="text-xs text-gray-300 mt-1">{sourceText}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-gray-300">{displayCcy === "IDR" ? `${fmtMoney((series.length?series[series.length-1].v:asset.lastPriceUSD) * usdIdr, "IDR")}` : fmtMoney(series.length?series[series.length-1].v:asset.lastPriceUSD, "USD")}</div>
+              {/* boxed close button */}
+              <button onClick={onClose} title="Close" className="w-9 h-9 bg-gray-800 border border-gray-700 rounded flex items-center justify-center text-gray-200 hover:bg-gray-700">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                  <path d="M6 6 L18 18 M18 6 L6 18" stroke="#E5E7EB" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -270,16 +291,48 @@ function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, d
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
 }
 
-/* ========== MAIN DASHBOARD COMPONENT ========== */
+/* ===================== TRADE FORM ===================== */
+function TradeForm({ asset, mode, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
+  const [qty, setQty] = useState("");
+  const [price, setPrice] = useState(defaultPrice>0?String(defaultPrice):"");
+  const [priceCcy, setPriceCcy] = useState("USD");
+  useEffect(()=> { setPrice(defaultPrice>0?String(defaultPrice):""); }, [defaultPrice]);
+  const priceUSD = priceCcy==="IDR" ? toNum(price) / usdIdr : toNum(price);
+  const totalUSD = toNum(qty) * priceUSD;
+  function handleSubmit(e) { e.preventDefault(); const q = toNum(qty), p = priceUSD; if (q<=0 || p<=0) { alert("Qty & price must be > 0"); return; } if (mode==='buy') onBuy(q,p); if (mode==='sell') onSell(q,p); }
+  return (
+    <form onSubmit={handleSubmit} className="mt-4">
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-1">Quantity</label>
+        <input type="number" step="any" value={qty} onChange={(e)=>setQty(e.target.value)} className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500" placeholder="0.00" />
+      </div>
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-1">Price per unit</label>
+        <div className="flex rounded overflow-hidden">
+          <input type="number" step="any" value={price} onChange={(e)=>setPrice(e.target.value)} className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700 focus:outline-none focus:border-blue-500" placeholder="0.00" />
+          <select value={priceCcy} onChange={(e)=>setPriceCcy(e.target.value)} className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r focus:outline-none">
+            <option value="USD">USD</option>
+            <option value="IDR">IDR</option>
+          </select>
+        </div>
+      </div>
+      <div className="text-sm text-gray-400 text-right mb-4">Total: {fmtMoney(totalUSD, "USD")}</div>
+      <div className="flex gap-2">
+        <button type="submit" className={`w-full py-2 rounded font-semibold ${mode==='buy'?'bg-emerald-500 text-black':'bg-yellow-600 text-white'}`}>{mode==='buy' ? 'Confirm Buy' : 'Confirm Sell'}</button>
+        <button type="button" onClick={onClose} className="w-full py-2 rounded bg-gray-700 text-sm">Cancel</button>
+      </div>
+    </form>
+  );
+}
 
+/* ===================== MAIN DASHBOARD COMPONENT ===================== */
 export default function PortfolioDashboard() {
-  /* persistent state */
+  /* ---------- persistent state ---------- */
   const loadAssets = () => {
     try {
       if (!isBrowser) return [];
@@ -305,12 +358,12 @@ export default function PortfolioDashboard() {
   };
   const [transactions, setTransactions] = useState(loadTransactions);
 
-  /* UI & FX */
+  /* ---------- UI & FX ---------- */
   const [usdIdr, setUsdIdr] = useState(16000);
   const [fxLoading, setFxLoading] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  /* add/search */
+  /* ---------- add/search ---------- */
   const [openAdd, setOpenAdd] = useState(false);
   const [searchMode, setSearchMode] = useState("crypto");
   const [query, setQuery] = useState("");
@@ -328,10 +381,10 @@ export default function PortfolioDashboard() {
   const [nlYoy, setNlYoy] = useState("5");
   const [nlDesc, setNlDesc] = useState("");
 
-  /* live quotes */
+  /* ---------- live quotes ---------- */
   const [lastTick, setLastTick] = useState(null);
 
-  /* filters / menus */
+  /* ---------- UI state ---------- */
   const [portfolioFilter, setPortfolioFilter] = useState("all");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
@@ -355,7 +408,7 @@ export default function PortfolioDashboard() {
   const addPanelRef = useRef(null);
   const currencyMenuRef = useRef(null);
 
-  /* persist */
+  /* persist to localStorage */
   useEffect(() => { try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {} }, [assets]);
   useEffect(() => { try { localStorage.setItem("pf_realized_v2", String(realizedUSD)); } catch {} }, [realizedUSD]);
   useEffect(() => { try { localStorage.setItem("pf_display_ccy_v2", displayCcy); } catch {} }, [displayCcy]);
@@ -375,7 +428,7 @@ export default function PortfolioDashboard() {
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd, currencyMenuOpen]);
 
-  /* search suggestions */
+  /* ===================== SEARCH LOGIC ===================== */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
@@ -422,7 +475,7 @@ export default function PortfolioDashboard() {
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
-  /* POLLING PRICES: crypto & stocks (improved fallback order: Finnhub -> AlphaVantage -> Yahoo) */
+  /* ===================== POLLING PRICES (crypto & stocks) ===================== */
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -563,7 +616,7 @@ export default function PortfolioDashboard() {
     return () => { mounted=false; clearInterval(id); };
   }, []);
 
-  /* non-liquid last price growth */
+  /* ===================== NON-LIQUID LAST PRICE (YOY growth) ===================== */
   function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent, targetTime = Date.now()) {
     const years = Math.max(0, (targetTime - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
     const r = toNum(yoyPercent) / 100;
@@ -571,7 +624,7 @@ export default function PortfolioDashboard() {
     return last;
   }
 
-  /* transaction effects helpers (same as before) */
+  /* ===================== TRANSACTION EFFECTS ===================== */
   function applyTransactionEffects(tx) {
     if (!tx) return;
     if (tx.type === "sell") {
@@ -662,7 +715,7 @@ export default function PortfolioDashboard() {
     }
   }
 
-  /* add handlers */
+  /* ===================== ADD ASSET ===================== */
   function addAssetFromSuggestion(s) {
     const internalId = `${s.source||s.type}:${s.symbol||s.id}:${Date.now()}`;
     const asset = ensureNumericAsset({
@@ -750,7 +803,7 @@ export default function PortfolioDashboard() {
     setOpenAdd(false);
   }
 
-  /* buy/sell modal */
+  /* ===================== BUY / SELL MODAL ===================== */
   function openTradeModal(assetId, mode) {
     const asset = assets.find(a=>a.id===assetId);
     if (!asset) return;
@@ -784,7 +837,7 @@ export default function PortfolioDashboard() {
     closeTradeModal();
   }
 
-  /* transactions delete / restore */
+  /* ===================== TRANSACTIONS: delete / restore / undo ===================== */
   function deleteTransaction(txId) {
     const tx = transactions.find(t=>t.id===txId); if (!tx) return;
     if (!confirm(`Delete & CANCEL transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit|| (tx.cost/tx.qty))})?`)) return;
@@ -806,14 +859,14 @@ export default function PortfolioDashboard() {
   }
   function purgeLastDeletedTransaction() { setLastDeletedTx(null); }
 
-  /* remove asset */
+  /* ===================== REMOVE ASSET ===================== */
   function removeAsset(id) {
     const a = assets.find(x=>x.id===id); if(!a) return;
     if (!confirm(`Delete ${a.symbol} (${a.name||""}) from portfolio?`)) return;
     setAssets(prev=>prev.filter(x=>x.id!==id));
   }
 
-  /* computed rows & totals */
+  /* ===================== COMPUTED ROWS & TOTALS ===================== */
   const rows = useMemo(()=>assets.map(a=>{
     const aa = ensureNumericAsset(a);
     if (aa.type === "nonliquid") {
@@ -862,7 +915,7 @@ export default function PortfolioDashboard() {
     return { invested, market, pnl, pnlPct };
   }, [filteredRows]);
 
-  /* donut/cake data */
+  /* ===================== DONUT / CAKE DATA ===================== */
   const donutData = useMemo(()=> {
     const sortedRows = filteredRows.slice().sort((a,b)=>b.marketValueUSD - a.marketValueUSD);
     const top = sortedRows.slice(0,6);
@@ -879,7 +932,7 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* CSV combined export/import improved (BOM + structured markers) */
+  /* ===================== CSV (combined export/import) ===================== */
   function csvQuote(v) {
     if (v === undefined || v === null) return "";
     if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -1048,7 +1101,7 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* portfolio growth / multi-series (reuse earlier logic) */
+  /* ===================== PORTFOLIO GROWTH MULTI-SERIES ===================== */
   function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
     const now = Date.now();
     let earliest = now;
@@ -1136,7 +1189,7 @@ export default function PortfolioDashboard() {
     setAssetChartOpen(false);
   }
 
-  /* STYLES & small UI tweaks (animations) */
+  /* ===================== UI RENDER ===================== */
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
       <style>{`
@@ -1156,8 +1209,7 @@ export default function PortfolioDashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2 relative">
             <h1 className="text-2xl font-semibold">All Portfolio</h1>
-
-            {/* filter icon only */}
+            {/* filter icon only (dropdown icon) */}
             <div className="relative">
               <button aria-label="Filter" onClick={()=>setFilterMenuOpen(v=>!v)} className="ml-2 inline-flex items-center justify-center text-gray-200" style={{ fontSize: 18, padding:6 }} title="Filter portfolio">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -1178,7 +1230,7 @@ export default function PortfolioDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Currency dropdown (nominal + code + caret) */}
+            {/* Currency display dropdown (nominal + code + caret) */}
             <div className="relative">
               <button aria-label="Currency" onClick={()=>setCurrencyMenuOpen(v=>!v)} className="inline-flex items-center gap-2" style={{ background: "transparent", border:0, padding: "6px 8px" }} title="Currency">
                 <span style={{ whiteSpace: "nowrap", fontSize:20, fontWeight:700 }}>
@@ -1440,15 +1492,20 @@ export default function PortfolioDashboard() {
           </div>
         </div>
 
-        {/* CAKE ALLOCATION */}
+        {/* CAKE ALLOCATION (donut replaced with cake-like center value + spacing) */}
         {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
-            <div className="w-44 h-44 flex items-center justify-center">
-              {/* reuse small cake implemented before but simplified here */}
+            <div className="w-44 h-44 flex items-center justify-center relative">
               <svg width="176" height="176" viewBox="0 0 176 176">
-                <circle cx="88" cy="88" r="48" fill="#070707" />
-                <text x="88" y="90" textAnchor="middle" fontSize="12" fill="#9CA3AF">Total</text>
-                <text x="88" y="106" textAnchor="middle" fontSize="12" fontWeight="700" fill="#E5E7EB">{displayCcy==="IDR"?fmtMoney(totals.market*usdIdr,"IDR"):fmtMoney(totals.market,"USD")}</text>
+                <defs>
+                  <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="6" floodColor="#000" floodOpacity="0.25"/>
+                  </filter>
+                </defs>
+                {/* center circle (smaller and separated) */}
+                <circle cx="88" cy="88" r="44" fill="#070707" filter="url(#soft)" />
+                <text x="88" y="84" textAnchor="middle" fontSize="11" fill="#9CA3AF">Total</text>
+                <text x="88" y="100" textAnchor="middle" fontSize="12" fontWeight="700" fill="#E5E7EB">{displayCcy==="IDR"?fmtMoney(totals.market*usdIdr,"IDR"):fmtMoney(totals.market,"USD")}</text>
               </svg>
             </div>
 
@@ -1472,7 +1529,6 @@ export default function PortfolioDashboard() {
         {/* TRADE MODAL */}
         {tradeModal.open && (
           <div>
-            {/* reuse a lighter TradeModal inline to keep single file */}
             <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
               <div className="bg-gray-900 p-6 rounded-lg w-full max-w-md border border-gray-800">
                 <div className="flex justify-between items-start">
@@ -1480,7 +1536,7 @@ export default function PortfolioDashboard() {
                     <h2 className="text-xl font-semibold capitalize">{tradeModal.mode} {(assets.find(a=>a.id===tradeModal.assetId)||{}).symbol}</h2>
                     <p className="text-sm text-gray-400">{(assets.find(a=>a.id===tradeModal.assetId)||{}).name}</p>
                   </div>
-                  <button onClick={()=>closeTradeModal()} className="text-gray-500 hover:text-white">×</button>
+                  <button onClick={()=>closeTradeModal()} className="text-gray-400 hover:text-white">×</button>
                 </div>
                 <TradeForm asset={(assets.find(a=>a.id===tradeModal.assetId)||{})} mode={tradeModal.mode} defaultPrice={tradeModal.defaultPrice} onClose={closeTradeModal} onBuy={performBuy} onSell={performSell} usdIdr={usdIdr} />
               </div>
@@ -1578,39 +1634,5 @@ export default function PortfolioDashboard() {
 
       </div>
     </div>
-  );
-}
-
-/* ========== Small TradeForm component (inline) ========== */
-function TradeForm({ asset, mode, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
-  const [qty, setQty] = useState("");
-  const [price, setPrice] = useState(defaultPrice>0?String(defaultPrice):"");
-  const [priceCcy, setPriceCcy] = useState("USD");
-  useEffect(()=> { setPrice(defaultPrice>0?String(defaultPrice):""); }, [defaultPrice]);
-  const priceUSD = priceCcy==="IDR" ? toNum(price) / usdIdr : toNum(price);
-  const totalUSD = toNum(qty) * priceUSD;
-  function handleSubmit(e) { e.preventDefault(); const q = toNum(qty), p = priceUSD; if (q<=0 || p<=0) { alert("Qty & price must be > 0"); return; } if (mode==='buy') onBuy(q,p); if (mode==='sell') onSell(q,p); }
-  return (
-    <form onSubmit={handleSubmit} className="mt-4">
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-1">Quantity</label>
-        <input type="number" step="any" value={qty} onChange={(e)=>setQty(e.target.value)} className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500" placeholder="0.00" />
-      </div>
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-1">Price per unit</label>
-        <div className="flex rounded overflow-hidden">
-          <input type="number" step="any" value={price} onChange={(e)=>setPrice(e.target.value)} className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700 focus:outline-none focus:border-blue-500" placeholder="0.00" />
-          <select value={priceCcy} onChange={(e)=>setPriceCcy(e.target.value)} className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r focus:outline-none">
-            <option value="USD">USD</option>
-            <option value="IDR">IDR</option>
-          </select>
-        </div>
-      </div>
-      <div className="text-sm text-gray-400 text-right mb-4">Total: {fmtMoney(totalUSD, "USD")}</div>
-      <div className="flex gap-2">
-        <button type="submit" className={`w-full py-2 rounded font-semibold ${mode==='buy'?'bg-emerald-500 text-black':'bg-yellow-600 text-white'}`}>{mode==='buy' ? 'Confirm Buy' : 'Confirm Sell'}</button>
-        <button type="button" onClick={onClose} className="w-full py-2 rounded bg-gray-700 text-sm">Cancel</button>
-      </div>
-    </form>
   );
 }
