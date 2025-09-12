@@ -4,32 +4,33 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * app/dashboard/page.js
- * Single-file Portfolio Dashboard — updated:
- * - Smooth interactive animations on dropdowns/buttons
- * - Click asset name -> TradingView widget modal (fallback chart if not available)
- * - Stock price fetch fallback sequence: FINNHUB -> Yahoo -> AlphaVantage proxy -> Google proxy
- * - Keep all previous features (transactions, non-liquid assets, CSV export/import, cake allocation, growth)
+ * Single-file Portfolio Dashboard (page.js)
+ * - Animated interactive controls
+ * - Asset chart modal (coin: coingecko; stocks: finnhub -> alphavantage -> yahoo)
+ * - Added AssetChartModal, button animations
+ * - Keep single-file as requested
  *
- * Note: for AlphaVantage/Google endpoints you should provide server proxy endpoints:
- *   /api/alphavantage/quote?symbol=...
- *   /api/google/quote?symbol=...
- *
- * This file is designed to be dropped into app/dashboard/page.js (single-file).
+ * NOTE about stock history endpoints:
+ * - This component attempts to call proxy endpoints like:
+ *    /api/finnhub/history?symbol=...
+ *    /api/alphavantage/history?symbol=...
+ *    /api/yahoo/history?symbols=...
+ *   You must provide server-side proxy routes that call the actual APIs (with API keys as needed).
  */
 
-/* ===================== CONFIG/ENDPOINTS ===================== */
+/* ========== ENDPOINTS ========== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
 const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`;
 const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`;
-const ALPHAVANTAGE_QUOTE = (symbol) => `/api/alphavantage/quote?symbol=${encodeURIComponent(symbol)}`;
-const GOOGLE_QUOTE = (symbol) => `/api/google/quote?symbol=${encodeURIComponent(symbol)}`;
+const FINNHUB_HISTORY = (symbol, range) => `/api/finnhub/history?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}`;
+const ALPHAVANTAGE_HISTORY = (symbol, range) => `/api/alphavantage/history?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}`;
 const COINGECKO_PRICE = (ids) =>
   `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
+const COINGECKO_COIN_MARKETCHART = (id, days) => `${COINGECKO_API}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${encodeURIComponent(days)}`;
 
-/* ===================== HELPERS ===================== */
+/* ========== HELPERS ========== */
 const isBrowser = typeof window !== "undefined";
 const toNum = (v) => {
   const n = Number(v);
@@ -74,7 +75,7 @@ function ensureNumericAsset(a) {
   };
 }
 
-/* seeded RNG for synthetic growth chart noise */
+/* seeded RNG for synthetic series */
 function hashStringToSeed(str) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) {
@@ -93,336 +94,223 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== ASSET CHART MODAL (TradingView embed with fallback) ===================== */
-function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000 }) {
-  const containerRef = useRef(null);
-  const [tvLoaded, setTvLoaded] = useState(false);
-  const [tvError, setTvError] = useState(false);
+/* ========== SIMPLE LINE CHART (SVG) ========== */
+function SimpleLineChart({ series = [], width = 800, height = 240, displayCcy = "USD", usdIdr = 16000 }) {
+  if (!series || series.length < 2) return <div className="text-xs text-gray-500">No chart data</div>;
+  const padding = { left: 36, right: 12, top: 12, bottom: 28 };
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+  const min = Math.min(...series.map(p => p.v));
+  const max = Math.max(...series.map(p => p.v));
+  const range = Math.max(1e-8, max - min);
+  const xOf = (i) => padding.left + (i / (series.length - 1)) * innerW;
+  const yOf = (v) => padding.top + (1 - (v - min) / range) * innerH;
+  const path = series.map((p, i) => `${i === 0 ? "M" : "L"} ${xOf(i)} ${yOf(p.v)}`).join(" ");
+  return (
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+      <rect x="0" y="0" width={width} height={height} fill="transparent" />
+      {[0,1,2,3,4].map(i => {
+        const v = min + (i/4) * range;
+        const y = yOf(v);
+        return <line key={i} x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
+      })}
+      <path d={path} stroke="#4D96FF" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      {series.map((p, i) => <circle key={i} cx={xOf(i)} cy={yOf(p.v)} r={2.2} fill="#4D96FF" />)}
+      {/* y labels */}
+      {[0,0.25,0.5,0.75,1].map((t, i) => {
+        const v = min + t * range;
+        const y = yOf(v);
+        return <text key={i} x={padding.left - 6} y={y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{displayCcy === "IDR" ? fmtMoney(v, "IDR") : fmtMoney(v, "USD")}</text>;
+      })}
+    </svg>
+  );
+}
+
+/* ========== ASSET CHART MODAL ========== */
+function AssetChartModal({ asset, onClose, displayCcy = "USD", usdIdr = 16000, defaultRange = "30" }) {
+  const [loading, setLoading] = useState(false);
+  const [series, setSeries] = useState([]); // {t, v}
+  const [rangeDays, setRangeDays] = useState(defaultRange); // days param for coingecko
+  const [err, setErr] = useState(null);
 
   useEffect(() => {
-    // inject tradingview script if not present
     if (!asset) return;
-    const initTradingView = () => {
+    let mounted = true;
+    async function fetchHistory() {
+      setLoading(true); setErr(null);
       try {
-        if (window.TradingView && containerRef.current) {
-          // attempt to create widget
+        // CRYPTO -> CoinGecko market_chart
+        if (asset.type === "crypto" && asset.coingeckoId) {
           try {
-            // symbol mapping: use as-is or try to clean .JK -> IDX:
-            let tvSymbol = asset.symbol;
-            if (/\.JK$/i.test(tvSymbol)) {
-              // TradingView expects IDX:BBCA (without .JK)
-              tvSymbol = tvSymbol.replace(/\.JK$/i, "");
-              tvSymbol = `IDX:${tvSymbol}`;
-            } else {
-              // try exchange prefix fallback
-              tvSymbol = `${asset.symbol}`;
+            const days = rangeDays;
+            const res = await fetch(COINGECKO_COIN_MARKETCHART(asset.coingeckoId, days));
+            if (res.ok) {
+              const j = await res.json();
+              // j.prices = [ [ts, price], ... ]
+              const s = (j.prices || []).map(p => ({ t: p[0], v: toNum(p[1]) }));
+              if (mounted && s.length) setSeries(s);
+              setLoading(false);
+              return;
             }
-            // create widget element
-            const widget = new window.TradingView.widget({
-              width: "100%",
-              height: 420,
-              symbol: tvSymbol,
-              interval: "D",
-              timezone: "Etc/UTC",
-              theme: "dark",
-              style: "1",
-              locale: "en",
-              toolbar_bg: "#1f2937",
-              enable_publishing: false,
-              allow_symbol_change: true,
-              container_id: "tv_chart_container",
-            });
-            setTvLoaded(true);
-          } catch (e) {
-            // widget creation failed -> fallback
-            console.warn("TradingView widget error", e);
-            setTvError(true);
+          } catch (e) {}
+        }
+
+        // STOCKS: try finnhub history -> alphavantage -> yahoo
+        if (asset.type === "stock") {
+          const attemptUrls = [
+            FINNHUB_HISTORY(asset.symbol, rangeDays),
+            ALPHAVANTAGE_HISTORY(asset.symbol, rangeDays),
+            `/api/yahoo/history?symbol=${encodeURIComponent(asset.symbol)}&range=${encodeURIComponent(rangeDays)}`,
+          ];
+          let got = false;
+          for (const url of attemptUrls) {
+            try {
+              const res = await fetch(url);
+              if (!res.ok) continue;
+              const j = await res.json();
+              // Expecting object with timeseries array of [ [ts, price], ... ] or similar
+              let arr = [];
+              if (Array.isArray(j.prices)) arr = j.prices.map(p => ({ t: p[0], v: toNum(p[1]) }));
+              else if (Array.isArray(j)) arr = j.map(p => ({ t: p.t || p[0] || Date.now(), v: toNum(p.v || p[1] || p.close || 0) }));
+              else if (j && typeof j === "object") {
+                // try common shapes
+                if (j["Time Series (Daily)"]) {
+                  const ts = j["Time Series (Daily)"];
+                  arr = Object.keys(ts).map(d => ({ t: new Date(d).getTime(), v: toNum(ts[d]["4. close"] || ts[d].close || 0) })).sort((a,b)=>a.t-b.t);
+                } else if (j.prices) {
+                  arr = j.prices.map(p => ({ t: p[0], v: toNum(p[1]) }));
+                } else if (j.chart && j.chart.result && j.chart.result[0].indicators) {
+                  const out = j.chart.result[0];
+                  const timestamps = out.timestamp || [];
+                  const closes = (out.indicators && out.indicators.quote && out.indicators.quote[0].close) || [];
+                  arr = timestamps.map((ts, i) => ({ t: ts * 1000, v: toNum(closes[i] || 0) }));
+                }
+              }
+              if (arr.length >= 3) {
+                if (mounted) { setSeries(arr); got = true; break; }
+              }
+            } catch (e) { /* continue */ }
           }
-        } else {
-          // load script
-          const s = document.createElement("script");
-          s.src = "https://s3.tradingview.com/tv.js";
-          s.async = true;
-          s.onload = () => {
-            try { setTimeout(initTradingView, 300); } catch (e) { setTvError(true); }
-          };
-          s.onerror = () => setTvError(true);
-          document.head.appendChild(s);
+          if (!got) {
+            // fallback synthetic using purchase/avg/last
+            const now = Date.now();
+            const pts = [];
+            const seed = hashStringToSeed(asset.symbol || asset.id || "synth");
+            const rng = seededRng(seed);
+            const avg = toNum(asset.avgPrice || asset.lastPriceUSD || 0) || 1;
+            for (let i = 0; i <= 60; i++) {
+              const t = now - (60 - i) * 24 * 3600 * 1000;
+              const noise = (rng() - 0.5) * 0.2;
+              const v = Math.max(0.0001, avg * (1 + noise));
+              pts.push({ t, v });
+            }
+            setSeries(pts);
+          }
+        }
+
+        // NONLIQUID fallback: show growth based on YoY
+        if (asset.type === "nonliquid") {
+          const now = Date.now();
+          const pts = [];
+          const purchase = asset.purchaseDate || asset.createdAt || now;
+          const avg = toNum(asset.avgPrice || 0);
+          const r = toNum(asset.nonLiquidYoy || 0) / 100;
+          for (let i = 0; i <= 60; i++) {
+            const t = purchase + i * 24 * 3600 * 1000;
+            const years = Math.max(0, (t - purchase) / (365.25*24*3600*1000));
+            const v = avg * Math.pow(1 + r, years);
+            pts.push({ t, v });
+          }
+          setSeries(pts);
         }
       } catch (e) {
-        setTvError(true);
+        setErr("Failed to load history");
+      } finally {
+        setLoading(false);
       }
-    };
-    initTradingView();
-    return () => {
-      // remove any global side-effects? leave TradingView script if loaded
-    };
-  }, [asset]);
-
-  // fallback: simple small chart using latest price sparkline
-  const sparkline = useMemo(() => {
-    if (!asset) return [];
-    const base = asset.lastPriceUSD || asset.avgPrice || 0;
-    const seed = hashStringToSeed(asset.symbol || String(Math.random()));
-    const rng = seededRng(seed);
-    const arr = [];
-    for (let i = 0; i < 40; i++) {
-      const noise = (rng() - 0.5) * 0.02 * (1 + rng() * (asset.type === "crypto" ? 2 : 1));
-      arr.push(Math.max(0, base * (1 + noise)));
     }
-    return arr;
-  }, [asset]);
+    fetchHistory();
+    return () => { mounted = false; };
+  }, [asset, rangeDays]);
 
+  if (!asset) return null;
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center z-[200] overflow-auto py-8">
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[220]">
       <div className="bg-gray-900 p-4 rounded-lg w-full max-w-4xl border border-gray-800">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold">{asset?.symbol} <span className="text-sm text-gray-400">— {asset?.name}</span></h3>
-            <div className="text-xs text-gray-400">{asset?.description}</div>
-            <div className="mt-2 text-sm">
-              <span className="font-medium">{displayCcy === "IDR" ? fmtMoney((asset?.marketValueUSD || 0) * usdIdr, "IDR") : fmtMoney(asset?.marketValueUSD || 0, "USD")}</span>
-              <span className="text-xs text-gray-400 ml-2">{displayCcy === "IDR" ? `${fmtMoney(asset?.lastPriceUSD * usdIdr, "IDR")} / unit` : `${fmtMoney(asset?.lastPriceUSD, "USD")} / unit`}</span>
+            <h3 className="text-lg font-semibold">{asset.symbol} — {asset.name}</h3>
+            <div className="text-xs text-gray-400">{asset.description || (asset.type === "nonliquid" ? "Non-liquid asset" : "")}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-gray-300">{displayCcy === "IDR" ? `${fmtMoney((series.length?series[series.length-1].v:asset.lastPriceUSD) * usdIdr, "IDR")}` : fmtMoney(series.length?series[series.length-1].v:asset.lastPriceUSD, "USD")}</div>
+            <button onClick={onClose} className="text-gray-400 hover:text-white">Close</button>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {["7","14","30","90","365","max"].map(d => (
+                <button key={d} onClick={() => setRangeDays(d)} className={`text-xs px-2 py-1 rounded ${String(rangeDays)===String(d) ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"} btn`}>{d==="max"?"all":d+"d"}</button>
+              ))}
             </div>
+            <div className="text-xs text-gray-400">Source: {asset.type==="crypto" ? "CoinGecko" : "Finnhub / AlphaVantage / Yahoo (fallback)"}</div>
           </div>
-          <div className="flex gap-2 items-center">
-            <button onClick={onClose} className="bg-gray-800 px-3 py-1 rounded hover:bg-gray-700">Close</button>
+
+          <div className="mt-3">
+            {loading ? (
+              <div className="text-sm text-gray-400">Loading chart…</div>
+            ) : err ? (
+              <div className="text-sm text-red-400">{err}</div>
+            ) : series && series.length > 0 ? (
+              <SimpleLineChart series={series.map(s => ({ t: s.t, v: displayCcy==="IDR" ? s.v * usdIdr : s.v }))} width={980} height={300} displayCcy={displayCcy} usdIdr={usdIdr} />
+            ) : (
+              <div className="text-sm text-gray-400">No series available</div>
+            )}
           </div>
         </div>
 
-        <div className="mt-4">
-          {/* TradingView container */}
-          <div id="tv_chart_container" ref={containerRef} style={{ width: "100%", minHeight: 420 }}>
-            {(!tvLoaded && !tvError) && (
-              <div className="text-xs text-gray-400">Loading TradingView chart…</div>
-            )}
-            {tvError && (
-              <div>
-                <div className="text-sm text-gray-300 mb-2">TradingView is not available — fallback chart below.</div>
-                <div className="bg-gray-800 p-3 rounded">
-                  {/* simple sparkline */}
-                  <svg width="100%" height="160" viewBox={`0 0 600 160`} preserveAspectRatio="none">
-                    <rect x="0" y="0" width="100%" height="100%" fill="#0b1220" />
-                    {(() => {
-                      const w = 600, h = 160;
-                      const max = Math.max(...sparkline), min = Math.min(...sparkline);
-                      const pts = sparkline.map((v, i) => {
-                        const x = (i / (sparkline.length - 1)) * w;
-                        const y = h - ((v - min) / Math.max(1e-9, (max - min))) * h;
-                        return [x, y];
-                      });
-                      const path = pts.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join(" ");
-                      return <path d={path} stroke="#4D96FF" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />;
-                    })()}
-                  </svg>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );
 }
 
-/* ===================== SMALL UI & CHART COMPONENTS (reused) ===================== */
-/* CakeAllocation and CandlesWithLines components are similar to prior file,
-   kept concise here (use earlier implementation's logic). For brevity they are included
-   but unchanged functionally from the prior final that you validated. */
+/* ========== MAIN DASHBOARD COMPONENT ========== */
 
-/* Reuse CakeAllocation from prior file (same behavior as previous) */
-function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
-  const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
-  const cx = size / 2, cy = size / 2;
-  const maxOuter = size / 2 - 6;
-  const minOuter = inner + 8;
-  const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
-  const scaleOuter = (v) => {
-    if (!v || v <= 0) return inner + 6;
-    const frac = v / maxValue;
-    return Math.round(minOuter + frac * (maxOuter - minOuter));
-  };
-  const colors = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#FF9CEE","#B28DFF","#FFB26B","#6BFFA0","#FF6BE5","#00C49F"];
-  const [hoverIndex, setHoverIndex] = useState(null);
-  const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, html: "" });
-  const wrapRef = useRef(null);
-  const formatForDisplayCcy = (v) => displayCcy === "IDR" ? fmtMoney((v || 0) * usdIdr, "IDR") : fmtMoney(v || 0, "USD");
-
-  const onSliceEnter = (i, ev, d) => {
-    setHoverIndex(i);
-    const rect = wrapRef.current?.getBoundingClientRect();
-    const px = (ev.clientX - (rect?.left || 0)) + 12;
-    const py = (ev.clientY - (rect?.top || 0)) - 12;
-    setTooltip({ show: true, x: px, y: py, html: `${d.name} • ${formatForDisplayCcy(d.value)}` });
-  };
-  const onSliceMove = (ev) => {
-    const rect = wrapRef.current?.getBoundingClientRect();
-    const px = (ev.clientX - (rect?.left || 0)) + 12;
-    setTooltip(t => ({ ...t, x: px }));
-  };
-  const onSliceLeave = () => {
-    setHoverIndex(null);
-    setTooltip({ show: false, x: 0, y: 0, html: "" });
-  };
-
-  let start = -Math.PI / 2;
-  const arcs = data.map((d) => {
-    const portion = Math.max(0, d.value || 0) / total;
-    const angle = portion * Math.PI * 2;
-    const end = start + angle;
-    const rOuter = scaleOuter(d.value || 0);
-    const arc = { start, end, outer: rOuter };
-    start = end;
-    return arc;
-  });
-
-  function arcPath(cx, cy, rInner, rOuter, startAngle, endAngle) {
-    const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
-    const x1 = cx + rOuter * Math.cos(startAngle);
-    const y1 = cy + rOuter * Math.sin(startAngle);
-    const x2 = cx + rOuter * Math.cos(endAngle);
-    const y2 = cy + rOuter * Math.sin(endAngle);
-    const xi2 = cx + rInner * Math.cos(endAngle);
-    const yi2 = cy + rInner * Math.sin(endAngle);
-    const xi1 = cx + rInner * Math.cos(startAngle);
-    const yi1 = cy + rInner * Math.sin(startAngle);
-    return `M ${cx} ${cy} L ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${rInner} ${rInner} 0 ${large} 0 ${xi1} ${yi1} Z`;
-  }
-
-  return (
-    <div ref={wrapRef} style={{ width: size, height: size, position: "relative" }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {data.map((d, i) => {
-          const arc = arcs[i];
-          const gapAngle = Math.min(arc.end - arc.start, gap);
-          const s = arc.start + gapAngle / 2;
-          const e = arc.end - gapAngle / 2;
-          const path = arcPath(cx, cy, inner, arc.outer, s, e);
-          const isHover = hoverIndex === i;
-          const mid = (s + e) / 2;
-          const transform = isHover ? `translate(${Math.cos(mid) * 6},${Math.sin(mid) * 6})` : undefined;
-          return (
-            <g key={i} transform={transform}>
-              <path
-                d={path}
-                fill={colors[i % colors.length]}
-                stroke="#000"
-                strokeWidth={isHover ? 1.8 : 0.6}
-                onMouseEnter={(ev) => onSliceEnter(i, ev, d)}
-                onMouseMove={(ev) => onSliceMove(ev)}
-                onMouseLeave={onSliceLeave}
-                className="slice"
-              />
-            </g>
-          );
-        })}
-
-        <circle cx={cx} cy={cy} r={inner - 4} fill="#070707" />
-        <text x={cx} y={cy - 8} textAnchor="middle" fontSize="10" fill="#9CA3AF">Total</text>
-        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="11" fontWeight={700} fill="#E5E7EB">
-          {displayTotal}
-        </text>
-      </svg>
-
-      <div style={{
-        position: "absolute",
-        left: tooltip.x,
-        top: tooltip.y,
-        transform: "translate(-6px,-100%)",
-        padding: "8px 10px",
-        background: "#111827",
-        border: "1px solid rgba(255,255,255,0.06)",
-        color: "#E5E7EB",
-        borderRadius: 8,
-        fontSize: 12,
-        boxShadow: "0 6px 18px rgba(0,0,0,0.5)",
-        pointerEvents: "none",
-        opacity: tooltip.show ? 1 : 0,
-        transition: "opacity 140ms, transform 120ms",
-        whiteSpace: "nowrap",
-        zIndex: 40
-      }}>
-        {tooltip.html}
-      </div>
-    </div>
-  );
-}
-
-/* CandlesWithLines: reuse previous component logic (omitted for brevity) */
-/* ... (to keep file compact in this message, use the same implementation as prior CandlesWithLines
-   from previous final code — the actual file should include it unchanged) ... */
-
-/* For brevity in this message I'll re-include a simplified CandlesWithLines that renders a multi-line chart */
-function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 900, height = 300, rangeKey = "all", onHover }) {
-  // simplified: draws a single line for "all"
-  const arr = (seriesMap["all"] || []).slice(-200);
-  if (!arr || arr.length < 2) return <div className="text-xs text-gray-500">Not enough data for chart</div>;
-  const values = arr.map(p => displayCcy === "IDR" ? p.v * usdIdr : p.v);
-  const max = Math.max(...values), min = Math.min(...values), range = Math.max(1e-9, max - min);
-  const points = values.map((v, i) => {
-    const x = (i / (values.length - 1)) * (width - 80) + 40;
-    const y = 20 + (1 - (v - min) / range) * (height - 40);
-    return `${i===0?"M":"L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-  }).join(" ");
-  return (
-    <div className="w-full overflow-hidden rounded bg-gray-900 p-2">
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-        <rect x="0" y="0" width="100%" height="100%" fill="transparent" />
-        <path d={points} stroke="#4D96FF" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </div>
-  );
-}
-
-/* ===================== MAIN COMPONENT ===================== */
 export default function PortfolioDashboard() {
-  /* ---------- persistent state ---------- */
+  /* persistent state */
   const loadAssets = () => {
     try {
       if (!isBrowser) return [];
       const raw = JSON.parse(localStorage.getItem("pf_assets_v2") || "[]");
       if (!Array.isArray(raw)) return [];
       return raw.map(ensureNumericAsset);
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   };
   const [assets, setAssets] = useState(loadAssets);
 
   const loadRealized = () => {
-    try {
-      if (!isBrowser) return 0;
-      return toNum(localStorage.getItem("pf_realized_v2") || 0);
-    } catch { return 0; }
+    try { if (!isBrowser) return 0; return toNum(localStorage.getItem("pf_realized_v2") || 0); } catch { return 0; }
   };
   const [realizedUSD, setRealizedUSD] = useState(loadRealized);
 
   const loadDisplayCcy = () => {
-    try {
-      if (!isBrowser) return "USD";
-      return localStorage.getItem("pf_display_ccy_v2") || "USD";
-    } catch { return "USD"; }
+    try { if (!isBrowser) return "USD"; return localStorage.getItem("pf_display_ccy_v2") || "USD"; } catch { return "USD"; }
   };
   const [displayCcy, setDisplayCcy] = useState(loadDisplayCcy);
 
   const loadTransactions = () => {
-    try {
-      if (!isBrowser) return [];
-      const raw = JSON.parse(localStorage.getItem("pf_transactions_v2") || "[]");
-      if (!Array.isArray(raw)) return [];
-      return raw.map(t => ({ ...t }));
-    } catch {
-      return [];
-    }
+    try { if (!isBrowser) return []; const raw = JSON.parse(localStorage.getItem("pf_transactions_v2") || "[]"); return Array.isArray(raw) ? raw : []; } catch { return []; }
   };
   const [transactions, setTransactions] = useState(loadTransactions);
 
-  /* ---------- UI & FX ---------- */
+  /* UI & FX */
   const [usdIdr, setUsdIdr] = useState(16000);
   const [fxLoading, setFxLoading] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  /* ---------- other UI state ---------- */
+  /* add/search */
   const [openAdd, setOpenAdd] = useState(false);
   const [searchMode, setSearchMode] = useState("crypto");
   const [query, setQuery] = useState("");
@@ -440,22 +328,27 @@ export default function PortfolioDashboard() {
   const [nlYoy, setNlYoy] = useState("5");
   const [nlDesc, setNlDesc] = useState("");
 
+  /* live quotes */
   const [lastTick, setLastTick] = useState(null);
+
+  /* filters / menus */
   const [portfolioFilter, setPortfolioFilter] = useState("all");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [transactionsOpen, setTransactionsOpen] = useState(false);
   const [lastDeletedTx, setLastDeletedTx] = useState(null);
+
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
+
   const [chartRange, setChartRange] = useState("all");
   const [chartHover, setChartHover] = useState(null);
+
   const [sortBy, setSortBy] = useState("market_desc");
-
   const [assetChartOpen, setAssetChartOpen] = useState(false);
-  const [activeAssetForChart, setActiveAssetForChart] = useState(null);
+  const [activeChartAsset, setActiveChartAsset] = useState(null);
 
-  /* refs */
+  /* refs for clicking outside */
   const filterMenuRef = useRef(null);
   const sortMenuRef = useRef(null);
   const suggestionsRef = useRef(null);
@@ -468,36 +361,25 @@ export default function PortfolioDashboard() {
   useEffect(() => { try { localStorage.setItem("pf_display_ccy_v2", displayCcy); } catch {} }, [displayCcy]);
   useEffect(() => { try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {} }, [transactions]);
 
-  /* click outside close */
+  /* click outside close menus */
   useEffect(() => {
     function onPointerDown(e) {
-      const target = e.target;
-      if (filterMenuOpen && filterMenuRef.current && !filterMenuRef.current.contains(target) && !e.target.closest('[aria-label="Filter"]')) {
-        setFilterMenuOpen(false);
-      }
-      if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(target) && !e.target.closest('[aria-label="Sort"]')) {
-        setSortMenuOpen(false);
-      }
-      if (suggestions.length > 0 && suggestionsRef.current && !suggestionsRef.current.contains(target) && !addPanelRef.current?.contains(target)) {
-        setSuggestions([]);
-      }
-      if (openAdd && addPanelRef.current && !addPanelRef.current.contains(target) && !e.target.closest('[aria-label="Add asset"]')) {
-        setOpenAdd(false);
-      }
-      if (currencyMenuOpen && currencyMenuRef.current && !currencyMenuRef.current.contains(target) && !e.target.closest('[aria-label="Currency"]')) {
-        setCurrencyMenuOpen(false);
-      }
+      const t = e.target;
+      if (filterMenuOpen && filterMenuRef.current && !filterMenuRef.current.contains(t) && !e.target.closest('[aria-label="Filter"]')) setFilterMenuOpen(false);
+      if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(t) && !e.target.closest('[aria-label="Sort"]')) setSortMenuOpen(false);
+      if (suggestions.length > 0 && suggestionsRef.current && !suggestionsRef.current.contains(t) && !addPanelRef.current?.contains(t)) setSuggestions([]);
+      if (openAdd && addPanelRef.current && !addPanelRef.current.contains(t) && !e.target.closest('[aria-label="Add asset"]')) setOpenAdd(false);
+      if (currencyMenuOpen && currencyMenuRef.current && !currencyMenuRef.current.contains(t) && !e.target.closest('[aria-label="Currency"]')) setCurrencyMenuOpen(false);
     }
     document.addEventListener("pointerdown", onPointerDown, { passive: true });
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd, currencyMenuOpen]);
 
-  /* search (unchanged) */
+  /* search suggestions */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
-      setSuggestions([]);
-      return;
+      setSuggestions([]); return;
     }
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(async () => {
@@ -507,17 +389,10 @@ export default function PortfolioDashboard() {
           const res = await fetch(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}`);
           if (!res.ok) { setSuggestions([]); return; }
           const j = await res.json();
-          setSuggestions((j.coins || []).slice(0, 20).map((c) => ({
-            id: c.id, symbol: (c.symbol || "").toUpperCase(), display: c.name,
-            source: "coingecko", type: "crypto",
-          })));
+          setSuggestions((j.coins || []).slice(0, 20).map((c) => ({ id: c.id, symbol: (c.symbol||"").toUpperCase(), display: c.name, source: "coingecko", type: "crypto" })));
           return;
         }
-
-        const proxyCandidates = [
-          YAHOO_SEARCH,
-          (t) => `/api/search?q=${encodeURIComponent(t)}`,
-        ];
+        const proxyCandidates = [ YAHOO_SEARCH, (t)=>`/api/search?q=${encodeURIComponent(t)}` ];
         let payload = null;
         for (const p of proxyCandidates) {
           try {
@@ -529,57 +404,25 @@ export default function PortfolioDashboard() {
           } catch (e) {}
         }
         if (!payload) { setSuggestions([]); return; }
-
         const rawList = payload.quotes || payload.result || (payload.data && payload.data.quotes) || (payload.finance && payload.finance.result && payload.finance.result.quotes) || payload.items || [];
-        const list = (Array.isArray(rawList) ? rawList : []).slice(0, 120).map((it) => {
-          const symbol =
-            it.symbol ||
-            it.ticker ||
-            it.symbolDisplay ||
-            it.id ||
-            (typeof it === "string" ? it : "");
-          const display =
-            it.shortname ||
-            it.shortName ||
-            it.longname ||
-            it.longName ||
-            it.name ||
-            it.title ||
-            it.displayName ||
-            it.description ||
-            symbol;
+        const list = (Array.isArray(rawList) ? rawList : []).slice(0,120).map(it => {
+          const symbol = it.symbol || it.ticker || it.id || (typeof it==="string"?it:"");
+          const display = it.shortname || it.shortName || it.longname || it.name || it.title || it.displayName || symbol;
           const exchange = it.exchange || it.fullExchangeName || it.exchangeName || it.exchDisp || "";
           const currency = it.currency || it.quoteCurrency || "";
-          return {
-            symbol: (symbol || "").toString().toUpperCase(),
-            display: display || symbol,
-            exchange,
-            currency,
-            source: "yahoo",
-            type: "stock",
-          };
+          return { symbol: (symbol||"").toString().toUpperCase(), display, exchange, currency, source: "yahoo", type: "stock" };
         });
-
         if (searchMode === "id") {
-          setSuggestions(list.filter((x) =>
-            (x.symbol || "").toUpperCase().includes(".JK") ||
-            String(x.exchange || "").toUpperCase().includes("JAKARTA") ||
-            String(x.exchange || "").toUpperCase().includes("IDX")
-          ).slice(0, 30));
+          setSuggestions(list.filter(x=>(x.symbol||"").toUpperCase().includes(".JK") || String(x.exchange||"").toUpperCase().includes("JAKARTA") || String(x.exchange||"").toUpperCase().includes("IDX")).slice(0,30));
         } else {
-          setSuggestions(list.filter((x) => !(x.symbol || "").toUpperCase().endsWith(".JK")).slice(0, 30));
+          setSuggestions(list.filter(x=>!(x.symbol||"").toUpperCase().endsWith(".JK")).slice(0,30));
         }
-      } catch (e) {
-        console.warn("search err", e);
-        setSuggestions([]);
-      }
+      } catch (e) { console.warn("search err", e); setSuggestions([]); }
     }, 320);
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
-  /* POLLING (crypto & stocks) with robust fallback order:
-     FINNHUB -> Yahoo -> AlphaVantage proxy -> Google proxy
-  */
+  /* POLLING PRICES: crypto & stocks (improved fallback order: Finnhub -> AlphaVantage -> Yahoo) */
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -589,18 +432,15 @@ export default function PortfolioDashboard() {
     let mounted = true;
     async function pollCg() {
       try {
-        const ids = Array.from(new Set(assetsRef.current.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId)));
-        if (ids.length === 0) {
-          if (isInitialLoading && mounted) setIsInitialLoading(false);
-          return;
-        }
+        const ids = Array.from(new Set(assetsRef.current.filter(a=>a.type==="crypto" && a.coingeckoId).map(a=>a.coingeckoId)));
+        if (ids.length === 0) { if (isInitialLoading && mounted) setIsInitialLoading(false); return; }
         const res = await fetch(COINGECKO_PRICE(ids.join(",")));
         if (!mounted || !res.ok) return;
         const j = await res.json();
         setAssets(prev => prev.map(a => {
           if (a.type === "crypto" && j[a.coingeckoId] && typeof j[a.coingeckoId].usd === "number") {
             const last = toNum(j[a.coingeckoId].usd);
-            return ensureNumericAsset({ ...a, lastPriceUSD: last, marketValueUSD: last * toNum(a.shares || 0) });
+            return ensureNumericAsset({...a, lastPriceUSD: last, marketValueUSD: last * toNum(a.shares||0)});
           }
           return ensureNumericAsset(a);
         }));
@@ -610,115 +450,98 @@ export default function PortfolioDashboard() {
     }
     pollCg();
     const id = setInterval(pollCg, 6000);
-    return () => { mounted = false; clearInterval(id); };
+    return () => { mounted=false; clearInterval(id); };
   }, [isInitialLoading]);
 
   useEffect(() => {
     let mounted = true;
     async function pollStocks() {
       try {
-        const symbols = Array.from(new Set(assetsRef.current.filter(a => a.type === "stock").map(a => a.symbol))).slice(0, 50);
-        if (symbols.length === 0) {
-          if (isInitialLoading && mounted) setIsInitialLoading(false);
-          return;
-        }
+        const symbols = Array.from(new Set(assetsRef.current.filter(a=>a.type==="stock").map(a=>a.symbol))).slice(0,50);
+        if (symbols.length === 0) { if (isInitialLoading && mounted) setIsInitialLoading(false); return; }
         const map = {};
-        // 1) FINNHUB per-symbol
+        // 1) Finnhub per symbol
         for (const s of symbols) {
-          if (map[s]) continue;
           try {
             const res = await fetch(FINNHUB_QUOTE(s));
-            if (!res.ok) throw new Error("finnhub fail");
-            const js = await res.json();
-            const current = toNum(js?.c ?? js?.current ?? 0);
-            if (current > 0) {
-              const looksLikeId = String(s || "").toUpperCase().endsWith(".JK") || String(js?.symbol || "").toUpperCase().endsWith(".JK") || String(js?.exchange || "").toUpperCase().includes("IDX");
-              let priceUSD = current;
-              if (looksLikeId) {
-                const fx = usdIdrRef.current || 1;
-                priceUSD = fx > 0 ? (current / fx) : current;
+            if (res.ok) {
+              const js = await res.json();
+              const current = toNum(js?.c ?? js?.current ?? 0);
+              if (current > 0) {
+                const looksLikeId = String(s||"").toUpperCase().endsWith(".JK") || String(js?.exchange||"").toUpperCase().includes("IDX");
+                let priceUSD = current;
+                if (looksLikeId) {
+                  const fx = usdIdrRef.current || 1;
+                  priceUSD = fx > 0 ? (current / fx) : current;
+                }
+                map[s] = { symbol: s, priceRaw: current, priceUSD, currency: looksLikeId ? "IDR" : js?.currency || "USD", fullExchangeName: js?.exchange || "", _source: "finnhub" };
               }
-              if (priceUSD > 0) map[s] = { symbol: s, priceRaw: current, priceUSD, _source: "finnhub", currency: looksLikeId ? "IDR" : js?.currency || "USD", fullExchangeName: js?.exchange || "" };
             }
-          } catch (e) {
-            // continue to other sources
+          } catch (e) {}
+        }
+
+        // 2) AlphaVantage fallback for missing
+        const missing = symbols.filter(s => !map[s]);
+        if (missing.length > 0) {
+          for (const s of missing) {
+            try {
+              const url = ALPHAVANTAGE_HISTORY(s, "compact");
+              const res = await fetch(url);
+              if (!res.ok) continue;
+              const j = await res.json();
+              if (j && j["Time Series (Daily)"]) {
+                const dates = Object.keys(j["Time Series (Daily)"]).sort((a,b)=>new Date(a)-new Date(b));
+                const lastDate = dates[dates.length-1];
+                const price = toNum(j["Time Series (Daily)"][lastDate]["4. close"]);
+                if (price > 0) {
+                  map[s] = { symbol: s, priceRaw: price, priceUSD: price, currency: j["Meta Data"]?.["5. Currency"] || "USD", _source: "alphavantage" };
+                }
+              }
+            } catch (e) {}
           }
         }
 
-        // 2) Yahoo bulk fallback for missing
-        const missing = symbols.filter(s => !map[s]);
-        if (missing.length > 0) {
+        // 3) Yahoo fallback
+        const stillMissing = symbols.filter(s => !map[s]);
+        if (stillMissing.length > 0) {
           try {
-            const res = await fetch(YAHOO_QUOTE(missing.join(",")));
+            const res = await fetch(YAHOO_QUOTE(stillMissing.join(",")));
             if (res.ok) {
               const j = await res.json();
               if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
                 j.quoteResponse.result.forEach(q => {
-                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency, fullExchangeName: q.fullExchangeName, _source: "yahoo" };
-                });
-              } else if (Array.isArray(j)) {
-                j.forEach(q => {
-                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, _source: "yahoo" };
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? 0);
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, priceUSD: price, currency: q.currency || "USD", fullExchangeName: q.fullExchangeName, _source: "yahoo" };
                 });
               }
             }
           } catch (e) {}
         }
 
-        // 3) AlphaVantage proxy fallback
-        const stillMissing = symbols.filter(s => !map[s]);
-        for (const s of stillMissing) {
-          try {
-            const res = await fetch(ALPHAVANTAGE_QUOTE(s));
-            if (!res.ok) continue;
-            const j = await res.json();
-            // Many alpha vantage proxies return { "Global Quote": { "05. price": "..." } } or custom shape
-            const price = toNum(j?.["Global Quote"]?.["05. price"] || j?.price || j?.last || 0);
-            if (price > 0) map[s] = { symbol: s, priceRaw: price, _source: "alphavantage" };
-          } catch (e) {}
-        }
-
-        // 4) Google proxy fallback
-        const stillMissing2 = symbols.filter(s => !map[s]);
-        for (const s of stillMissing2) {
-          try {
-            const res = await fetch(GOOGLE_QUOTE(s));
-            if (!res.ok) continue;
-            const j = await res.json();
-            const price = toNum(j?.price || j?.l || 0);
-            if (price > 0) map[s] = { symbol: s, priceRaw: price, _source: "google" };
-          } catch (e) {}
-        }
-
-        // Apply results
+        // Apply to assets
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
             const entry = map[a.symbol];
-            let priceRaw = toNum(entry.priceRaw || 0);
+            let price = toNum(entry.priceUSD || entry.priceRaw || 0);
             const currency = (entry.currency || "").toString().toUpperCase();
-            let priceUSD = priceRaw;
-            const looksLikeId = currency === "IDR" || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
-            if (looksLikeId && priceRaw > 0) {
+            const looksLikeId = currency === "IDR" || String(a.symbol||"").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
+            if (looksLikeId && entry.priceRaw) {
               const fx = usdIdrRef.current || 1;
-              priceUSD = fx > 0 ? (priceRaw / fx) : priceRaw;
+              price = fx > 0 ? (toNum(entry.priceRaw) / fx) : toNum(entry.priceRaw);
             }
-            if (!(priceUSD > 0)) priceUSD = a.avgPrice || a.lastPriceUSD || 0;
-            return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
+            if (!(price > 0)) price = a.avgPrice || a.lastPriceUSD || 0;
+            return ensureNumericAsset({...a, lastPriceUSD: price, marketValueUSD: price * toNum(a.shares||0)});
           }
           return ensureNumericAsset(a);
         }));
 
         setLastTick(Date.now());
         if (isInitialLoading && mounted) setIsInitialLoading(false);
-      } catch (e) {
-        // silent
-      }
+      } catch (e) {}
     }
     pollStocks();
-    const id = setInterval(pollStocks, 5000);
-    return () => { mounted = false; clearInterval(id); };
+    const id = setInterval(pollStocks, 7000);
+    return () => { mounted=false; clearInterval(id); };
   }, [isInitialLoading]);
 
   /* FX tether -> IDR */
@@ -737,7 +560,7 @@ export default function PortfolioDashboard() {
     }
     fetchFx();
     const id = setInterval(fetchFx, 60_000);
-    return () => { mounted = false; clearInterval(id); };
+    return () => { mounted=false; clearInterval(id); };
   }, []);
 
   /* non-liquid last price growth */
@@ -748,7 +571,7 @@ export default function PortfolioDashboard() {
     return last;
   }
 
-  /* apply/reverse transactions (same as previous, unchanged) */
+  /* transaction effects helpers (same as before) */
   function applyTransactionEffects(tx) {
     if (!tx) return;
     if (tx.type === "sell") {
@@ -790,7 +613,6 @@ export default function PortfolioDashboard() {
       }
     }
   }
-
   function reverseTransactionEffects(tx) {
     if (!tx) return;
     if (tx.type === "sell") {
@@ -840,57 +662,43 @@ export default function PortfolioDashboard() {
     }
   }
 
-  /* add helpers (unchanged) */
+  /* add handlers */
   function addAssetFromSuggestion(s) {
-    const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
+    const internalId = `${s.source||s.type}:${s.symbol||s.id}:${Date.now()}`;
     const asset = ensureNumericAsset({
-      id: internalId, type: s.source === "coingecko" ? "crypto" : "stock",
-      coingeckoId: s.source === "coingecko" ? s.id || s.coingeckoId : undefined,
-      symbol: (s.symbol || s.id).toString().toUpperCase(), name: s.display || s.name || s.symbol,
-      shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
-      createdAt: Date.now(),
+      id: internalId, type: s.source==="coingecko"?"crypto":"stock",
+      coingeckoId: s.source==="coingecko"?s.id||s.coingeckoId:undefined,
+      symbol: (s.symbol||s.id).toString().toUpperCase(), name: s.display||s.name||s.symbol,
+      shares:0, avgPrice:0, investedUSD:0,lastPriceUSD:0,marketValueUSD:0, createdAt: Date.now()
     });
-    setAssets(prev => [...prev, asset]);
+    setAssets(prev=>[...prev, asset]);
     setOpenAdd(false); setQuery(""); setSuggestions([]); setSelectedSuggestion(null);
   }
-
   async function addManualAsset() {
     const typed = query.split("—")[0].trim();
     if (!typed) { alert("Type symbol or select suggestion"); return; }
     let newAsset = null;
     if (searchMode === "crypto") {
-      newAsset = ensureNumericAsset({
-        id: `manual:cg:${typed}:${Date.now()}`, type: "crypto",
-        coingeckoId: typed.toLowerCase(), symbol: typed.toUpperCase(), name: typed,
-        shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
-      });
+      newAsset = ensureNumericAsset({ id:`manual:cg:${typed}:${Date.now()}`, type:"crypto", coingeckoId: typed.toLowerCase(), symbol: typed.toUpperCase(), name: typed, shares:0, avgPrice:0, investedUSD:0, lastPriceUSD:0, marketValueUSD:0 });
     } else {
-      newAsset = ensureNumericAsset({
-        id: `manual:yh:${typed}:${Date.now()}`, type: "stock",
-        symbol: typed.toUpperCase(), name: typed.toUpperCase(),
-        shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
-      });
+      newAsset = ensureNumericAsset({ id:`manual:yh:${typed}:${Date.now()}`, type:"stock", symbol: typed.toUpperCase(), name: typed.toUpperCase(), shares:0, avgPrice:0, investedUSD:0, lastPriceUSD:0, marketValueUSD:0 });
     }
-    setAssets(prev => [...prev, newAsset]);
+    setAssets(prev=>[...prev,newAsset]);
     setOpenAdd(false); setQuery("");
   }
-
   async function addAssetWithInitial() {
     let picked = selectedSuggestion;
     if (!picked) {
       const typed = query.split("—")[0].trim();
       if (!typed) { alert("Select suggestion or type symbol"); return; }
-      if (searchMode === "crypto") {
-        picked = { source: "coingecko", id: typed.toLowerCase(), symbol: typed.toUpperCase(), display: typed };
-      } else {
-        picked = { source: "yahoo", symbol: typed.toUpperCase(), display: typed.toUpperCase() };
-      }
+      if (searchMode === "crypto") picked = { source: "coingecko", id: typed.toLowerCase(), symbol: typed.toUpperCase(), display: typed };
+      else picked = { source: "yahoo", symbol: typed.toUpperCase(), display: typed.toUpperCase() };
     }
     const qty = toNum(initQty);
     const priceInput = toNum(initPrice);
     if (qty <= 0 || priceInput <= 0) { alert("Qty & price must be > 0"); return; }
 
-    const internalId = `${picked.source || picked.type}:${picked.symbol || picked.id}:${Date.now()}`;
+    const internalId = `${picked.source||picked.type}:${picked.symbol||picked.id}:${Date.now()}`;
     const priceInUSD = initPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
     const asset = ensureNumericAsset({
       id: internalId,
@@ -920,12 +728,12 @@ export default function PortfolioDashboard() {
     if (!name) { alert("Enter non-liquid asset name (Land, Art, Rolex...)"); return; }
     if (qty <= 0 || priceInput <= 0) { alert("Qty & price must be > 0"); return; }
     const priceUSD = nlPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
-    const id = `nonliquid:${name.replace(/\s+/g, "_")}:${Date.now()}`;
+    const id = `nonliquid:${name.replace(/\s+/g,"_")}:${Date.now()}`;
     const last = computeNonLiquidLastPrice(priceUSD, purchaseDateMs, yoy);
     const asset = ensureNumericAsset({
       id,
       type: "nonliquid",
-      symbol: (name.length > 12 ? name.slice(0, 12) + "…" : name).toUpperCase(),
+      symbol: (name.length>12?name.slice(0,12)+"…":name).toUpperCase(),
       name,
       shares: qty,
       avgPrice: priceUSD,
@@ -937,167 +745,132 @@ export default function PortfolioDashboard() {
       nonLiquidYoy: yoy,
       description: nlDesc || "",
     });
-    setAssets(prev => [...prev, asset]);
+    setAssets(prev=>[...prev,asset]);
     setNlName(""); setNlQty(""); setNlPrice(""); setNlPurchaseDate(""); setNlYoy("5"); setNlDesc("");
     setOpenAdd(false);
   }
 
-  /* buy/sell */
+  /* buy/sell modal */
   function openTradeModal(assetId, mode) {
-    const asset = assets.find(a => a.id === assetId);
+    const asset = assets.find(a=>a.id===assetId);
     if (!asset) return;
     const defaultPrice = asset.lastPriceUSD || asset.avgPrice || 0;
-    setTradeModal({ open: true, mode, assetId, defaultPrice });
+    setTradeModal({ open:true, mode, assetId, defaultPrice });
   }
-  function closeTradeModal() { setTradeModal({ open: false, mode: null, assetId: null, defaultPrice: null }); }
+  function closeTradeModal() { setTradeModal({ open:false, mode:null, assetId:null, defaultPrice:null }); }
 
   function performBuy(qty, pricePerUnit) {
     const id = tradeModal.assetId; if (!id) return;
     const q = toNum(qty), p = toNum(pricePerUnit);
-    if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
-
+    if (q <=0 || p <=0) { alert("Qty & price must be > 0"); return; }
     const cost = q * p;
-    const tx = {
-      id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
-      assetId: id,
-      assetType: (assets.find(a=>a.id===id)||{}).type || "stock",
-      symbol: (assets.find(a=>a.id===id)||{}).symbol || "",
-      name: (assets.find(a=>a.id===id)||{}).name || "",
-      type: "buy",
-      qty: q,
-      pricePerUnit: p,
-      cost,
-      date: Date.now(),
-    };
-
-    setTransactions(prev => [tx, ...prev].slice(0, 1000));
+    const tx = { id:`tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`, assetId:id, assetType:(assets.find(a=>a.id===id)||{}).type||"stock", symbol: (assets.find(a=>a.id===id)||{}).symbol||"", name:(assets.find(a=>a.id===id)||{}).name||"", type:"buy", qty:q, pricePerUnit:p, cost, date:Date.now() };
+    setTransactions(prev=>[tx,...prev].slice(0,1000));
     applyTransactionEffects(tx);
     closeTradeModal();
   }
-
   function performSell(qty, pricePerUnit) {
     const id = tradeModal.assetId; if (!id) return;
     const q = toNum(qty), p = toNum(pricePerUnit);
-    if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
-    const a = assets.find(x => x.id === id); if (!a) return;
-    const oldShares = toNum(a.shares || 0); if (q > oldShares) { alert("Cannot sell more than you own"); return; }
-
-    const avg = toNum(a.avgPrice || 0);
+    if (q <=0 || p <=0) { alert("Qty & price must be > 0"); return; }
+    const a = assets.find(x=>x.id===id); if (!a) return;
+    const oldShares = toNum(a.shares||0); if (q>oldShares) { alert("Cannot sell more than you own"); return; }
+    const avg = toNum(a.avgPrice||0);
     const proceeds = q * p, costOfSold = q * avg;
     const realized = proceeds - costOfSold;
-
-    const tx = {
-      id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
-      assetId: a.id,
-      assetType: a.type || "stock",
-      symbol: a.symbol,
-      name: a.name || "",
-      type: "sell",
-      qty: q,
-      pricePerUnit: p,
-      proceeds,
-      costOfSold,
-      realized,
-      date: Date.now(),
-    };
-
+    const tx = { id:`tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`, assetId:a.id, assetType:a.type||"stock", symbol:a.symbol, name:a.name||"", type:"sell", qty:q, pricePerUnit:p, proceeds, costOfSold, realized, date:Date.now() };
     applyTransactionEffects(tx);
-    setTransactions(prev => [tx, ...prev].slice(0, 1000));
+    setTransactions(prev=>[tx,...prev].slice(0,1000));
     closeTradeModal();
   }
 
-  /* tx delete/restore */
+  /* transactions delete / restore */
   function deleteTransaction(txId) {
-    const tx = transactions.find(t => t.id === txId);
-    if (!tx) return;
-    if (!confirm(`Delete & CANCEL transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})? This will reverse its effect and can be undone.`)) return;
+    const tx = transactions.find(t=>t.id===txId); if (!tx) return;
+    if (!confirm(`Delete & CANCEL transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit|| (tx.cost/tx.qty))})?`)) return;
     reverseTransactionEffects(tx);
-    setTransactions(prev => prev.filter(t => t.id !== txId));
+    setTransactions(prev=>prev.filter(t=>t.id!==txId));
     setLastDeletedTx(tx);
   }
-
   function restoreTransaction(txId) {
-    const tx = transactions.find(t => t.id === txId);
-    if (!tx) return;
-    if (!confirm(`Restore (reverse) transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})?`)) return;
+    const tx = transactions.find(t=>t.id===txId); if (!tx) return;
+    if (!confirm(`Restore transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit|| (tx.cost/tx.qty))})?`)) return;
     reverseTransactionEffects(tx);
-    setTransactions(prev => prev.filter(t => t.id !== txId));
+    setTransactions(prev=>prev.filter(t=>t.id!==txId));
   }
-
   function undoLastDeletedTransaction() {
     if (!lastDeletedTx) return;
     applyTransactionEffects(lastDeletedTx);
-    setTransactions(prev => [lastDeletedTx, ...prev]);
+    setTransactions(prev=>[lastDeletedTx,...prev]);
     setLastDeletedTx(null);
   }
   function purgeLastDeletedTransaction() { setLastDeletedTx(null); }
 
+  /* remove asset */
   function removeAsset(id) {
-    const a = assets.find(x => x.id === id); if (!a) return;
-    if (!confirm(`Delete ${a.symbol} (${a.name || ""}) from portfolio?`)) return;
-    setAssets(prev => prev.filter(x => x.id !== id));
+    const a = assets.find(x=>x.id===id); if(!a) return;
+    if (!confirm(`Delete ${a.symbol} (${a.name||""}) from portfolio?`)) return;
+    setAssets(prev=>prev.filter(x=>x.id!==id));
   }
 
   /* computed rows & totals */
-  const rows = useMemo(() => assets.map(a => {
+  const rows = useMemo(()=>assets.map(a=>{
     const aa = ensureNumericAsset(a);
     if (aa.type === "nonliquid") {
       const last = computeNonLiquidLastPrice(aa.avgPrice, aa.purchaseDate || aa.createdAt, aa.nonLiquidYoy || 0);
-      aa.lastPriceUSD = last;
-      aa.marketValueUSD = last * toNum(aa.shares || 0);
+      aa.lastPriceUSD = last; aa.marketValueUSD = last * toNum(aa.shares||0);
     } else {
       aa.lastPriceUSD = toNum(aa.lastPriceUSD || 0);
-      if (!aa.lastPriceUSD || aa.lastPriceUSD <= 0) {
-        aa.lastPriceUSD = aa.avgPrice || aa.lastPriceUSD || 0;
-      }
-      aa.marketValueUSD = toNum(aa.shares || 0) * aa.lastPriceUSD;
+      if (!aa.lastPriceUSD || aa.lastPriceUSD <= 0) aa.lastPriceUSD = aa.avgPrice || aa.lastPriceUSD || 0;
+      aa.marketValueUSD = toNum(aa.shares||0) * aa.lastPriceUSD;
     }
     const last = aa.lastPriceUSD || aa.avgPrice || 0;
-    const market = aa.marketValueUSD || (toNum(aa.shares || 0) * last);
+    const market = aa.marketValueUSD || (toNum(aa.shares||0) * last);
     const invested = toNum(aa.investedUSD || 0);
     const pnl = market - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
     return { ...aa, lastPriceUSD: last, marketValueUSD: market, investedUSD: invested, pnlUSD: pnl, pnlPct };
   }), [assets, usdIdr]);
 
-  const filteredRows = useMemo(() => {
-    if (portfolioFilter === "all") return rows;
-    if (portfolioFilter === "crypto") return rows.filter(r => r.type === "crypto");
-    if (portfolioFilter === "stock") return rows.filter(r => r.type === "stock");
-    if (portfolioFilter === "nonliquid") return rows.filter(r => r.type === "nonliquid");
+  const filteredRows = useMemo(()=> {
+    if (portfolioFilter==="all") return rows;
+    if (portfolioFilter==="crypto") return rows.filter(r=>r.type==="crypto");
+    if (portfolioFilter==="stock") return rows.filter(r=>r.type==="stock");
+    if (portfolioFilter==="nonliquid") return rows.filter(r=>r.type==="nonliquid");
     return rows;
   }, [rows, portfolioFilter]);
 
-  const sortedRows = useMemo(() => {
+  const sortedRows = useMemo(()=> {
     const copy = [...filteredRows];
     switch (sortBy) {
-      case "market_desc": copy.sort((a,b) => b.marketValueUSD - a.marketValueUSD); break;
-      case "invested_desc": copy.sort((a,b) => b.investedUSD - a.investedUSD); break;
-      case "pnl_desc": copy.sort((a,b) => (b.pnlUSD || 0) - (a.pnlUSD || 0)); break;
-      case "symbol_asc": copy.sort((a,b) => (a.symbol||"").localeCompare(b.symbol||"")); break;
-      case "oldest": copy.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); break;
-      case "newest": copy.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); break;
+      case "market_desc": copy.sort((a,b)=>b.marketValueUSD - a.marketValueUSD); break;
+      case "invested_desc": copy.sort((a,b)=>b.investedUSD - a.investedUSD); break;
+      case "pnl_desc": copy.sort((a,b)=>(b.pnlUSD||0) - (a.pnlUSD||0)); break;
+      case "symbol_asc": copy.sort((a,b)=> (a.symbol||"").localeCompare(b.symbol||"")); break;
+      case "oldest": copy.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)); break;
+      case "newest": copy.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)); break;
       default: break;
     }
     return copy;
   }, [filteredRows, sortBy]);
 
-  const totals = useMemo(() => {
-    const invested = filteredRows.reduce((s, r) => s + toNum(r.investedUSD || 0), 0);
-    const market = filteredRows.reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
+  const totals = useMemo(()=> {
+    const invested = filteredRows.reduce((s,r)=>s + toNum(r.investedUSD||0), 0);
+    const market = filteredRows.reduce((s,r)=>s + toNum(r.marketValueUSD||0), 0);
     const pnl = market - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
     return { invested, market, pnl, pnlPct };
   }, [filteredRows]);
 
-  const donutData = useMemo(() => {
-    const sortedRows = filteredRows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
-    const top = sortedRows.slice(0, 6);
+  /* donut/cake data */
+  const donutData = useMemo(()=> {
+    const sortedRows = filteredRows.slice().sort((a,b)=>b.marketValueUSD - a.marketValueUSD);
+    const top = sortedRows.slice(0,6);
     const other = sortedRows.slice(6);
-    const otherTotal = other.reduce((s, r) => s + (r.marketValueUSD || 0), 0);
-    const otherSymbols = other.map(r => r.symbol);
-    const data = top.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
-    if (otherTotal > 0) data.push({ name: "Other", value: otherTotal, symbols: otherSymbols });
+    const otherTotal = other.reduce((s,r)=>s + (r.marketValueUSD||0), 0);
+    const otherSymbols = other.map(r=>r.symbol);
+    const data = top.map(r=>({ name: r.symbol, value: Math.max(0, r.marketValueUSD||0) }));
+    if (otherTotal>0) data.push({ name: "Other", value: otherTotal, symbols: otherSymbols });
     return data;
   }, [filteredRows]);
 
@@ -1106,35 +879,29 @@ export default function PortfolioDashboard() {
     return palette[i % palette.length];
   }
 
-  /* CSV combined export/import (BOM + headers for spreadsheet) - unchanged from prior final */
+  /* CSV combined export/import improved (BOM + structured markers) */
   function csvQuote(v) {
     if (v === undefined || v === null) return "";
     if (typeof v === "number" || typeof v === "boolean") return String(v);
     const s = String(v);
     if (s.includes(",") || s.includes("\n") || s.includes('"')) {
-      return `"${s.replace(/"/g, '""')}"`;
+      return `"${s.replace(/"/g,'""')}"`;
     }
     return s;
   }
-
   function exportAllCSV() {
-    const assetsHeaders = [
-      "id","type","coingeckoId","symbol","name","description",
-      "shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD",
-      "createdAt","purchaseDate","nonLiquidYoy"
-    ];
+    const assetsHeaders = ["id","type","coingeckoId","symbol","name","description","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt","purchaseDate","nonLiquidYoy"];
     const txHeaders = ["id","type","assetId","assetType","symbol","name","qty","pricePerUnit","cost","proceeds","costOfSold","realized","date"];
-
     const lines = [];
     lines.push(`#FILE:app/dashboard/page.js`);
     lines.push(`#EXPORT:CombinedPortfolioAndTransactions,generatedAt=${isoDate(Date.now())}`);
     lines.push(`#ASSETS`);
     lines.push(assetsHeaders.join(","));
-    assets.forEach(a => {
+    assets.forEach(a=>{
       const aa = ensureNumericAsset(a);
-      const row = assetsHeaders.map(h => {
+      const row = assetsHeaders.map(h=>{
         const v = aa[h];
-        if (h === "createdAt" || h === "purchaseDate") return csvQuote(isoDate(v));
+        if (h==="createdAt" || h==="purchaseDate") return csvQuote(isoDate(v));
         return csvQuote(v);
       }).join(",");
       lines.push(row);
@@ -1142,56 +909,44 @@ export default function PortfolioDashboard() {
     lines.push("");
     lines.push(`#TRANSACTIONS`);
     lines.push(txHeaders.join(","));
-    transactions.forEach(t => {
-      const row = txHeaders.map(h => {
+    transactions.forEach(t=>{
+      const row = txHeaders.map(h=>{
         const v = t[h];
-        if (h === "date") return csvQuote(isoDate(v));
+        if (h==="date") return csvQuote(isoDate(v));
         if (typeof v === "number") return String(v);
         return csvQuote(v);
       }).join(",");
       lines.push(row);
     });
     lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},assets=${assets.length},transactions=${transactions.length}`);
-
-    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel
+    const csv = "\uFEFF" + lines.join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `portfolio_combined_export_${Date.now()}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const a = document.createElement("a"); a.href = url; a.download = `portfolio_combined_export_${Date.now()}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
-
   function handleImportFile(file, { merge = true } = {}) {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target.result;
       const linesRaw = text.split(/\r?\n/);
       if (linesRaw[0] && linesRaw[0].charCodeAt(0) === 0xFEFF) linesRaw[0] = linesRaw[0].slice(1);
-      const lines = linesRaw.map(l => l.trimRight());
-      if (lines.length === 0) return alert("Empty file");
-      const idxAssets = lines.findIndex(l => l.startsWith("#ASSETS"));
-      const idxTx = lines.findIndex(l => l.startsWith("#TRANSACTIONS"));
-      const metaLine = lines.find(l => l.startsWith("#META"));
+      const lines = linesRaw.map(l=>l.trimRight());
+      if (lines.length===0) return alert("Empty file");
+      const idxAssets = lines.findIndex(l=>l.startsWith("#ASSETS"));
+      const idxTx = lines.findIndex(l=>l.startsWith("#TRANSACTIONS"));
+      const metaLine = lines.find(l=>l.startsWith("#META"));
       let importedAssets = [];
       if (idxAssets >= 0) {
         let headerLineIdx = -1;
-        for (let i = idxAssets + 1; i < lines.length; i++) {
-          if (lines[i].trim() === "") continue;
-          headerLineIdx = i; break;
-        }
-        if (headerLineIdx >= 0) {
-          const headers = lines[headerLineIdx].split(",").map(h => h.replace(/^"|"$/g,"").trim());
+        for (let i=idxAssets+1;i<lines.length;i++){ if (lines[i].trim()==="") continue; headerLineIdx = i; break; }
+        if (headerLineIdx>=0) {
+          const headers = lines[headerLineIdx].split(",").map(h=>h.replace(/^"|"$/g,"").trim());
           for (let i = headerLineIdx + 1; i < lines.length; i++) {
             const l = lines[i];
             if (!l || l.startsWith("#TRANSACTIONS") || l.startsWith("#META") || l.startsWith("#FILE") || l.startsWith("#EXPORT")) break;
             const values = [];
-            let cur = "";
-            let insideQuote = false;
-            for (let k = 0; k < l.length; k++) {
+            let cur = "", insideQuote = false;
+            for (let k=0;k<l.length;k++){
               const ch = l[k];
               if (ch === '"' && l[k+1] === '"') { cur += '"'; k++; continue; }
               if (ch === '"') { insideQuote = !insideQuote; continue; }
@@ -1200,19 +955,19 @@ export default function PortfolioDashboard() {
             }
             values.push(cur);
             const obj = {};
-            headers.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
+            headers.forEach((h, idx)=> { obj[h] = values[idx] ?? ""; });
             const parsed = {
-              id: obj.id || `imp:${obj.symbol || ""}:${Date.now()}`,
+              id: obj.id || `imp:${obj.symbol||""}:${Date.now()}`,
               type: obj.type || "stock",
               coingeckoId: obj.coingeckoId || undefined,
-              symbol: (obj.symbol || "").toString().toUpperCase(),
+              symbol: (obj.symbol||"").toString().toUpperCase(),
               name: obj.name || obj.symbol || "",
               description: obj.description || "",
-              shares: toNum(obj.shares || 0),
-              avgPrice: toNum(obj.avgPrice || 0),
-              investedUSD: toNum(obj.investedUSD || 0),
-              lastPriceUSD: toNum(obj.lastPriceUSD || 0),
-              marketValueUSD: toNum(obj.marketValueUSD || 0),
+              shares: toNum(obj.shares||0),
+              avgPrice: toNum(obj.avgPrice||0),
+              investedUSD: toNum(obj.investedUSD||0),
+              lastPriceUSD: toNum(obj.lastPriceUSD||0),
+              marketValueUSD: toNum(obj.marketValueUSD||0),
               createdAt: obj.createdAt ? Date.parse(obj.createdAt) || Date.now() : Date.now(),
               purchaseDate: obj.purchaseDate ? (Date.parse(obj.purchaseDate) || undefined) : undefined,
               nonLiquidYoy: toNum(obj.nonLiquidYoy) || 0,
@@ -1221,23 +976,18 @@ export default function PortfolioDashboard() {
           }
         }
       }
-
       let importedTx = [];
       if (idxTx >= 0) {
         let headerLineIdx = -1;
-        for (let i = idxTx + 1; i < lines.length; i++) {
-          if (lines[i].trim() === "") continue;
-          headerLineIdx = i; break;
-        }
+        for (let i = idxTx + 1; i < lines.length; i++) { if (lines[i].trim()==="") continue; headerLineIdx = i; break; }
         if (headerLineIdx >= 0) {
-          const headers = lines[headerLineIdx].split(",").map(h => h.replace(/^"|"$/g,"").trim());
+          const headers = lines[headerLineIdx].split(",").map(h=>h.replace(/^"|"$/g,"").trim());
           for (let i = headerLineIdx + 1; i < lines.length; i++) {
             const l = lines[i];
             if (!l || l.startsWith("#META") || l.startsWith("#FILE") || l.startsWith("#EXPORT")) break;
             const values = [];
-            let cur = "";
-            let insideQuote = false;
-            for (let k = 0; k < l.length; k++) {
+            let cur = "", insideQuote = false;
+            for (let k=0;k<l.length;k++){
               const ch = l[k];
               if (ch === '"' && l[k+1] === '"') { cur += '"'; k++; continue; }
               if (ch === '"') { insideQuote = !insideQuote; continue; }
@@ -1246,13 +996,13 @@ export default function PortfolioDashboard() {
             }
             values.push(cur);
             const obj = {};
-            headers.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
+            headers.forEach((h, idx)=> { obj[h] = values[idx] ?? ""; });
             const parsed = {
               id: obj.id || `imp_tx:${Date.now()}:${Math.random().toString(36).slice(2,6)}`,
               type: obj.type || "buy",
               assetId: obj.assetId || obj.assetId,
               assetType: obj.assetType || "stock",
-              symbol: (obj.symbol || "").toString().toUpperCase(),
+              symbol: (obj.symbol||"").toString().toUpperCase(),
               name: obj.name || obj.symbol || "",
               qty: toNum(obj.qty || 0),
               pricePerUnit: toNum(obj.pricePerUnit || 0),
@@ -1266,7 +1016,6 @@ export default function PortfolioDashboard() {
           }
         }
       }
-
       if (metaLine) {
         try {
           const m = metaLine.replace(/^#META,?/, "");
@@ -1279,47 +1028,33 @@ export default function PortfolioDashboard() {
           });
         } catch (e) {}
       }
-
       if (importedAssets.length > 0) {
         if (merge) {
-          const map = {};
-          assets.forEach(a => map[a.symbol] = ensureNumericAsset(a));
-          importedAssets.forEach(i => map[i.symbol] = ensureNumericAsset(i));
-          const merged = Object.values(map);
-          setAssets(merged);
-        } else {
-          setAssets(importedAssets);
-        }
+          const map = {}; assets.forEach(a=>map[a.symbol]=ensureNumericAsset(a)); importedAssets.forEach(i=>map[i.symbol]=ensureNumericAsset(i)); const merged = Object.values(map); setAssets(merged);
+        } else setAssets(importedAssets);
       }
-
       if (importedTx.length > 0) {
-        if (merge) {
-          const mergedTx = [...importedTx, ...transactions];
-          setTransactions(mergedTx.slice(0, 1000));
-        } else {
-          setTransactions(importedTx.slice(0, 1000));
-        }
+        if (merge) { const mergedTx = [...importedTx, ...transactions]; setTransactions(mergedTx.slice(0,1000)); }
+        else setTransactions(importedTx.slice(0,1000));
       }
-
       alert("Import complete");
     };
     reader.readAsText(file);
   }
   function onImportClick(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
+    const file = e.target.files && e.target.files[0]; if (!file) return;
     const replace = confirm("Replace existing portfolio & transactions? (OK = replace, Cancel = merge)");
     handleImportFile(file, { merge: !replace });
     e.target.value = "";
   }
 
-  /* build growth series (same as previous) */
+  /* portfolio growth / multi-series (reuse earlier logic) */
   function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
     const now = Date.now();
     let earliest = now;
     txs.forEach(t => { if (t.date && t.date < earliest) earliest = t.date; });
     rowsForChart.forEach(r => { if (r.purchaseDate && r.purchaseDate < earliest) earliest = r.purchaseDate; });
-    const defaultDays = rangeKey === "1d" ? 1 : rangeKey === "2d" ? 2 : rangeKey === "1w" ? 7 : rangeKey === "1m" ? 30 : rangeKey === "1y" ? 365 : 365 * 3;
+    const defaultDays = rangeKey === "1d" ? 1 : rangeKey === "2d" ? 2 : rangeKey === "1w" ? 7 : rangeKey === "1m" ? 30 : rangeKey === "1y" ? 365 : 365*3;
     const start = (earliest < now) ? earliest : (now - defaultDays * 24 * 3600 * 1000);
     let points = 180;
     if (rangeKey === "1d") points = 48;
@@ -1330,49 +1065,27 @@ export default function PortfolioDashboard() {
     if (rangeKey === "all") points = 200;
 
     const txsByAsset = {};
-    txs.slice().forEach(t => {
-      if (!txsByAsset[t.assetId]) txsByAsset[t.assetId] = [];
-      txsByAsset[t.assetId].push(t);
-    });
+    txs.slice().forEach(t => { if (!txsByAsset[t.assetId]) txsByAsset[t.assetId]=[]; txsByAsset[t.assetId].push(t); });
 
     const syntheticTxs = [];
     rowsForChart.forEach(r => {
       const assetTxs = txsByAsset[r.id] || [];
-      if ((assetTxs.length === 0) && (toNum(r.shares || 0) > 0)) {
-        syntheticTxs.push({
-          id: `synth:${r.id}:${r.purchaseDate || r.createdAt || Date.now()}`,
-          assetId: r.id,
-          assetType: r.type,
-          symbol: r.symbol,
-          name: r.name,
-          type: "buy",
-          qty: toNum(r.shares || 0),
-          pricePerUnit: toNum(r.avgPrice || 0),
-          cost: toNum(r.investedUSD || (r.avgPrice * r.shares) || 0),
-          date: r.purchaseDate || r.createdAt || Date.now(),
-        });
+      if ((assetTxs.length === 0) && (toNum(r.shares||0) > 0)) {
+        syntheticTxs.push({ id:`synth:${r.id}:${r.purchaseDate||r.createdAt||Date.now()}`, assetId: r.id, assetType: r.type, symbol: r.symbol, name:r.name, type:"buy", qty:toNum(r.shares||0), pricePerUnit:toNum(r.avgPrice||0), cost: toNum(r.investedUSD|| (r.avgPrice*r.shares)||0), date: r.purchaseDate || r.createdAt || Date.now() });
       }
     });
 
-    const allTxs = [...txs, ...syntheticTxs].slice().sort((a,b) => (a.date||0) - (b.date||0));
+    const allTxs = [...txs, ...syntheticTxs].slice().sort((a,b)=>(a.date||0)-(b.date||0));
 
     function sharesUpTo(assetId, t) {
-      let s = 0;
-      for (const tx of allTxs) {
-        if (tx.assetId !== assetId) continue;
-        if ((tx.date || 0) <= t) {
-          if (tx.type === "buy") s += toNum(tx.qty || 0);
-          else if (tx.type === "sell") s -= toNum(tx.qty || 0);
-        }
-      }
-      return s;
+      let s = 0; for (const tx of allTxs) { if (tx.assetId !== assetId) continue; if ((tx.date||0) <= t) { if (tx.type === "buy") s += toNum(tx.qty||0); else if (tx.type === "sell") s -= toNum(tx.qty||0); } } return s;
     }
 
     function priceAtTime(asset, t) {
       if (asset.type === "nonliquid") {
-        return computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || 0, asset.nonLiquidYoy || 0, t);
+        return computeNonLiquidLastPrice(asset.avgPrice||0, asset.purchaseDate||asset.createdAt||0, asset.nonLiquidYoy||0, t);
       }
-      const pd = asset.purchaseDate || asset.createdAt || (now - defaultDays * 24 * 3600 * 1000);
+      const pd = asset.purchaseDate || asset.createdAt || (now - defaultDays * 24*3600*1000);
       const avg = toNum(asset.avgPrice || 0);
       const last = toNum(asset.lastPriceUSD || avg || 0);
       if (t <= pd) return avg || last;
@@ -1387,8 +1100,7 @@ export default function PortfolioDashboard() {
     }
 
     const seriesPerKey = { all: [], crypto: [], stock: [], nonliquid: [] };
-
-    for (let i = 0; i < points; i++) {
+    for (let i=0;i<points;i++) {
       const t = start + (i / (points - 1)) * (now - start);
       let totals = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
       rowsForChart.forEach(asset => {
@@ -1403,128 +1115,91 @@ export default function PortfolioDashboard() {
       });
       Object.keys(totals).forEach(k => seriesPerKey[k].push({ t, v: totals[k] }));
     }
-
     return seriesPerKey;
   }
 
-  const multiSeries = useMemo(() => buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
+  const multiSeries = useMemo(()=> buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
 
-  /* category values */
-  const categoryValuesNow = useMemo(() => {
-    const out = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
-    try {
-      Object.keys(multiSeries).forEach(k => {
-        const arr = multiSeries[k] || [];
-        const last = arr[arr.length - 1];
-        out[k] = last ? last.v : 0;
-      });
-    } catch (e) {}
+  const categoryValuesNow = useMemo(()=> {
+    const out = { all:0, crypto:0, stock:0, nonliquid:0 };
+    try { Object.keys(multiSeries).forEach(k => { const arr = multiSeries[k] || []; const last = arr[arr.length-1]; out[k] = last ? last.v : 0; }); } catch (e) {}
     return out;
   }, [multiSeries]);
 
-  /* UI helpers */
+  /* open asset chart on click */
   function openAssetChart(asset) {
-    setActiveAssetForChart(asset);
+    setActiveChartAsset(asset);
     setAssetChartOpen(true);
   }
   function closeAssetChart() {
-    setActiveAssetForChart(null);
+    setActiveChartAsset(null);
     setAssetChartOpen(false);
   }
 
-  /* Rendering */
-  const titleForFilter = {
-    all: "All Portfolio",
-    crypto: "Crypto Portfolio",
-    stock: "Stocks Portfolio",
-    nonliquid: "Non-Liquid Portfolio",
-  };
-  const headerTitle = titleForFilter[portfolioFilter] || "Portfolio";
-
+  /* STYLES & small UI tweaks (animations) */
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
       <style>{`
-        .btn { transition: transform 180ms, box-shadow 180ms, background-color 120ms, opacity 120ms; }
+        .btn { transition: transform .18s ease, box-shadow .18s ease, background-color .12s ease; }
         .btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
         .btn-soft:hover { transform: translateY(-2px) scale(1.01); }
-        .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
-        .icon-box { transition: transform 160ms, background 120ms; }
-        .slice { cursor: pointer; }
-        .menu-scroll { max-height: 16rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
-        /* dropdown caret rotate */
-        .caret-rotate { transition: transform 180ms; }
-        .caret-rotate.open { transform: rotate(180deg); }
+        .rotate-open { transform: rotate(45deg); transition: transform .22s ease; }
+        .icon-box { transition: transform .16s, background .12s; }
+        .menu-scroll { max-height: 16rem; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+        .slice { cursor: pointer; transition: transform .12s; }
+        .interactive { transition: transform .16s ease, box-shadow .16s ease; }
+        .interactive:hover { transform: translateY(-2px) scale(1.01); box-shadow: 0 10px 24px rgba(0,0,0,0.56); }
       `}</style>
 
       <div className="max-w-6xl mx-auto">
         {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2 relative">
-            <h1 className="text-2xl font-semibold">{headerTitle}</h1>
+            <h1 className="text-2xl font-semibold">All Portfolio</h1>
 
+            {/* filter icon only */}
             <div className="relative">
-              <button
-                aria-label="Filter"
-                onClick={() => setFilterMenuOpen(v => !v)}
-                className="ml-2 inline-flex items-center justify-center text-gray-200"
-                style={{ fontSize: 18, padding: 6 }}
-                title="Filter portfolio"
-              >
+              <button aria-label="Filter" onClick={()=>setFilterMenuOpen(v=>!v)} className="ml-2 inline-flex items-center justify-center text-gray-200" style={{ fontSize: 18, padding:6 }} title="Filter portfolio">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <path d="M3 5h18" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M7 12h10" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M11 19h2" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                 </svg>
               </button>
-
               {filterMenuOpen && (
                 <div ref={filterMenuRef} className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-44 menu-scroll">
-                  <button onClick={() => { setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">All</button>
-                  <button onClick={() => { setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Crypto</button>
-                  <button onClick={() => { setPortfolioFilter("stock"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Stocks</button>
-                  <button onClick={() => { setPortfolioFilter("nonliquid"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Non-Liquid</button>
+                  <button onClick={()=>{ setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">All</button>
+                  <button onClick={()=>{ setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Crypto</button>
+                  <button onClick={()=>{ setPortfolioFilter("stock"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Stocks</button>
+                  <button onClick={()=>{ setPortfolioFilter("nonliquid"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Non-Liquid</button>
                 </div>
               )}
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Currency dropdown (nominal + code + caret) - value larger */}
+            {/* Currency dropdown (nominal + code + caret) */}
             <div className="relative">
-              <button
-                aria-label="Currency"
-                onClick={() => setCurrencyMenuOpen(v => !v)}
-                className="inline-flex items-center gap-2"
-                style={{ background: "transparent", border: 0, padding: "6px 8px" }}
-                title="Currency"
-              >
-                <span style={{ whiteSpace: "nowrap", fontSize: 20, fontWeight: 700 }}>
+              <button aria-label="Currency" onClick={()=>setCurrencyMenuOpen(v=>!v)} className="inline-flex items-center gap-2" style={{ background: "transparent", border:0, padding: "6px 8px" }} title="Currency">
+                <span style={{ whiteSpace: "nowrap", fontSize:20, fontWeight:700 }}>
                   {displayCcy === "IDR"
                     ? `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(totals.market * usdIdr)} IDR`
                     : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(totals.market)} USD`}
                 </span>
-                <svg width="14" height="14" viewBox="0 0 24 24" className={`ml-1 caret-rotate ${currencyMenuOpen ? "open" : ""}`} fill="none">
+                <svg width="14" height="14" viewBox="0 0 24 24" className="ml-1" fill="none">
                   <path d="M6 9l6 6 6-6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-
               {currencyMenuOpen && (
                 <div ref={currencyMenuRef} className="absolute mt-2 right-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-36">
-                  <button onClick={() => { setDisplayCcy("USD"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">USD</button>
-                  <button onClick={() => { setDisplayCcy("IDR"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">IDR</button>
+                  <button onClick={()=>{ setDisplayCcy("USD"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">USD</button>
+                  <button onClick={()=>{ setDisplayCcy("IDR"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">IDR</button>
                 </div>
               )}
             </div>
 
-            <button
-              aria-label="Add asset"
-              onClick={() => setOpenAdd(v => !v)}
-              className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold btn`}
-              title="Add asset"
-            >
-              <span style={{ display: "inline-block", transformOrigin: "50% 50%", transition: "transform 220ms" }} className={openAdd ? "rotate-open" : ""}>
-                +
-              </span>
+            <button aria-label="Add asset" onClick={()=>setOpenAdd(v=>!v)} className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold btn interactive`} title="Add asset">
+              <span style={{ display:"inline-block", transformOrigin:"50% 50%", transition:"transform .22s" }} className={openAdd ? "rotate-open" : ""}>+</span>
             </button>
           </div>
         </div>
@@ -1567,7 +1242,7 @@ export default function PortfolioDashboard() {
             <div>Gain P&L</div>
             <div className={`font-semibold ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(totals.pnl * usdIdr, "IDR") : fmtMoney(totals.pnl, "USD")} ({totals.pnlPct.toFixed(2)}%)</div>
           </div>
-          <div className="flex items-center justify-between text-gray-400 cursor-pointer" onClick={() => setTransactionsOpen(true)}>
+          <div className="flex items-center justify-between text-gray-400 cursor-pointer" onClick={()=>setTransactionsOpen(true)}>
             <div className="flex items-center gap-2">
               <div>Realized P&L</div>
             </div>
@@ -1588,77 +1263,77 @@ export default function PortfolioDashboard() {
           <div ref={addPanelRef} className="mt-6 bg-transparent p-3 rounded">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex bg-gray-900 rounded overflow-hidden">
-                <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""} btn-soft`}>Crypto</button>
-                <button onClick={() => { setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "id" ? "bg-gray-800" : ""} btn-soft`}>Stocks ID</button>
-                <button onClick={() => { setSearchMode("us"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "us" ? "bg-gray-800" : ""} btn-soft`}>Stocks US</button>
-                <button onClick={() => { setSearchMode("nonliquid"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "nonliquid" ? "bg-gray-800" : ""} btn-soft`}>Non-Liquid</button>
+                <button onClick={()=>{ setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode==="crypto"?"bg-gray-800":""} btn-soft`}>Crypto</button>
+                <button onClick={()=>{ setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode==="id"?"bg-gray-800":""} btn-soft`}>Stocks ID</button>
+                <button onClick={()=>{ setSearchMode("us"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode==="us"?"bg-gray-800":""} btn-soft`}>Stocks US</button>
+                <button onClick={()=>{ setSearchMode("nonliquid"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode==="nonliquid"?"bg-gray-800":""} btn-soft`}>Non-Liquid</button>
               </div>
             </div>
 
             {searchMode !== "nonliquid" ? (
               <div className="flex gap-3 flex-col sm:flex-row items-start">
                 <div className="relative w-full sm:max-w-lg">
-                  <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
-                  {suggestions.length > 0 && (
+                  <input value={query} onChange={(e)=>{ setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode==="crypto"?"Search crypto (BTC, ethereum)...":"Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
+                  {suggestions.length>0 && (
                     <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
-                      {suggestions.map((s, i) => (
-                        <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
+                      {suggestions.map((s,i)=>(
+                        <button key={i} onClick={()=>{ setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
                           <div>
                             <div className="font-medium text-gray-100">{s.symbol} • {s.display}</div>
-                            <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto" : `Security • ${s.exchange || ''}`}</div>
+                            <div className="text-xs text-gray-500">{s.source==="coingecko"?"Crypto":`Security • ${s.exchange||''}`}</div>
                           </div>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
-                <input value={initQty} onChange={(e) => setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
-                <input value={initPrice} onChange={(e) => setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
-                <select value={initPriceCcy} onChange={(e) => setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                <input value={initQty} onChange={(e)=>setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+                <input value={initPrice} onChange={(e)=>setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+                <select value={initPriceCcy} onChange={(e)=>setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
                   <option value="USD">USD</option> <option value="IDR">IDR</option>
                 </select>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add</button>
+                  <button onClick={()=> selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add</button>
                   <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold btn">Add + Position</button>
-                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
+                  <button onClick={()=>setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
                 </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-400">Name (Land, Art, Rolex...)</label>
-                  <input value={nlName} onChange={(e) => setNlName(e.target.value)} placeholder="e.g. Land, Art, Rolex" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                  <input value={nlName} onChange={(e)=>setNlName(e.target.value)} placeholder="e.g. Land, Art, Rolex" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-400">Quantity</label>
-                  <input value={nlQty} onChange={(e) => setNlQty(e.target.value)} placeholder="1" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                  <input value={nlQty} onChange={(e)=>setNlQty(e.target.value)} placeholder="1" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-400">Price (per unit)</label>
-                  <input value={nlPrice} onChange={(e) => setNlPrice(e.target.value)} placeholder="100000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                  <input value={nlPrice} onChange={(e)=>setNlPrice(e.target.value)} placeholder="100000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-400">Currency</label>
-                  <select value={nlPriceCcy} onChange={(e) => setNlPriceCcy(e.target.value)} className="w-full rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                  <select value={nlPriceCcy} onChange={(e)=>setNlPriceCcy(e.target.value)} className="w-full rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
                     <option value="USD">USD</option>
                     <option value="IDR">IDR</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-xs text-gray-400">Purchase date</label>
-                  <input type="date" value={nlPurchaseDate} onChange={(e) => setNlPurchaseDate(e.target.value)} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                  <input type="date" value={nlPurchaseDate} onChange={(e)=>setNlPurchaseDate(e.target.value)} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-400">YoY gain (%)</label>
-                  <input value={nlYoy} onChange={(e) => setNlYoy(e.target.value)} placeholder="5" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                  <input value={nlYoy} onChange={(e)=>setNlYoy(e.target.value)} placeholder="5" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
                 </div>
                 <div className="sm:col-span-2">
                   <label className="text-xs text-gray-400">Description (optional: address, serial...)</label>
-                  <input value={nlDesc} onChange={(e) => setNlDesc(e.target.value)} placeholder="Optional description" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                  <input value={nlDesc} onChange={(e)=>setNlDesc(e.target.value)} placeholder="Optional description" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
                 </div>
                 <div className="sm:col-span-2 flex gap-2">
                   <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Non-Liquid</button>
-                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
+                  <button onClick={()=>setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
                 </div>
               </div>
             )}
@@ -1670,27 +1345,21 @@ export default function PortfolioDashboard() {
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm text-gray-400">Assets</div>
             <div className="flex items-center gap-2 relative">
-              <button
-                aria-label="Sort"
-                onClick={() => setSortMenuOpen(v => !v)}
-                className="inline-flex items-center justify-center rounded px-2 py-1 bg-gray-900 border border-gray-800 text-gray-200 btn"
-                title="Sort assets"
-              >
+              <button aria-label="Sort" onClick={()=>setSortMenuOpen(v=>!v)} className="inline-flex items-center justify-center rounded px-2 py-1 bg-gray-900 border border-gray-800 text-gray-200 btn" title="Sort assets">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                   <path d="M6 6h12" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M9 12h6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M11 18h2" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                 </svg>
               </button>
-
               {sortMenuOpen && (
                 <div ref={sortMenuRef} className="absolute right-0 mt-2 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-56 z-40 menu-scroll">
-                  <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (high → low)</button>
-                  <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (high → low)</button>
-                  <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (high → low)</button>
-                  <button onClick={() => { setSortBy("symbol_asc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">A → Z</button>
-                  <button onClick={() => { setSortBy("oldest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Oldest</button>
-                  <button onClick={() => { setSortBy("newest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Newest</button>
+                  <button onClick={()=>{ setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (high → low)</button>
+                  <button onClick={()=>{ setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (high → low)</button>
+                  <button onClick={()=>{ setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (high → low)</button>
+                  <button onClick={()=>{ setSortBy("symbol_asc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">A → Z</button>
+                  <button onClick={()=>{ setSortBy("oldest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Oldest</button>
+                  <button onClick={()=>{ setSortBy("newest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Newest</button>
                 </div>
               )}
             </div>
@@ -1710,37 +1379,37 @@ export default function PortfolioDashboard() {
             <tbody>
               {sortedRows.length === 0 ? (
                 <tr><td colSpan={6} className="py-8 text-center text-gray-500">No assets — add one with the + button</td></tr>
-              ) : sortedRows.map((r) => (
+              ) : sortedRows.map(r => (
                 <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
                   <td className="px-3 py-3">
-                    <div className="font-semibold text-gray-100 cursor-pointer" onClick={() => openAssetChart(r)}>{r.symbol}</div>
+                    <div className="font-semibold text-gray-100 cursor-pointer" onClick={()=>openAssetChart(r)}>{r.symbol}</div>
                     <div className="text-xs text-gray-400">{r.description || r.name}</div>
                   </td>
-                  <td className="px-3 py-3 text-right">{Number(r.shares || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
+                  <td className="px-3 py-3 text-right">{Number(r.shares||0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
 
                   {/* Invested (top big) / Avg price (small) */}
                   <td className="px-3 py-3 text-right tabular-nums">
-                    <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.investedUSD * usdIdr, "IDR") : fmtMoney(r.investedUSD, "USD")}</div>
-                    <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.avgPrice * usdIdr, "IDR") : fmtMoney(r.avgPrice, "USD")}</div>
+                    <div className="font-medium">{displayCcy==="IDR"?fmtMoney(r.investedUSD * usdIdr, "IDR"):fmtMoney(r.investedUSD, "USD")}</div>
+                    <div className="text-xs text-gray-400">{displayCcy==="IDR"?fmtMoney(r.avgPrice * usdIdr, "IDR"):fmtMoney(r.avgPrice, "USD")}</div>
                   </td>
 
                   {/* Market value (top big) / Current Price (small) */}
                   <td className="px-3 py-3 text-right tabular-nums">
-                    <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")}</div>
-                    <div className="text-xs text-gray-400">{r.lastPriceUSD > 0 ? (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) : "-"}</div>
+                    <div className="font-medium">{displayCcy==="IDR"?fmtMoney(r.marketValueUSD * usdIdr, "IDR"):fmtMoney(r.marketValueUSD, "USD")}</div>
+                    <div className="text-xs text-gray-400">{r.lastPriceUSD > 0 ? (displayCcy==="IDR"?fmtMoney(r.lastPriceUSD * usdIdr, "IDR"):fmtMoney(r.lastPriceUSD, "USD")) : "-"}</div>
                   </td>
 
                   {/* P&L */}
                   <td className="px-3 py-3 text-right">
-                    <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(r.pnlUSD * usdIdr, "IDR") : fmtMoney(r.pnlUSD, "USD")}</div>
+                    <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy==="IDR"?fmtMoney(r.pnlUSD * usdIdr, "IDR"):fmtMoney(r.pnlUSD, "USD")}</div>
                     <div className={`text-xs ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{isFinite(r.pnlPct) ? `${r.pnlPct.toFixed(2)}%` : "0.00%"}</div>
                   </td>
 
                   <td className="px-3 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Buy</button>
-                      <button onClick={() => openTradeModal(r.id, "sell")} className="bg-yellow-600 px-2 py-1 rounded text-xs btn">Sell</button>
-                      <button onClick={() => removeAsset(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Del</button>
+                      <button onClick={()=>openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Buy</button>
+                      <button onClick={()=>openTradeModal(r.id, "sell")} className="bg-yellow-600 px-2 py-1 rounded text-xs btn">Sell</button>
+                      <button onClick={()=>removeAsset(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Del</button>
                     </div>
                   </td>
                 </tr>
@@ -1754,56 +1423,44 @@ export default function PortfolioDashboard() {
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Portfolio Growth</div>
             <div className="flex items-center gap-2">
-              {["1d","2d","1w","1m","1y","all"].map(k => (
-                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"} btn`}>{k}</button>
+              {["1d","2d","1w","1m","1y","all"].map(k=>(
+                <button key={k} onClick={()=>setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k?"bg-gray-700 text-white":"bg-gray-900 text-gray-300"} btn`}>{k}</button>
               ))}
             </div>
           </div>
 
-          <CandlesWithLines
-            seriesMap={multiSeries}
-            displayCcy={displayCcy}
-            usdIdr={usdIdr}
-            width={900}
-            height={300}
-            rangeKey={chartRange}
-            onHover={(p) => { setChartHover(p); }}
-          />
+          <div>
+            <SimpleLineChart series={(multiSeries.all || []).map(p => ({ t:p.t, v: displayCcy==="IDR" ? p.v * usdIdr : p.v }))} width={980} height={300} displayCcy={displayCcy} usdIdr={usdIdr} />
+            <div className="mt-2 flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-2"><div style={{width:10,height:10,background:"#4D96FF"}} className="rounded-sm" /> <div className="text-xs text-gray-300">All</div></div>
+              <div className="flex items-center gap-2"><div style={{width:10,height:10,background:"#FF6B6B"}} className="rounded-sm" /> <div className="text-xs text-gray-300">Crypto</div></div>
+              <div className="flex items-center gap-2"><div style={{width:10,height:10,background:"#6BCB77"}} className="rounded-sm" /> <div className="text-xs text-gray-300">Stocks</div></div>
+              <div className="flex items-center gap-2"><div style={{width:10,height:10,background:"#FFD93D"}} className="rounded-sm" /> <div className="text-xs text-gray-300">Non-Liquid</div></div>
+            </div>
+          </div>
         </div>
 
-        {/* CAKE (donut replacement) + legend */}
+        {/* CAKE ALLOCATION */}
         {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="w-44 h-44 flex items-center justify-center">
-              <CakeAllocation
-                data={donutData}
-                size={176}
-                inner={48}
-                gap={0.06}
-                displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
-                displayCcy={displayCcy}
-                usdIdr={usdIdr}
-              />
+              {/* reuse small cake implemented before but simplified here */}
+              <svg width="176" height="176" viewBox="0 0 176 176">
+                <circle cx="88" cy="88" r="48" fill="#070707" />
+                <text x="88" y="90" textAnchor="middle" fontSize="12" fill="#9CA3AF">Total</text>
+                <text x="88" y="106" textAnchor="middle" fontSize="12" fontWeight="700" fill="#E5E7EB">{displayCcy==="IDR"?fmtMoney(totals.market*usdIdr,"IDR"):fmtMoney(totals.market,"USD")}</text>
+              </svg>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {donutData.map((d, i) => {
+              {donutData.map((d,i)=>{
                 const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
                 return (
                   <div key={d.name} className="flex items-center gap-3">
-                    <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-sm" />
+                    <div style={{ width:12, height:12, background: colorForIndex(i) }} className="rounded-sm" />
                     <div>
                       <div className="font-semibold text-gray-100">{d.name}</div>
-                      {d.name === "Other" ? (
-                        <div className="text-xs text-gray-400">
-                          {d.symbols.join(', ')} <br/>
-                          {displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%
-                        </div>
-                      ) : (
-                        <div className="text-xs text-gray-400">
-                          {displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%
-                        </div>
-                      )}
+                      <div className="text-xs text-gray-400">{displayCcy==="IDR"?fmtMoney(d.value*usdIdr,"IDR"):fmtMoney(d.value,"USD")} • {pct.toFixed(1)}%</div>
                     </div>
                   </div>
                 );
@@ -1815,18 +1472,25 @@ export default function PortfolioDashboard() {
         {/* TRADE MODAL */}
         {tradeModal.open && (
           <div>
-            {/* Reuse previous TradeModal implementation */}
-            <TradeModal
-              mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)}
-              defaultPrice={tradeModal.defaultPrice} onClose={() => closeTradeModal()}
-              onBuy={performBuy} onSell={performSell} usdIdr={usdIdr}
-            />
+            {/* reuse a lighter TradeModal inline to keep single file */}
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
+              <div className="bg-gray-900 p-6 rounded-lg w-full max-w-md border border-gray-800">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-xl font-semibold capitalize">{tradeModal.mode} {(assets.find(a=>a.id===tradeModal.assetId)||{}).symbol}</h2>
+                    <p className="text-sm text-gray-400">{(assets.find(a=>a.id===tradeModal.assetId)||{}).name}</p>
+                  </div>
+                  <button onClick={()=>closeTradeModal()} className="text-gray-500 hover:text-white">×</button>
+                </div>
+                <TradeForm asset={(assets.find(a=>a.id===tradeModal.assetId)||{})} mode={tradeModal.mode} defaultPrice={tradeModal.defaultPrice} onClose={closeTradeModal} onBuy={performBuy} onSell={performSell} usdIdr={usdIdr} />
+              </div>
+            </div>
           </div>
         )}
 
         {/* ASSET CHART MODAL */}
-        {assetChartOpen && activeAssetForChart && (
-          <AssetChartModal asset={activeAssetForChart} onClose={closeAssetChart} displayCcy={displayCcy} usdIdr={usdIdr} />
+        {assetChartOpen && activeChartAsset && (
+          <AssetChartModal asset={activeChartAsset} onClose={closeAssetChart} displayCcy={displayCcy} usdIdr={usdIdr} defaultRange="30" />
         )}
 
         {/* TRANSACTIONS MODAL */}
@@ -1839,16 +1503,12 @@ export default function PortfolioDashboard() {
                   <div className="text-xs text-gray-400">{transactions.length} records</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {lastDeletedTx && (
-                    <button onClick={() => undoLastDeletedTransaction()} className="bg-amber-500 px-3 py-1 rounded text-sm btn">Undo Delete</button>
-                  )}
-                  <button onClick={() => { setTransactionsOpen(false); }} className="bg-gray-800 px-3 py-1 rounded btn-soft">Close</button>
+                  {lastDeletedTx && <button onClick={()=>undoLastDeletedTransaction()} className="bg-amber-500 px-3 py-1 rounded text-sm btn">Undo Delete</button>}
+                  <button onClick={()=>{ setTransactionsOpen(false); }} className="bg-gray-800 px-3 py-1 rounded btn-soft">Close</button>
                 </div>
               </div>
 
-              {transactions.length === 0 ? (
-                <div className="text-sm text-gray-500">No transactions yet.</div>
-              ) : (
+              {transactions.length === 0 ? (<div className="text-sm text-gray-500">No transactions yet.</div>) : (
                 <div className="overflow-x-auto max-h-96">
                   <table className="min-w-full text-sm">
                     <thead className="text-gray-400 border-b border-gray-800">
@@ -1862,20 +1522,20 @@ export default function PortfolioDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {transactions.map(tx => (
+                      {transactions.map(tx=>(
                         <tr key={tx.id} className="border-b border-gray-900 hover:bg-gray-950">
                           <td className="px-3 py-3">{new Date(tx.date).toLocaleString()}</td>
                           <td className="px-3 py-3">{tx.symbol} <div className="text-xs text-gray-400">{tx.name}</div></td>
                           <td className="px-3 py-3 text-right">{Number(tx.qty).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
                           <td className="px-3 py-3 text-right">
-                            {tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.proceeds * usdIdr, "IDR") : fmtMoney(tx.proceeds, "USD")) : (displayCcy === "IDR" ? fmtMoney(tx.cost * usdIdr, "IDR") : fmtMoney(tx.cost, "USD"))}
-                            <div className="text-xs">{tx.pricePerUnit ? `${displayCcy === "IDR" ? fmtMoney(tx.pricePerUnit * usdIdr, "IDR") : fmtMoney(tx.pricePerUnit, "USD")} / unit` : ""}</div>
+                            {tx.type==="sell" ? (displayCcy==="IDR"?fmtMoney(tx.proceeds*usdIdr,"IDR"):fmtMoney(tx.proceeds,"USD")) : (displayCcy==="IDR"?fmtMoney(tx.cost*usdIdr,"IDR"):fmtMoney(tx.cost,"USD"))}
+                            <div className="text-xs">{tx.pricePerUnit ? `${displayCcy==="IDR"?fmtMoney(tx.pricePerUnit*usdIdr,"IDR"):fmtMoney(tx.pricePerUnit,"USD")} / unit` : ""}</div>
                           </td>
-                          <td className="px-3 py-3 text-right">{tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")) : "-"}</td>
+                          <td className="px-3 py-3 text-right">{tx.type==="sell" ? (displayCcy==="IDR"?fmtMoney(tx.realized*usdIdr,"IDR"):fmtMoney(tx.realized,"USD")) : "-"}</td>
                           <td className="px-3 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <button onClick={() => { restoreTransaction(tx.id); }} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Restore</button>
-                              <button onClick={() => deleteTransaction(tx.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Delete</button>
+                              <button onClick={()=>{ restoreTransaction(tx.id); }} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Restore</button>
+                              <button onClick={()=>deleteTransaction(tx.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Delete</button>
                             </div>
                           </td>
                         </tr>
@@ -1889,8 +1549,8 @@ export default function PortfolioDashboard() {
                 <div className="mt-4 flex items-center justify-between">
                   <div className="text-sm text-gray-300">Last deleted: {lastDeletedTx.symbol} ({new Date(lastDeletedTx.date).toLocaleString()})</div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => undoLastDeletedTransaction()} className="bg-emerald-500 px-3 py-1 rounded text-sm btn">Undo</button>
-                    <button onClick={() => purgeLastDeletedTransaction()} className="bg-gray-700 px-3 py-1 rounded text-sm btn-soft">Forget</button>
+                    <button onClick={()=>undoLastDeletedTransaction()} className="bg-emerald-500 px-3 py-1 rounded text-sm btn">Undo</button>
+                    <button onClick={()=>purgeLastDeletedTransaction()} className="bg-gray-700 px-3 py-1 rounded text-sm btn-soft">Forget</button>
                   </div>
                 </div>
               )}
@@ -1898,11 +1558,11 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* EXPORT / IMPORT CSV (buttons white) */}
+        {/* EXPORT / IMPORT CSV */}
         <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1">
             <div className="text-sm text-gray-300">CSV: export / import (combined)</div>
-            <div className="text-xs text-gray-500">Export contains ASSETS and TRANSACTIONS in one CSV file. File includes header markers (#ASSETS, #TRANSACTIONS) and ISO dates for clean spreadsheet import.</div>
+            <div className="text-xs text-gray-500">Export contains ASSETS and TRANSACTIONS with markers. Files include BOM + ISO dates for clean spreadsheet import.</div>
           </div>
           <div className="flex gap-2">
             <div className="relative">
@@ -1912,10 +1572,7 @@ export default function PortfolioDashboard() {
               Import CSV
               <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
             </label>
-            <button onClick={() => {
-              if (!confirm("This will clear your portfolio and realized P&L. Continue?")) return;
-              setAssets([]); setRealizedUSD(0); setTransactions([]); setLastDeletedTx(null);
-            }} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-red-600 hover:text-white">Clear All</button>
+            <button onClick={()=>{ if(!confirm("This will clear your portfolio and realized P&L. Continue?")) return; setAssets([]); setRealizedUSD(0); setTransactions([]); setLastDeletedTx(null); }} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-red-600 hover:text-white">Clear All</button>
           </div>
         </div>
 
@@ -1924,72 +1581,36 @@ export default function PortfolioDashboard() {
   );
 }
 
-/* ===================== TRADE MODAL Implementation (kept near end for readability) ===================== */
-function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
+/* ========== Small TradeForm component (inline) ========== */
+function TradeForm({ asset, mode, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
   const [qty, setQty] = useState("");
-  const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
+  const [price, setPrice] = useState(defaultPrice>0?String(defaultPrice):"");
   const [priceCcy, setPriceCcy] = useState("USD");
-
-  useEffect(() => {
-    setPrice(defaultPrice > 0 ? String(defaultPrice) : "");
-  }, [defaultPrice]);
-
-  if (!asset) return null;
-
-  const priceUSD = priceCcy === "IDR" ? toNum(price) / usdIdr : toNum(price);
+  useEffect(()=> { setPrice(defaultPrice>0?String(defaultPrice):""); }, [defaultPrice]);
+  const priceUSD = priceCcy==="IDR" ? toNum(price) / usdIdr : toNum(price);
   const totalUSD = toNum(qty) * priceUSD;
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    const q = toNum(qty), p = priceUSD;
-    if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
-    if (mode === 'buy') onBuy(q, p);
-    if (mode === 'sell') onSell(q, p);
-  }
-
+  function handleSubmit(e) { e.preventDefault(); const q = toNum(qty), p = priceUSD; if (q<=0 || p<=0) { alert("Qty & price must be > 0"); return; } if (mode==='buy') onBuy(q,p); if (mode==='sell') onSell(q,p); }
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-      <div className="bg-gray-900 p-6 rounded-lg w-full max-w-md border border-gray-800">
-        <div className="flex justify-between items-start">
-          <div>
-            <h2 className="text-xl font-semibold capitalize">{mode} {asset.symbol}</h2>
-            <p className="text-sm text-gray-400">{asset.name}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white">×</button>
-        </div>
-        <form onSubmit={handleSubmit} className="mt-4">
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Quantity</label>
-            <input type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)}
-              className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
-              placeholder="0.00"
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Price per unit</label>
-            <div className="flex rounded overflow-hidden">
-              <input type="number" step="any" value={price} onChange={(e) => setPrice(e.target.value)}
-                className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700 focus:outline-none focus:border-blue-500"
-                placeholder="0.00"
-              />
-              <select value={priceCcy} onChange={(e) => setPriceCcy(e.target.value)}
-                className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r focus:outline-none"
-              >
-                <option value="USD">USD</option>
-                <option value="IDR">IDR</option>
-              </select>
-            </div>
-          </div>
-          <div className="text-sm text-gray-400 text-right mb-4">
-            Total: {fmtMoney(totalUSD, "USD")}
-          </div>
-          <button type="submit"
-            className={`w-full py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-white'}`}
-          >
-            {mode === 'buy' ? 'Confirm Buy' : 'Confirm Sell'}
-          </button>
-        </form>
+    <form onSubmit={handleSubmit} className="mt-4">
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-1">Quantity</label>
+        <input type="number" step="any" value={qty} onChange={(e)=>setQty(e.target.value)} className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500" placeholder="0.00" />
       </div>
-    </div>
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-1">Price per unit</label>
+        <div className="flex rounded overflow-hidden">
+          <input type="number" step="any" value={price} onChange={(e)=>setPrice(e.target.value)} className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700 focus:outline-none focus:border-blue-500" placeholder="0.00" />
+          <select value={priceCcy} onChange={(e)=>setPriceCcy(e.target.value)} className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r focus:outline-none">
+            <option value="USD">USD</option>
+            <option value="IDR">IDR</option>
+          </select>
+        </div>
+      </div>
+      <div className="text-sm text-gray-400 text-right mb-4">Total: {fmtMoney(totalUSD, "USD")}</div>
+      <div className="flex gap-2">
+        <button type="submit" className={`w-full py-2 rounded font-semibold ${mode==='buy'?'bg-emerald-500 text-black':'bg-yellow-600 text-white'}`}>{mode==='buy' ? 'Confirm Buy' : 'Confirm Sell'}</button>
+        <button type="button" onClick={onClose} className="w-full py-2 rounded bg-gray-700 text-sm">Cancel</button>
+      </div>
+    </form>
   );
 }
