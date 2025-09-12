@@ -4,52 +4,24 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Portfolio Dashboard — single-file React client component (final)
+ * app/dashboard/page.js
+ * Single-file Portfolio Dashboard — updated fixes:
+ * - Fix sort/filter dropdown scrolling (not clipped) — uses overflow-y: visible on table wrapper
+ * - Throttle chart mousemove with requestAnimationFrame for smoother interactivity
+ * - CSV/Export/Import buttons: white background, hover colored
+ * - Cake allocation: slices sized proportionally (angle) and radius scales with value
  *
- * Features included (as requested):
- * - Single file (page.js), complete dashboard UI
- * - All Portfolio header with icon-only dropdown (no box)
- * - Value display (big) with inline dropdown showing currency (USD / IDR)
- * - Filter dropdown (icon-only) next to title
- * - Categories filter: All / Crypto / Stocks / Non-Liquid (affects displayed rows & charts)
- * - Crypto market prices: CoinGecko (simple price + market_chart)
- * - Indonesian stock prices: AlphaVantage (GLOBAL_QUOTE + TIME_SERIES_DAILY_ADJUSTED fallback)
- *   - AlphaVantage API key read from localStorage('ALPHAVANTAGE_API_KEY') or placeholder
- * - Non-liquid assets: full custom add (Land, Art, Rolex...), qty, price, purchase date, YoY% growth => auto last price
- * - Transactions (buy/sell): realized P&L accumulation, transaction log modal, restore (undo/restore) & delete
- * - Export/Import combined CSV (assets + transactions) formatted for spreadsheet (BOM, ISO dates, headers)
- * - Portfolio growth chart (candles + multi-line overlays) above cake allocation; timeframes 1d/2d/1w/1m/1y/all actually change series
- * - Cake allocation (donut -> cake style) with spacing between slices, center total label (smaller), hover tooltip & slice explode
- * - Per-asset chart modal: crypto uses CoinGecko market_chart, stocks use AlphaVantage daily/quote; non-liquid synthetic series
- * - Table columns per spec:
- *     Code (big) / Description (small)
- *     Qty
- *     Invested (big) / avg price (small)
- *     Market value (big) / Current Price (small)
- *     P&L (big) / Gain (small)
- * - "Gain P&L" label instead of Unrealized
- * - Realized P&L display with small slanted-up arrow icon in a small box at right
- * - Improved CSV format (markers, ISO dates, BOM) for clean spreadsheet import
- * - Buttons have hover/interaction micro animations; add button toggles + -> ×
- * - Click-outside behavior closes menus and modals
- *
- * Notes:
- * - AlphaVantage has rate limits; for production use a server-side proxy or alternative provider.
- * - Set AlphaVantage API key in browser console via:
- *      localStorage.setItem('ALPHAVANTAGE_API_KEY', 'YOUR_KEY_HERE')
- *
- * Replace or edit as you wish — this file is intended to be a comprehensive single-file implementation.
+ * Keep everything in this single file as requested.
  */
 
-/* ===================== CONFIG / ENDPOINTS ===================== */
+/* ===================== CONFIG/ENDPOINTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-const COINGECKO_PRICE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
-const COINGECKO_MARKETCHART = (id, days) => `${COINGECKO_API}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${encodeURIComponent(days)}&interval=daily`;
-const ALPHAVANTAGE_KEY = (typeof window !== "undefined" && localStorage.getItem("ALPHAVANTAGE_API_KEY")) || "YOUR_KEY_HERE";
-const ALPHAVANTAGE_GLOBAL_QUOTE = (symbol, key = ALPHAVANTAGE_KEY) =>
-  `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key)}`;
-const ALPHAVANTAGE_DAILY = (symbol, key = ALPHAVANTAGE_KEY) =>
-  `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&outputsize=compact&apikey=${encodeURIComponent(key)}`;
+const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
+const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`;
+const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`;
+const COINGECKO_PRICE = (ids) =>
+  `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
+const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
 
 /* ===================== HELPERS ===================== */
 const isBrowser = typeof window !== "undefined";
@@ -96,7 +68,7 @@ function ensureNumericAsset(a) {
   };
 }
 
-/* small seeded RNG for synthetic series */
+/* seeded RNG for synthetic growth chart noise */
 function hashStringToSeed(str) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) {
@@ -115,131 +87,102 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== FETCH / MARKET HELPERS ===================== */
-
-/** Fetch coin current prices (usd) from CoinGecko for multiple ids */
-async function fetchCoinGeckoPrices(ids = []) {
-  if (!ids || ids.length === 0) return {};
-  try {
-    const res = await fetch(COINGECKO_PRICE(ids.join(",")));
-    if (!res.ok) throw new Error("CoinGecko error");
-    const j = await res.json();
-    return j; // { bitcoin: { usd: 12345 }, ... }
-  } catch (e) {
-    console.warn("fetchCoinGeckoPrices", e);
-    return {};
-  }
-}
-
-/** Fetch coin market chart prices from CoinGecko (returns [{t, price}, ...]) */
-async function fetchCoinGeckoMarketChart(id, days = 90) {
-  try {
-    const res = await fetch(COINGECKO_MARKETCHART(id, days));
-    if (!res.ok) throw new Error("CoinGecko market_chart error");
-    const j = await res.json();
-    if (!Array.isArray(j.prices)) throw new Error("Unexpected CG response");
-    return j.prices.map(p => ({ t: p[0], price: Number(p[1]) }));
-  } catch (e) {
-    console.warn("fetchCoinGeckoMarketChart", e);
-    throw e;
-  }
-}
-
-/** Fetch AlphaVantage GLOBAL_QUOTE (preferred) else daily adjusted (fallback)
- * returns numeric price (local currency) or throws
- */
-async function fetchAlphaVantageQuoteUSD(symbol) {
-  try {
-    if (!ALPHAVANTAGE_KEY || ALPHAVANTAGE_KEY === "YOUR_KEY_HERE") throw new Error("AlphaVantage: missing API key (localStorage('ALPHAVANTAGE_API_KEY')).");
-    // Try GLOBAL_QUOTE
-    let res = await fetch(ALPHAVANTAGE_GLOBAL_QUOTE(symbol));
-    if (!res.ok) throw new Error("AlphaVantage network error");
-    let j = await res.json();
-    // j["Global Quote"] -> {"05. price":"...", "10. change percent":"..."}
-    if (j && j["Global Quote"] && j["Global Quote"]["05. price"]) {
-      const price = toNum(j["Global Quote"]["05. price"]);
-      if (price > 0) return price; // local currency
-    }
-    // fallback: TIME_SERIES_DAILY_ADJUSTED -> use most recent close
-    res = await fetch(ALPHAVANTAGE_DAILY(symbol));
-    if (!res.ok) throw new Error("AlphaVantage daily error");
-    j = await res.json();
-    const ts = j["Time Series (Daily)"] || j["Time Series (Daily)"];
-    if (ts && typeof ts === "object") {
-      const dates = Object.keys(ts).sort();
-      const last = ts[dates[dates.length - 1]];
-      if (last && last["4. close"]) {
-        return toNum(last["4. close"]);
-      }
-    }
-    throw new Error("AlphaVantage no price");
-  } catch (e) {
-    console.warn("fetchAlphaVantageQuoteUSD", symbol, e);
-    throw e;
-  }
-}
-
-/* ===================== PIE / CAKE CHART ===================== */
-function CakeAllocation({ data = [], size = 180, inner = 60, gap = 0.06, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
+/* ===================== CAKE-STYLE ALLOCATION (PROPORTIONAL ANGLE + RADIUS) ===================== */
+function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
+  // compute total and angles proportional to value
   const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2, cy = size / 2;
-  const maxR = size / 2 - 6;
+  const maxOuter = size / 2 - 6;
   const minOuter = inner + 8;
   const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
-  const outerFor = (v) => {
+
+  const scaleOuter = (v) => {
     if (!v || v <= 0) return inner + 6;
     const frac = v / maxValue;
-    return Math.round(minOuter + frac * (maxR - minOuter));
+    return Math.round(minOuter + frac * (maxOuter - minOuter));
   };
-  const anglePer = (2 * Math.PI) / Math.max(1, data.length);
-  const colors = ["#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE", "#B28DFF", "#FFB26B", "#6BFFA0", "#FF6BE5", "#00C49F"];
-  const [hover, setHover] = useState(null);
-  const wrapRef = useRef(null);
+
+  const colors = [
+    "#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE",
+    "#B28DFF", "#FFB26B", "#6BFFA0", "#FF6BE5", "#00C49F",
+  ];
+
+  const [hoverIndex, setHoverIndex] = useState(null);
   const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, html: "" });
+  const wrapRef = useRef(null);
 
-  function arcPath(cx, cy, rIn, rOut, sAng, eAng) {
-    const x1 = cx + rOut * Math.cos(sAng), y1 = cy + rOut * Math.sin(sAng);
-    const x2 = cx + rOut * Math.cos(eAng), y2 = cy + rOut * Math.sin(eAng);
-    const xi2 = cx + rIn * Math.cos(eAng), yi2 = cy + rIn * Math.sin(eAng);
-    const xi1 = cx + rIn * Math.cos(sAng), yi1 = cy + rIn * Math.sin(sAng);
-    const large = (eAng - sAng) > Math.PI ? 1 : 0;
-    return `M ${cx} ${cy} L ${x1} ${y1} A ${rOut} ${rOut} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${rIn} ${rIn} 0 ${large} 0 ${xi1} ${yi1} Z`;
+  const formatForDisplayCcy = (v) => {
+    if (displayCcy === "IDR") return fmtMoney((v || 0) * usdIdr, "IDR");
+    return fmtMoney(v || 0, "USD");
+  };
+
+  const onSliceEnter = (i, event, d) => {
+    setHoverIndex(i);
+    const rect = wrapRef.current?.getBoundingClientRect();
+    const px = (event.clientX - (rect?.left || 0)) + 12;
+    const py = (event.clientY - (rect?.top || 0)) - 12;
+    setTooltip({ show: true, x: px, y: py, html: `${d.name} • ${formatForDisplayCcy(d.value)}` });
+  };
+  const onSliceMove = (event) => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    const px = (event.clientX - (rect?.left || 0)) + 12;
+    setTooltip(t => ({ ...t, x: px }));
+  };
+  const onSliceLeave = () => {
+    setHoverIndex(null);
+    setTooltip({ show: false, x: 0, y: 0, html: "" });
+  };
+
+  // build arcs proportional to values
+  let start = -Math.PI / 2;
+  const arcs = data.map((d) => {
+    const portion = Math.max(0, d.value || 0) / total;
+    const angle = portion * Math.PI * 2;
+    const end = start + angle;
+    const rOuter = scaleOuter(d.value || 0);
+    const arc = { start, end, outer: rOuter };
+    start = end;
+    return arc;
+  });
+
+  function arcPath(cx, cy, rInner, rOuter, startAngle, endAngle) {
+    const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
+    const x1 = cx + rOuter * Math.cos(startAngle);
+    const y1 = cy + rOuter * Math.sin(startAngle);
+    const x2 = cx + rOuter * Math.cos(endAngle);
+    const y2 = cy + rOuter * Math.sin(endAngle);
+    const xi2 = cx + rInner * Math.cos(endAngle);
+    const yi2 = cy + rInner * Math.sin(endAngle);
+    const xi1 = cx + rInner * Math.cos(startAngle);
+    const yi1 = cy + rInner * Math.sin(startAngle);
+    return `M ${cx} ${cy} L ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${rInner} ${rInner} 0 ${large} 0 ${xi1} ${yi1} Z`;
   }
-
-  const formatVal = (v) => displayCcy === "IDR" ? fmtMoney(v * usdIdr, "IDR") : fmtMoney(v, "USD");
 
   return (
     <div ref={wrapRef} style={{ width: size, height: size, position: "relative" }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {data.map((d, i) => {
-          const rOut = outerFor(d.value);
-          const start = -Math.PI / 2 + i * anglePer;
-          const end = start + anglePer - gap;
-          const path = arcPath(cx, cy, inner, rOut, start, end);
-          const isHover = hover === i;
-          const transform = isHover ? `translate(${Math.cos((start + end) / 2) * 6},${Math.sin((start + end) / 2) * 6})` : undefined;
+          const arc = arcs[i];
+          // apply small gap by shrinking end angle inward
+          const gapAngle = Math.min(arc.end - arc.start, 0.02);
+          const s = arc.start + gapAngle / 2;
+          const e = arc.end - gapAngle / 2;
+          const path = arcPath(cx, cy, inner, arc.outer, s, e);
+          const isHover = hoverIndex === i;
+          const mid = (s + e) / 2;
+          const transform = isHover ? `translate(${Math.cos(mid) * 6},${Math.sin(mid) * 6})` : undefined;
           return (
             <g key={i} transform={transform}>
               <path
                 d={path}
                 fill={colors[i % colors.length]}
-                stroke="#0b0b0b"
+                stroke="#000"
                 strokeWidth={isHover ? 1.8 : 0.6}
-                onMouseEnter={(ev) => {
-                  const rect = wrapRef.current?.getBoundingClientRect();
-                  const px = ev.clientX - (rect?.left || 0) + 12;
-                  const py = ev.clientY - (rect?.top || 0) - 12;
-                  setHover(i);
-                  setTooltip({ show: true, x: px, y: py, html: `${d.name} • ${formatVal(d.value)}` });
-                }}
-                onMouseMove={(ev) => {
-                  const rect = wrapRef.current?.getBoundingClientRect();
-                  const px = ev.clientX - (rect?.left || 0) + 12;
-                  setTooltip(t => ({ ...t, x: px }));
-                }}
-                onMouseLeave={() => { setHover(null); setTooltip({ show: false, x: 0, y: 0, html: "" }); }}
+                style={{ transition: "transform 180ms, filter 160ms, stroke-width 160ms" }}
+                onMouseEnter={(ev) => onSliceEnter(i, ev, d)}
+                onMouseMove={(ev) => onSliceMove(ev)}
+                onMouseLeave={onSliceLeave}
                 className="slice"
-                style={{ transition: "transform 140ms, stroke-width 120ms" }}
               />
             </g>
           );
@@ -247,7 +190,9 @@ function CakeAllocation({ data = [], size = 180, inner = 60, gap = 0.06, display
 
         <circle cx={cx} cy={cy} r={inner - 4} fill="#070707" />
         <text x={cx} y={cy - 8} textAnchor="middle" fontSize="10" fill="#9CA3AF">Total</text>
-        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="11" fontWeight={700} fill="#E5E7EB">{displayTotal}</text>
+        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="11" fontWeight={700} fill="#E5E7EB">
+          {displayTotal}
+        </text>
       </svg>
 
       <div style={{
@@ -267,15 +212,15 @@ function CakeAllocation({ data = [], size = 180, inner = 60, gap = 0.06, display
         transition: "opacity 140ms, transform 120ms",
         whiteSpace: "nowrap",
         zIndex: 40
-      }}>{tooltip.html}</div>
+      }}>
+        {tooltip.html}
+      </div>
     </div>
   );
 }
 
-/* ===================== CANDLES + MULTI-LINE (Portfolio growth) ===================== */
-
+/* ===================== CANDLE + MULTI-LINE CHART (throttled mousemove) ===================== */
 function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 960, height = 300, rangeKey = "all", onHover }) {
-  // seriesMap: { all: [{t,v}], crypto: [{t,v}], stock: [...], nonliquid: [...] }
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = Math.min(width, 1200);
   const h = height;
@@ -283,60 +228,41 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   const innerH = h - padding.top - padding.bottom;
 
   const conv = (v) => displayCcy === "IDR" ? v * usdIdr : v;
-  const all = (seriesMap["all"] || []).map(p => ({ t: p.t, v: conv(p.v) }));
-  const keys = ["crypto", "stock", "nonliquid"];
-  const cats = {};
-  keys.forEach(k => cats[k] = (seriesMap[k] || []).map(p => ({ t: p.t, v: conv(p.v) })));
 
-  if (!all || all.length < 2) return <div className="text-xs text-gray-500">Not enough data for chart</div>;
+  const convAll = (seriesMap["all"] || []).map(p => ({ t: p.t, v: conv(p.v) }));
+  const convKeys = ["crypto","stock","nonliquid"];
+  const convCats = {};
+  convKeys.forEach(k => convCats[k] = (seriesMap[k] || []).map(p => ({ t: p.t, v: conv(p.v) })));
 
-  const timeframeMap = { "1d": 48, "2d": 96, "1w": 56, "1m": 90, "1y": 180, "all": Math.min(200, all.length) };
-  const buckets = timeframeMap[rangeKey] || Math.min(200, all.length);
-  // bucket all into `buckets` points
-  const bucketsArr = Array.from({ length: Math.max(4, buckets) }, () => []);
-  for (let i = 0; i < all.length; i++) {
-    const idx = Math.floor((i / all.length) * bucketsArr.length);
-    bucketsArr[Math.min(bucketsArr.length - 1, idx)].push(all[i]);
+  if (!convAll || convAll.length < 2) return <div className="text-xs text-gray-500">Not enough data for chart</div>;
+
+  const timeframeMap = { "1d": 48, "2d": 96, "1w": 56, "1m": 90, "1y": 180, "all": Math.min(200, convAll.length) };
+  const candleCountTarget = timeframeMap[rangeKey] || Math.min(200, convAll.length);
+
+  // buckets
+  const buckets = Array.from({ length: Math.max(4, candleCountTarget) }, () => []);
+  for (let i = 0; i < convAll.length; i++) {
+    const idx = Math.floor((i / convAll.length) * buckets.length);
+    buckets[Math.min(buckets.length - 1, idx)].push(convAll[i]);
   }
-  const candles = bucketsArr.map(arr => {
+  const candles = buckets.map(arr => {
     if (!arr || arr.length === 0) return null;
-    const open = arr[0].v, close = arr[arr.length - 1].v;
+    const open = arr[0].v;
+    const close = arr[arr.length - 1].v;
     let high = -Infinity, low = Infinity;
     arr.forEach(p => { if (p.v > high) high = p.v; if (p.v < low) low = p.v; });
-    const t = arr[Math.floor(arr.length / 2)].t || arr[0].t;
-    return { t, open, high, low, close };
+    const t = arr[Math.floor(arr.length / 2)].t;
+    return { t, open, high, low, close, count: arr.length };
   }).filter(Boolean);
 
-  // overlays: for each category, pick nearest point in buckets for that time
-  function seriesToOverlay(catSeries) {
-    if (!catSeries || catSeries.length === 0) return [];
-    const pts = [];
-    for (let i = 0; i < candles.length; i++) {
-      const midT = candles[i].t;
-      let nearest = catSeries[0], bestD = Math.abs(catSeries[0].t - midT);
-      for (let j = 1; j < catSeries.length; j++) {
-        const d = Math.abs(catSeries[j].t - midT);
-        if (d < bestD) { bestD = d; nearest = catSeries[j]; }
-      }
-      const x = padding.left + (i + 0.5) * (innerW / candles.length);
-      const y = padding.top + (1 - (nearest.v - Math.min(...all.map(a => a.v))) / Math.max(1e-8, Math.max(...all.map(a => a.v)) - Math.min(...all.map(a => a.v)))) * innerH;
-      pts.push({ x, y, v: nearest.v, t: nearest.t });
-    }
-    return pts;
-  }
-
-  // compute min/max across candles + overlays
   let min = Infinity, max = -Infinity;
   candles.forEach(c => { if (c.low < min) min = c.low; if (c.high > max) max = c.high; });
-  keys.forEach(k => (cats[k] || []).forEach(p => { if (p.v < min) min = p.v; if (p.v > max) max = p.v; }));
+  convKeys.forEach(k => (convCats[k] || []).forEach(p => { if (p.v < min) min = p.v; if (p.v > max) max = p.v; }));
   if (!isFinite(min) || !isFinite(max)) return <div className="text-xs text-gray-500">No chart data</div>;
   const range = Math.max(1e-8, max - min);
 
   const yOf = (v) => padding.top + (1 - (v - min) / range) * innerH;
   const xOfCandle = (i) => padding.left + (i + 0.5) * (innerW / candles.length);
-
-  const overlayPts = {};
-  keys.forEach(k => overlayPts[k] = seriesToOverlay((seriesMap[k] || []).map(p => ({ t: p.t, v: conv(p.v) }))));
 
   const colorFor = (k) => {
     if (k === "all") return "#4D96FF";
@@ -347,37 +273,71 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   };
 
   const [hoverIndex, setHoverIndex] = useState(null);
+  const rafRef = useRef(null);
+  const lastXRef = useRef(null);
+
+  function scheduleHover(x, rect) {
+    lastXRef.current = { x, rect };
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      const info = lastXRef.current;
+      rafRef.current = null;
+      if (!info) return;
+      const px = info.x - (info.rect.left || 0);
+      let best = 0, bestD = Infinity;
+      for (let i = 0; i < candles.length; i++) {
+        const cx = xOfCandle(i);
+        const d = Math.abs(cx - px);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      setHoverIndex(best);
+      if (onHover) {
+        const c = candles[best];
+        onHover({ t: c.t, o: c.open, h: c.high, l: c.low, c: c.close });
+      }
+    });
+  }
 
   function handleMove(e) {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    let best = 0, bestD = Infinity;
-    for (let i = 0; i < candles.length; i++) {
-      const cx = xOfCandle(i);
-      const d = Math.abs(cx - x);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    setHoverIndex(best);
-    if (onHover) onHover(candles[best]);
+    scheduleHover(e.clientX, rect);
   }
   function handleLeave() {
     setHoverIndex(null);
     if (onHover) onHover(null);
   }
 
+  function seriesToLinePoints(catSeries) {
+    if (!catSeries || catSeries.length === 0) return [];
+    const pts = [];
+    for (let i = 0; i < candles.length; i++) {
+      const midT = candles[i].t;
+      let nearest = catSeries[0];
+      let bestD = Math.abs(catSeries[0].t - midT);
+      for (let j = 1; j < catSeries.length; j++) {
+        const d = Math.abs(catSeries[j].t - midT);
+        if (d < bestD) { bestD = d; nearest = catSeries[j]; }
+      }
+      const x = xOfCandle(i);
+      const y = yOf(nearest.v);
+      pts.push({ x, y, v: nearest.v, t: nearest.t });
+    }
+    return pts;
+  }
+
+  const overlayPts = {};
+  convKeys.forEach(k => overlayPts[k] = seriesToLinePoints(convCats[k]));
+
   return (
     <div className="w-full overflow-hidden rounded" style={{ background: "transparent" }}>
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" onMouseMove={handleMove} onMouseLeave={handleLeave}>
         <rect x="0" y="0" width={w} height={h} fill="transparent" />
-
-        {/* grid lines */}
         {[0,1,2,3,4].map(i => {
-          const v = min + (i/4) * range;
+          const v = min + (i/4) * (range);
           const y = yOf(v);
           return <line key={i} x1={padding.left} x2={w - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
         })}
 
-        {/* candles */}
         {candles.map((c, i) => {
           const cx = xOfCandle(i);
           const candleWidth = Math.max(4, (innerW / candles.length) * 0.6);
@@ -397,29 +357,28 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
           );
         })}
 
-        {/* overlays */}
         {["crypto","stock","nonliquid"].map(k => {
           const pts = overlayPts[k] || [];
           if (!pts.length) return null;
-          const path = pts.map((p, idx) => `${idx===0 ? "M" : "L"} ${p.x.toFixed(2)} ${yOf(p.v).toFixed(2)}`).join(" ");
+          const path = pts.map((p, idx) => `${idx===0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
           return (
             <g key={k}>
               <path d={path} stroke={colorFor(k)} strokeWidth={k==="stock"?1.8:1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.95} />
-              {pts.map((p, idx) => <circle key={idx} cx={p.x} cy={yOf(p.v)} r={2} fill={colorFor(k)} stroke="#000" strokeWidth={0.4} />)}
+              {pts.map((p, idx) => <circle key={idx} cx={p.x} cy={p.y} r={2} fill={colorFor(k)} stroke="#000" strokeWidth={0.4} />)}
             </g>
           );
         })}
 
-        {/* y-axis labels */}
         {[0,1,2,3,4].map(i => {
-          const v = min + (i/4) * range;
+          const v = min + (i/4) * (range);
           const y = yOf(v);
           return <text key={i} x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{displayCcy === "IDR" ? fmtMoney(v, "IDR") : fmtMoney(v, "USD")}</text>;
         })}
 
-        {/* hover vertical */}
         {hoverIndex !== null && candles[hoverIndex] && (
-          <line x1={xOfCandle(hoverIndex)} x2={xOfCandle(hoverIndex)} y1={padding.top} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+          <>
+            <line x1={xOfCandle(hoverIndex)} x2={xOfCandle(hoverIndex)} y1={padding.top} y2={padding.top + innerH} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+          </>
         )}
       </svg>
 
@@ -445,195 +404,18 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   );
 }
 
-/* ===================== ASSET CHART MODAL ===================== */
-function AssetChartModal({ open, onClose, asset, displayCcy = "USD", usdIdr = 16000 }) {
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState(null);
-  const [candles, setCandles] = useState(null);
-  const [timeframe, setTimeframe] = useState("90"); // days
-  const ref = useRef();
-
-  useEffect(() => {
-    if (!open) return;
-    let mounted = true;
-    async function load() {
-      setErr(null); setLoading(true);
-      try {
-        if (!asset) throw new Error("No asset");
-        if (asset.type === "crypto") {
-          const id = asset.coingeckoId || (asset.symbol || "").toLowerCase();
-          const days = timeframe === "max" ? "max" : Number(timeframe) || 90;
-          const prices = await fetchCoinGeckoMarketChart(id, days);
-          if (!mounted) return;
-          // bucket to candles
-          const buckets = Math.min(120, Math.max(12, prices.length));
-          const arr = Array.from({ length: buckets }, () => []);
-          for (let i = 0; i < prices.length; i++) {
-            const idx = Math.floor((i / prices.length) * arr.length);
-            arr[idx].push(prices[i]);
-          }
-          const c = arr.map(b => {
-            if (!b.length) return null;
-            const open = b[0].price, close = b[b.length - 1].price;
-            let high = -Infinity, low = Infinity;
-            b.forEach(p => { if (p.price > high) high = p.price; if (p.price < low) low = p.price; });
-            const t = b[Math.floor(b.length / 2)].t;
-            return { t, open, high, low, close };
-          }).filter(Boolean);
-          setCandles(c);
-        } else if (asset.type === "stock") {
-          // try variants for IDX
-          const sym = (asset.symbol || "").toString();
-          const tries = [];
-          if (sym.toUpperCase().endsWith(".JK")) tries.push(sym);
-          tries.push(sym.replace(/\.JK$/i, ""));
-          if (!sym.toUpperCase().endsWith(".JK")) tries.push(sym + ".JK");
-          let found = null;
-          for (const s of tries) {
-            try {
-              const res = await fetch(ALPHAVANTAGE_DAILY(s));
-              if (!res.ok) continue;
-              const j = await res.json();
-              const ts = j["Time Series (Daily)"] || j["Time Series (Daily)"];
-              if (ts && typeof ts === "object") {
-                const dates = Object.keys(ts).sort((a,b)=>new Date(a)-new Date(b));
-                const c = dates.map(dateStr => {
-                  const obj = ts[dateStr];
-                  const t = new Date(dateStr + "T00:00:00Z").getTime();
-                  return { t, open: toNum(obj["1. open"]), high: toNum(obj["2. high"]), low: toNum(obj["3. low"]), close: toNum(obj["4. close"]) };
-                });
-                if (c.length) { found = c; break; }
-              }
-            } catch (e) {}
-          }
-          if (!found) throw new Error("AlphaVantage: no daily series (check API key & rate limit)");
-          setCandles(found);
-        } else if (asset.type === "nonliquid") {
-          const now = Date.now();
-          const start = asset.purchaseDate || asset.createdAt || (now - 365 * 24 * 3600 * 1000);
-          const points = 90;
-          const arr = [];
-          for (let i = 0; i < points; i++) {
-            const t = start + Math.floor((i / (points - 1)) * (now - start));
-            const price = computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || Date.now(), asset.nonLiquidYoy || 0, t);
-            const o = price * (1 - 0.02 * (Math.sin(i) + 0.5));
-            const c = price * (1 + 0.02 * (Math.cos(i) + 0.5));
-            const h = Math.max(o, c) * (1 + 0.01);
-            const l = Math.min(o, c) * (1 - 0.01);
-            arr.push({ t, open: o, high: h, low: l, close: c });
-          }
-          setCandles(arr);
-        } else {
-          setErr("Unsupported type for chart");
-        }
-      } catch (e) {
-        setErr(e.message || String(e));
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-    load();
-    return () => { mounted = false; };
-  }, [open, asset, timeframe]);
-
-  // click outside to close
-  useEffect(() => {
-    function onPointer(e) {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target)) onClose?.();
-    }
-    if (open) document.addEventListener("pointerdown", onPointer);
-    return () => document.removeEventListener("pointerdown", onPointer);
-  }, [open]);
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[500]">
-      <div ref={ref} className="bg-gray-900 p-4 rounded w-full max-w-4xl border border-gray-800">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-semibold">{asset?.symbol} — {asset?.name}</h3>
-            <div className="text-xs text-gray-400">{asset?.description || (asset?.type === "nonliquid" ? "Non-liquid asset" : "")}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)} className="bg-gray-800 border border-gray-700 px-2 py-1 text-sm rounded">
-              <option value="7">7d</option>
-              <option value="14">14d</option>
-              <option value="30">30d</option>
-              <option value="90">90d</option>
-              <option value="365">1y</option>
-              <option value="max">max</option>
-            </select>
-            <button onClick={() => onClose?.()} className="bg-gray-800 px-3 py-1 rounded">Close</button>
-          </div>
-        </div>
-
-        <div className="mt-3">
-          {loading && <div className="text-sm text-gray-400">Loading chart...</div>}
-          {err && <div className="text-sm text-red-400">Error: {err}</div>}
-          {!loading && !err && !candles && <div className="text-sm text-gray-400">No data</div>}
-          {!loading && !err && candles && candles.length > 0 && (
-            <div style={{ width: "100%", height: 360 }} className="rounded overflow-hidden">
-              <svg width="100%" viewBox={`0 0 1000 360`} preserveAspectRatio="none">
-                {(() => {
-                  const w = 1000, h = 360, pad = { left: 56, right: 12, top: 12, bottom: 28 };
-                  const innerW = w - pad.left - pad.right, innerH = h - pad.top - pad.bottom;
-                  const min = Math.min(...candles.map(c => Math.min(c.low, c.open, c.close)));
-                  const max = Math.max(...candles.map(c => Math.max(c.high, c.open, c.close)));
-                  const range = Math.max(1e-8, max - min);
-                  const xOf = (i) => pad.left + (i + 0.5) * (innerW / candles.length);
-                  const yOf = (v) => pad.top + (1 - (v - min) / range) * innerH;
-                  return (
-                    <>
-                      {[0,1,2,3,4].map(i => {
-                        const v = min + (i / 4) * range;
-                        const y = yOf(v);
-                        return <line key={i} x1={pad.left} x2={w - pad.right} y1={y} y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
-                      })}
-
-                      {candles.map((c, i) => {
-                        const cx = xOf(i);
-                        const candleWidth = Math.max(4, (innerW / candles.length) * 0.6);
-                        const openY = yOf(c.open), closeY = yOf(c.close), highY = yOf(c.high), lowY = yOf(c.low);
-                        const isUp = c.close >= c.open;
-                        const color = isUp ? "#34D399" : "#F87171";
-                        const bodyTop = Math.min(openY, closeY);
-                        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
-                        return (
-                          <g key={i}>
-                            <line x1={cx} x2={cx} y1={highY} y2={lowY} stroke={color} strokeWidth={1.4} strokeLinecap="round" opacity={0.9} />
-                            <rect x={cx - candleWidth / 2} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} stroke="#000" strokeWidth={0.6} rx={1} />
-                          </g>
-                        );
-                      })}
-
-                      {[0,1,2,3,4].map(i => {
-                        const v = min + (i / 4) * range;
-                        const y = yOf(v);
-                        const label = displayCcy === "IDR" ? fmtMoney(v * usdIdr, "IDR") : fmtMoney(v, "USD");
-                        return <text key={i} x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#9CA3AF">{label}</text>;
-                      })}
-                    </>
-                  );
-                })()}
-              </svg>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ===================== TRADE MODAL (BUY / SELL) ===================== */
+/* ===================== TRADE MODAL ===================== */
 function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
   const [priceCcy, setPriceCcy] = useState("USD");
 
-  useEffect(() => { setPrice(defaultPrice > 0 ? String(defaultPrice) : ""); }, [defaultPrice]);
+  useEffect(() => {
+    setPrice(defaultPrice > 0 ? String(defaultPrice) : "");
+  }, [defaultPrice]);
 
   if (!asset) return null;
+
   const priceUSD = priceCcy === "IDR" ? toNum(price) / usdIdr : toNum(price);
   const totalUSD = toNum(qty) * priceUSD;
 
@@ -646,7 +428,7 @@ function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr 
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[410]">
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
       <div className="bg-gray-900 p-6 rounded-lg w-full max-w-md border border-gray-800">
         <div className="flex justify-between items-start">
           <div>
@@ -659,22 +441,31 @@ function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr 
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1">Quantity</label>
             <input type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)}
-              className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700" placeholder="0.00" />
+              className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
+              placeholder="0.00"
+            />
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1">Price per unit</label>
             <div className="flex rounded overflow-hidden">
               <input type="number" step="any" value={price} onChange={(e) => setPrice(e.target.value)}
-                className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700" placeholder="0.00" />
+                className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700 focus:outline-none focus:border-blue-500"
+                placeholder="0.00"
+              />
               <select value={priceCcy} onChange={(e) => setPriceCcy(e.target.value)}
-                className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r">
+                className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r focus:outline-none"
+              >
                 <option value="USD">USD</option>
                 <option value="IDR">IDR</option>
               </select>
             </div>
           </div>
-          <div className="text-sm text-gray-400 text-right mb-4">Total: {fmtMoney(totalUSD, "USD")}</div>
-          <button type="submit" className={`w-full py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-white'}`}>
+          <div className="text-sm text-gray-400 text-right mb-4">
+            Total: {fmtMoney(totalUSD, "USD")}
+          </div>
+          <button type="submit"
+            className={`w-full py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-white'}`}
+          >
             {mode === 'buy' ? 'Confirm Buy' : 'Confirm Sell'}
           </button>
         </form>
@@ -683,52 +474,25 @@ function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr 
   );
 }
 
-/* ===================== NON-LIQUID GROWTH CALC ===================== */
-function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent, targetTime = Date.now()) {
-  const years = Math.max(0, (targetTime - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
-  const r = toNum(yoyPercent) / 100;
-  const last = avgPriceUSD * Math.pow(1 + r, years);
-  return last;
-}
-
-/* ===================== CSV HELPERS ===================== */
-function csvQuote(v) {
-  if (v === undefined || v === null) return "";
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
-  const s = String(v);
-  if (s.includes(",") || s.includes("\n") || s.includes('"')) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
 /* ===================== MAIN COMPONENT ===================== */
 export default function PortfolioDashboard() {
   /* ---------- persistent state ---------- */
   const loadAssets = () => {
     try {
       if (!isBrowser) return [];
-      const raw = JSON.parse(localStorage.getItem("pf_assets_v3") || "[]");
+      const raw = JSON.parse(localStorage.getItem("pf_assets_v2") || "[]");
       if (!Array.isArray(raw)) return [];
       return raw.map(ensureNumericAsset);
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   };
   const [assets, setAssets] = useState(loadAssets);
-
-  const loadTransactions = () => {
-    try {
-      if (!isBrowser) return [];
-      const raw = JSON.parse(localStorage.getItem("pf_transactions_v3") || "[]");
-      if (!Array.isArray(raw)) return [];
-      return raw;
-    } catch { return []; }
-  };
-  const [transactions, setTransactions] = useState(loadTransactions);
 
   const loadRealized = () => {
     try {
       if (!isBrowser) return 0;
-      return toNum(localStorage.getItem("pf_realized_v3") || 0);
+      return toNum(localStorage.getItem("pf_realized_v2") || 0);
     } catch { return 0; }
   };
   const [realizedUSD, setRealizedUSD] = useState(loadRealized);
@@ -736,20 +500,31 @@ export default function PortfolioDashboard() {
   const loadDisplayCcy = () => {
     try {
       if (!isBrowser) return "USD";
-      return localStorage.getItem("pf_display_ccy_v3") || "USD";
+      return localStorage.getItem("pf_display_ccy_v2") || "USD";
     } catch { return "USD"; }
   };
   const [displayCcy, setDisplayCcy] = useState(loadDisplayCcy);
 
-  /* ---------- FX & loading ---------- */
+  const loadTransactions = () => {
+    try {
+      if (!isBrowser) return [];
+      const raw = JSON.parse(localStorage.getItem("pf_transactions_v2") || "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw.map(t => ({ ...t }));
+    } catch {
+      return [];
+    }
+  };
+  const [transactions, setTransactions] = useState(loadTransactions);
+
+  /* ---------- UI & FX ---------- */
   const [usdIdr, setUsdIdr] = useState(16000);
   const [fxLoading, setFxLoading] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [lastTick, setLastTick] = useState(null);
 
-  /* ---------- UI & controls ---------- */
+  /* ---------- add/search state ---------- */
   const [openAdd, setOpenAdd] = useState(false);
-  const [searchMode, setSearchMode] = useState("crypto"); // crypto / id / us / nonliquid
+  const [searchMode, setSearchMode] = useState("crypto");
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
@@ -757,7 +532,6 @@ export default function PortfolioDashboard() {
   const [initPrice, setInitPrice] = useState("");
   const [initPriceCcy, setInitPriceCcy] = useState("USD");
 
-  // non-liquid add fields
   const [nlName, setNlName] = useState("");
   const [nlQty, setNlQty] = useState("");
   const [nlPrice, setNlPrice] = useState("");
@@ -766,53 +540,83 @@ export default function PortfolioDashboard() {
   const [nlYoy, setNlYoy] = useState("5");
   const [nlDesc, setNlDesc] = useState("");
 
-  /* ---------- filtering / sorting / menus ---------- */
+  /* ---------- live quotes ---------- */
+  const [lastTick, setLastTick] = useState(null);
+
+  /* ---------- filter & UI ---------- */
   const [portfolioFilter, setPortfolioFilter] = useState("all");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
+
+  /* ---------- table sort menu ---------- */
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const [sortBy, setSortBy] = useState("market_desc");
+
+  /* ---------- transactions / undo ---------- */
   const [transactionsOpen, setTransactionsOpen] = useState(false);
+  const [lastDeletedTx, setLastDeletedTx] = useState(null);
 
-  /* ---------- modals ---------- */
+  /* ---------- trade modal ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
-  const [chartModalOpen, setChartModalOpen] = useState(false);
-  const [chartAsset, setChartAsset] = useState(null);
 
-  /* ---------- chart / timeframe ---------- */
+  /* ---------- chart timeframe ---------- */
   const [chartRange, setChartRange] = useState("all");
   const [chartHover, setChartHover] = useState(null);
 
-  /* ---------- refs for click-outside ---------- */
-  const filterRef = useRef(null);
-  const sortRef = useRef(null);
-  const addRef = useRef(null);
-  const currencyRef = useRef(null);
+  /* ---------- sorting ---------- */
+  const [sortBy, setSortBy] = useState("market_desc");
 
-  /* ---------- persist changes ---------- */
-  useEffect(() => { try { localStorage.setItem("pf_assets_v3", JSON.stringify(assets.map(ensureNumericAsset))); } catch {} }, [assets]);
-  useEffect(() => { try { localStorage.setItem("pf_transactions_v3", JSON.stringify(transactions || [])); } catch {} }, [transactions]);
-  useEffect(() => { try { localStorage.setItem("pf_realized_v3", String(realizedUSD)); } catch {} }, [realizedUSD]);
-  useEffect(() => { try { localStorage.setItem("pf_display_ccy_v3", displayCcy); } catch {} }, [displayCcy]);
+  /* ---------- refs ---------- */
+  const filterMenuRef = useRef(null);
+  const sortMenuRef = useRef(null);
+  const suggestionsRef = useRef(null);
+  const addPanelRef = useRef(null);
+  const currencyMenuRef = useRef(null);
 
-  /* click outside handlers */
+  /* ---------- persist ---------- */
   useEffect(() => {
-    function handler(e) {
-      const t = e.target;
-      if (filterMenuOpen && filterRef.current && !filterRef.current.contains(t) && !e.target.closest('[aria-label="Filter"]')) setFilterMenuOpen(false);
-      if (sortMenuOpen && sortRef.current && !sortRef.current.contains(t) && !e.target.closest('[aria-label="Sort"]')) setSortMenuOpen(false);
-      if (currencyMenuOpen && currencyRef.current && !currencyRef.current.contains(t) && !e.target.closest('[aria-label="Currency"]')) setCurrencyMenuOpen(false);
-      if (openAdd && addRef.current && !addRef.current.contains(t) && !e.target.closest('[aria-label="Add asset"]')) setOpenAdd(false);
-      if (suggestions.length > 0 && !e.target.closest('.suggestions') && !e.target.closest('[aria-label="Add asset"]')) setSuggestions([]);
-    }
-    document.addEventListener("pointerdown", handler);
-    return () => document.removeEventListener("pointerdown", handler);
-  }, [filterMenuOpen, sortMenuOpen, currencyMenuOpen, openAdd, suggestions.length]);
+    try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {}
+  }, [assets]);
+  useEffect(() => {
+    try { localStorage.setItem("pf_realized_v2", String(realizedUSD)); } catch {}
+  }, [realizedUSD]);
+  useEffect(() => {
+    try { localStorage.setItem("pf_display_ccy_v2", displayCcy); } catch {}
+  }, [displayCcy]);
+  useEffect(() => {
+    try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {}
+  }, [transactions]);
 
-  /* ===================== SEARCH (yahoo/coingecko proxy) ===================== */
+  /* click outside (close menus) */
+  useEffect(() => {
+    function onPointerDown(e) {
+      const target = e.target;
+      if (filterMenuOpen && filterMenuRef.current && !filterMenuRef.current.contains(target) && !e.target.closest('[aria-label="Filter"]')) {
+        setFilterMenuOpen(false);
+      }
+      if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(target) && !e.target.closest('[aria-label="Sort"]')) {
+        setSortMenuOpen(false);
+      }
+      if (suggestions.length > 0 && suggestionsRef.current && !suggestionsRef.current.contains(target) && !addPanelRef.current?.contains(target)) {
+        setSuggestions([]);
+      }
+      if (openAdd && addPanelRef.current && !addPanelRef.current.contains(target) && !e.target.closest('[aria-label="Add asset"]')) {
+        setOpenAdd(false);
+      }
+      if (currencyMenuOpen && currencyMenuRef.current && !currencyMenuRef.current.contains(target) && !e.target.closest('[aria-label="Currency"]')) {
+        setCurrencyMenuOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown, { passive: true });
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd, currencyMenuOpen]);
+
+  /* search (unchanged) */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
-    if (!query || query.trim().length < 1 || searchMode === "nonliquid") { setSuggestions([]); return; }
+    if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
+      setSuggestions([]);
+      return;
+    }
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(async () => {
       try {
@@ -821,18 +625,21 @@ export default function PortfolioDashboard() {
           const res = await fetch(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}`);
           if (!res.ok) { setSuggestions([]); return; }
           const j = await res.json();
-          setSuggestions((j.coins || []).slice(0, 20).map(c => ({ id: c.id, symbol: (c.symbol || "").toUpperCase(), display: c.name, source: "coingecko", type: "crypto" })));
+          setSuggestions((j.coins || []).slice(0, 20).map((c) => ({
+            id: c.id, symbol: (c.symbol || "").toUpperCase(), display: c.name,
+            source: "coingecko", type: "crypto",
+          })));
           return;
         }
-        // Stocks search: try public yahoo proxy endpoints (may vary)
+
         const proxyCandidates = [
-          (t) => `/api/yahoo/search?q=${encodeURIComponent(t)}`,
+          YAHOO_SEARCH,
           (t) => `/api/search?q=${encodeURIComponent(t)}`,
         ];
         let payload = null;
         for (const p of proxyCandidates) {
           try {
-            const url = p(q);
+            const url = typeof p === "function" ? p(q) : p(q);
             const res = await fetch(url);
             if (!res.ok) continue;
             payload = await res.json();
@@ -840,24 +647,55 @@ export default function PortfolioDashboard() {
           } catch (e) {}
         }
         if (!payload) { setSuggestions([]); return; }
-        const rawList = payload.quotes || payload.result || (payload.data && payload.data.quotes) || payload.items || [];
-        const list = (Array.isArray(rawList) ? rawList : []).slice(0, 120).map(it => {
-          const symbol = it.symbol || it.ticker || it.id || (typeof it === "string" ? it : "");
-          const display = it.shortname || it.shortName || it.longname || it.name || it.title || symbol;
-          const exchange = it.exchange || it.fullExchangeName || it.exchangeName || "";
-          return { symbol: (symbol || "").toString().toUpperCase(), display: display || symbol, exchange, source: "yahoo", type: "stock" };
+
+        const rawList = payload.quotes || payload.result || (payload.data && payload.data.quotes) || (payload.finance && payload.finance.result && payload.finance.result.quotes) || payload.items || [];
+        const list = (Array.isArray(rawList) ? rawList : []).slice(0, 120).map((it) => {
+          const symbol =
+            it.symbol ||
+            it.ticker ||
+            it.symbolDisplay ||
+            it.id ||
+            (typeof it === "string" ? it : "");
+          const display =
+            it.shortname ||
+            it.shortName ||
+            it.longname ||
+            it.longName ||
+            it.name ||
+            it.title ||
+            it.displayName ||
+            it.description ||
+            symbol;
+          const exchange = it.exchange || it.fullExchangeName || it.exchangeName || it.exchDisp || "";
+          const currency = it.currency || it.quoteCurrency || "";
+          return {
+            symbol: (symbol || "").toString().toUpperCase(),
+            display: display || symbol,
+            exchange,
+            currency,
+            source: "yahoo",
+            type: "stock",
+          };
         });
+
         if (searchMode === "id") {
-          setSuggestions(list.filter(x => (x.symbol || "").toUpperCase().includes(".JK") || String(x.exchange || "").toUpperCase().includes("JAKARTA") || String(x.exchange || "").toUpperCase().includes("IDX")).slice(0, 30));
+          setSuggestions(list.filter((x) =>
+            (x.symbol || "").toUpperCase().includes(".JK") ||
+            String(x.exchange || "").toUpperCase().includes("JAKARTA") ||
+            String(x.exchange || "").toUpperCase().includes("IDX")
+          ).slice(0, 30));
         } else {
-          setSuggestions(list.filter(x => !(x.symbol || "").toUpperCase().endsWith(".JK")).slice(0, 30));
+          setSuggestions(list.filter((x) => !(x.symbol || "").toUpperCase().endsWith(".JK")).slice(0, 30));
         }
-      } catch (e) { console.warn("search", e); setSuggestions([]); }
+      } catch (e) {
+        console.warn("search err", e);
+        setSuggestions([]);
+      }
     }, 320);
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
-  /* ===================== POLLING PRICES (crypto via CoinGecko, stocks via AlphaVantage) ===================== */
+  /* polling crypto & stocks (unchanged logic) */
   const assetsRef = useRef(assets);
   const usdIdrRef = useRef(usdIdr);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
@@ -865,15 +703,18 @@ export default function PortfolioDashboard() {
 
   useEffect(() => {
     let mounted = true;
-    async function pollCrypto() {
+    async function pollCg() {
       try {
-        const ids = Array.from(new Set(assetsRef.current.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId))).filter(Boolean);
-        if (ids.length === 0) { if (isInitialLoading && mounted) setIsInitialLoading(false); return; }
+        const ids = Array.from(new Set(assetsRef.current.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId)));
+        if (ids.length === 0) {
+          if (isInitialLoading && mounted) setIsInitialLoading(false);
+          return;
+        }
         const res = await fetch(COINGECKO_PRICE(ids.join(",")));
         if (!mounted || !res.ok) return;
         const j = await res.json();
         setAssets(prev => prev.map(a => {
-          if (a.type === "crypto" && a.coingeckoId && j[a.coingeckoId] && typeof j[a.coingeckoId].usd === "number") {
+          if (a.type === "crypto" && j[a.coingeckoId] && typeof j[a.coingeckoId].usd === "number") {
             const last = toNum(j[a.coingeckoId].usd);
             return ensureNumericAsset({ ...a, lastPriceUSD: last, marketValueUSD: last * toNum(a.shares || 0) });
           }
@@ -881,10 +722,10 @@ export default function PortfolioDashboard() {
         }));
         setLastTick(Date.now());
         if (isInitialLoading && mounted) setIsInitialLoading(false);
-      } catch (e) { /* silent */ }
+      } catch (e) {}
     }
-    pollCrypto();
-    const id = setInterval(pollCrypto, 8000);
+    pollCg();
+    const id = setInterval(pollCg, 6000);
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
@@ -893,203 +734,113 @@ export default function PortfolioDashboard() {
     async function pollStocks() {
       try {
         const symbols = Array.from(new Set(assetsRef.current.filter(a => a.type === "stock").map(a => a.symbol))).slice(0, 50);
-        if (symbols.length === 0) { if (isInitialLoading && mounted) setIsInitialLoading(false); return; }
+        if (symbols.length === 0) {
+          if (isInitialLoading && mounted) setIsInitialLoading(false);
+          return;
+        }
         const map = {};
         for (const s of symbols) {
           try {
-            // try AlphaVantage GLOBAL_QUOTE
-            const trySymbols = [];
-            if (String(s || "").toUpperCase().endsWith(".JK")) trySymbols.push(s);
-            trySymbols.push(s.replace(/\.JK$/i, ""));
-            if (!String(s || "").toUpperCase().endsWith(".JK")) trySymbols.push(s + ".JK");
-            let priceLocal = 0;
-            for (const ts of trySymbols) {
-              try {
-                const res = await fetch(ALPHAVANTAGE_GLOBAL_QUOTE(ts));
-                if (!res.ok) continue;
-                const j = await res.json();
-                const q = j && j["Global Quote"];
-                if (q && q["05. price"]) { priceLocal = toNum(q["05. price"]); break; }
-              } catch (e) {}
-            }
-            if (!(priceLocal > 0)) {
-              // fallback to daily adjusted
-              for (const ts of trySymbols) {
-                try {
-                  const res = await fetch(ALPHAVANTAGE_DAILY(ts));
-                  if (!res.ok) continue;
-                  const j = await res.json();
-                  const tsobj = j["Time Series (Daily)"];
-                  if (tsobj && typeof tsobj === "object") {
-                    const dates = Object.keys(tsobj).sort();
-                    const last = tsobj[dates[dates.length - 1]];
-                    if (last && last["4. close"]) { priceLocal = toNum(last["4. close"]); break; }
-                  }
-                } catch (e) {}
+            const res = await fetch(FINNHUB_QUOTE(s));
+            if (!res.ok) continue;
+            const js = await res.json();
+            const current = toNum(js?.c ?? js?.current ?? 0);
+            if (current > 0) {
+              const looksLikeId = String(s || "").toUpperCase().endsWith(".JK") || String(js?.symbol || "").toUpperCase().endsWith(".JK") || String(js?.exchange || "").toUpperCase().includes("IDX");
+              let priceUSD = current;
+              if (looksLikeId) {
+                const fx = usdIdrRef.current || 1;
+                priceUSD = fx > 0 ? (current / fx) : current;
+              }
+              if (priceUSD > 0) {
+                map[s] = { symbol: s, priceRaw: current, priceUSD, _source: "finnhub", currency: looksLikeId ? "IDR" : js?.currency || "USD", fullExchangeName: js?.exchange || "" };
               }
             }
-            if (priceLocal > 0) {
-              map[s] = { symbol: s, priceLocal, _source: "alphavantage" };
+          } catch (e) {}
+        }
+        const missing = symbols.filter(s => !map[s]);
+        if (missing.length > 0) {
+          try {
+            const res = await fetch(YAHOO_QUOTE(missing.join(",")));
+            if (res.ok) {
+              const j = await res.json();
+              if (j?.quoteResponse?.result && Array.isArray(j.quoteResponse.result)) {
+                j.quoteResponse.result.forEach(q => {
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
+                  if (price > 0 && q?.symbol) {
+                    map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency, fullExchangeName: q.fullExchangeName, _source: "yahoo" };
+                  }
+                });
+              } else if (Array.isArray(j)) {
+                j.forEach(q => {
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, _source: "yahoo" };
+                });
+              } else if (j && typeof j === "object") {
+                Object.keys(j).forEach(k => {
+                  const q = j[k];
+                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
+                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency || "USD", fullExchangeName: q.fullExchangeName, _source: "yahoo" };
+                });
+              }
             }
-          } catch (e) { /* per-symbol ignore */ }
+          } catch (e) {}
         }
 
         setAssets(prev => prev.map(a => {
-          if (a.type === "stock") {
-            if (map[a.symbol]) {
-              const entry = map[a.symbol];
-              const priceRaw = toNum(entry.priceLocal || 0);
-              const looksLikeId = String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
-              let priceUSD = priceRaw;
-              if (looksLikeId && priceRaw > 0) {
-                const fx = usdIdrRef.current || 1;
-                priceUSD = fx > 0 ? (priceRaw / fx) : priceRaw;
-              }
-              if (!(priceUSD > 0)) priceUSD = a.avgPrice || a.lastPriceUSD || 0;
-              return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
-            } else {
-              // keep previous lastPriceUSD or avgPrice to avoid zeroing out
-              const last = a.lastPriceUSD || a.avgPrice || 0;
-              return ensureNumericAsset({ ...a, lastPriceUSD: last, marketValueUSD: last * toNum(a.shares || 0) });
+          if (a.type === "stock" && map[a.symbol]) {
+            const entry = map[a.symbol];
+            let priceRaw = toNum(entry.priceRaw || 0);
+            const currency = (entry.currency || "").toString().toUpperCase();
+            let priceUSD = priceRaw;
+            const looksLikeId = currency === "IDR" || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
+            if (looksLikeId && priceRaw > 0) {
+              const fx = usdIdrRef.current || 1;
+              priceUSD = fx > 0 ? (priceRaw / fx) : priceRaw;
             }
+            if (!(priceUSD > 0)) priceUSD = a.avgPrice || a.lastPriceUSD || 0;
+            return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
           }
           return ensureNumericAsset(a);
         }));
 
         setLastTick(Date.now());
         if (isInitialLoading && mounted) setIsInitialLoading(false);
-      } catch (e) { /* silent */ }
+      } catch (e) {}
     }
     pollStocks();
-    const id = setInterval(pollStocks, 10000);
+    const id = setInterval(pollStocks, 5000);
     return () => { mounted = false; clearInterval(id); };
   }, [isInitialLoading]);
 
-  /* FX: tether -> IDR */
+  /* FX tether -> IDR */
   useEffect(() => {
     let mounted = true;
     async function fetchFx() {
       try {
         setFxLoading(true);
-        const res = await fetch(`${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`);
+        const res = await fetch(COINGECKO_USD_IDR);
         if (!mounted || !res.ok) return;
         const j = await res.json();
         const raw = j?.tether?.idr;
         const n = normalizeIdr(raw);
         if (n) setUsdIdr(prev => (!prev || Math.abs(prev - n) / n > 0.0005 ? n : prev));
-      } catch (e) {}
-      finally { if (mounted) setFxLoading(false); }
+      } catch (e) {} finally { if (mounted) setFxLoading(false); }
     }
     fetchFx();
     const id = setInterval(fetchFx, 60_000);
     return () => { mounted = false; clearInterval(id); };
   }, []);
 
-  /* ===================== ADD ASSETS ===================== */
-  function addAssetFromSuggestion(s) {
-    const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
-    const asset = ensureNumericAsset({
-      id: internalId, type: s.source === "coingecko" ? "crypto" : "stock",
-      coingeckoId: s.source === "coingecko" ? s.id || s.coingeckoId : undefined,
-      symbol: (s.symbol || s.id).toString().toUpperCase(), name: s.display || s.name || s.symbol,
-      shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0, createdAt: Date.now(),
-    });
-    setAssets(prev => [...prev, asset]);
-    setOpenAdd(false); setQuery(""); setSuggestions([]); setSelectedSuggestion(null);
+  /* non-liquid last price growth */
+  function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent, targetTime = Date.now()) {
+    const years = Math.max(0, (targetTime - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
+    const r = toNum(yoyPercent) / 100;
+    const last = avgPriceUSD * Math.pow(1 + r, years);
+    return last;
   }
 
-  async function addManualAsset() {
-    const typed = query.split("—")[0].trim();
-    if (!typed) { alert("Type symbol or select suggestion"); return; }
-    let newAsset = null;
-    if (searchMode === "crypto") {
-      newAsset = ensureNumericAsset({
-        id: `manual:cg:${typed}:${Date.now()}`, type: "crypto",
-        coingeckoId: typed.toLowerCase(), symbol: typed.toUpperCase(), name: typed,
-        shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
-      });
-    } else {
-      newAsset = ensureNumericAsset({
-        id: `manual:yh:${typed}:${Date.now()}`, type: "stock",
-        symbol: typed.toUpperCase(), name: typed.toUpperCase(),
-        shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
-      });
-    }
-    setAssets(prev => [...prev, newAsset]);
-    setOpenAdd(false); setQuery("");
-  }
-
-  async function addAssetWithInitial() {
-    let picked = selectedSuggestion;
-    if (!picked) {
-      const typed = query.split("—")[0].trim();
-      if (!typed) { alert("Select suggestion or type symbol"); return; }
-      if (searchMode === "crypto") picked = { source: "coingecko", id: typed.toLowerCase(), symbol: typed.toUpperCase(), display: typed };
-      else picked = { source: "yahoo", symbol: typed.toUpperCase(), display: typed.toUpperCase() };
-    }
-    const qty = toNum(initQty);
-    const priceInput = toNum(initPrice);
-    if (qty <= 0 || priceInput <= 0) { alert("Qty & price must be > 0"); return; }
-    const internalId = `${picked.source || picked.type}:${picked.symbol || picked.id}:${Date.now()}`;
-    const priceInUSD = initPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
-    const asset = ensureNumericAsset({
-      id: internalId,
-      type: picked.source === "coingecko" ? "crypto" : "stock",
-      coingeckoId: picked.source === "coingecko" ? (picked.id || picked.coingeckoId) : undefined,
-      symbol: (picked.symbol || picked.id).toString().toUpperCase(),
-      name: picked.display || picked.name || picked.symbol || picked.id,
-      shares: qty,
-      avgPrice: priceInUSD,
-      investedUSD: priceInUSD * qty,
-      lastPriceUSD: priceInUSD,
-      marketValueUSD: priceInUSD * qty,
-      createdAt: Date.now(),
-      purchaseDate: Date.now(),
-    });
-    setAssets(prev => [...prev, asset]);
-    setOpenAdd(false); setQuery(""); setInitQty(""); setInitPrice(""); setInitPriceCcy("USD"); setSelectedSuggestion(null);
-  }
-
-  function addNonLiquidAsset() {
-    const name = nlName.trim();
-    const qty = toNum(nlQty);
-    const priceInput = toNum(nlPrice);
-    const purchaseDateMs = nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now();
-    const yoy = toNum(nlYoy);
-    if (!name) { alert("Enter non-liquid asset name (Land, Art, Rolex...)"); return; }
-    if (qty <= 0 || priceInput <= 0) { alert("Qty & price must be > 0"); return; }
-    const priceUSD = nlPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
-    const id = `nonliquid:${name.replace(/\s+/g, "_")}:${Date.now()}`;
-    const last = computeNonLiquidLastPrice(priceUSD, purchaseDateMs, yoy);
-    const asset = ensureNumericAsset({
-      id,
-      type: "nonliquid",
-      symbol: (name.length > 12 ? name.slice(0, 12) + "…" : name).toUpperCase(),
-      name,
-      shares: qty,
-      avgPrice: priceUSD,
-      investedUSD: priceUSD * qty,
-      lastPriceUSD: last,
-      marketValueUSD: last * qty,
-      createdAt: Date.now(),
-      purchaseDate: purchaseDateMs,
-      nonLiquidYoy: yoy,
-      description: nlDesc || "",
-    });
-    setAssets(prev => [...prev, asset]);
-    setNlName(""); setNlQty(""); setNlPrice(""); setNlPurchaseDate(""); setNlYoy("5"); setNlDesc("");
-    setOpenAdd(false);
-  }
-
-  /* ===================== TRANSACTIONS (buy/sell) ===================== */
-  function openTradeModal(assetId, mode) {
-    const asset = assets.find(a => a.id === assetId);
-    if (!asset) return;
-    const defaultPrice = asset.lastPriceUSD || asset.avgPrice || 0;
-    setTradeModal({ open: true, mode, assetId, defaultPrice });
-  }
-  function closeTradeModal() { setTradeModal({ open: false, mode: null, assetId: null, defaultPrice: null }); }
-
+  /* transactions effects helpers */
   function applyTransactionEffects(tx) {
     if (!tx) return;
     if (tx.type === "sell") {
@@ -1181,9 +932,122 @@ export default function PortfolioDashboard() {
     }
   }
 
+  /* add helpers */
+  function addAssetFromSuggestion(s) {
+    const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
+    const asset = ensureNumericAsset({
+      id: internalId, type: s.source === "coingecko" ? "crypto" : "stock",
+      coingeckoId: s.source === "coingecko" ? s.id || s.coingeckoId : undefined,
+      symbol: (s.symbol || s.id).toString().toUpperCase(), name: s.display || s.name || s.symbol,
+      shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
+      createdAt: Date.now(),
+    });
+    setAssets(prev => [...prev, asset]);
+    setOpenAdd(false); setQuery(""); setSuggestions([]); setSelectedSuggestion(null);
+  }
+
+  async function addManualAsset() {
+    const typed = query.split("—")[0].trim();
+    if (!typed) { alert("Type symbol or select suggestion"); return; }
+    let newAsset = null;
+    if (searchMode === "crypto") {
+      newAsset = ensureNumericAsset({
+        id: `manual:cg:${typed}:${Date.now()}`, type: "crypto",
+        coingeckoId: typed.toLowerCase(), symbol: typed.toUpperCase(), name: typed,
+        shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
+      });
+    } else {
+      newAsset = ensureNumericAsset({
+        id: `manual:yh:${typed}:${Date.now()}`, type: "stock",
+        symbol: typed.toUpperCase(), name: typed.toUpperCase(),
+        shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
+      });
+    }
+    setAssets(prev => [...prev, newAsset]);
+    setOpenAdd(false); setQuery("");
+  }
+
+  async function addAssetWithInitial() {
+    let picked = selectedSuggestion;
+    if (!picked) {
+      const typed = query.split("—")[0].trim();
+      if (!typed) { alert("Select suggestion or type symbol"); return; }
+      if (searchMode === "crypto") {
+        picked = { source: "coingecko", id: typed.toLowerCase(), symbol: typed.toUpperCase(), display: typed };
+      } else {
+        picked = { source: "yahoo", symbol: typed.toUpperCase(), display: typed.toUpperCase() };
+      }
+    }
+    const qty = toNum(initQty);
+    const priceInput = toNum(initPrice);
+    if (qty <= 0 || priceInput <= 0) { alert("Qty & price must be > 0"); return; }
+
+    const internalId = `${picked.source || picked.type}:${picked.symbol || picked.id}:${Date.now()}`;
+    const priceInUSD = initPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
+    const asset = ensureNumericAsset({
+      id: internalId,
+      type: picked.source === "coingecko" ? "crypto" : "stock",
+      coingeckoId: picked.source === "coingecko" ? (picked.id || picked.coingeckoId) : undefined,
+      symbol: (picked.symbol || picked.id).toString().toUpperCase(),
+      name: picked.display || picked.name || picked.symbol || picked.id,
+      shares: qty,
+      avgPrice: priceInUSD,
+      investedUSD: priceInUSD * qty,
+      lastPriceUSD: priceInUSD,
+      marketValueUSD: priceInUSD * qty,
+      createdAt: Date.now(),
+      purchaseDate: Date.now(),
+    });
+    setAssets(prev => [...prev, asset]);
+    setOpenAdd(false); setQuery(""); setInitQty(""); setInitPrice("");
+    setInitPriceCcy("USD"); setSelectedSuggestion(null);
+  }
+
+  function addNonLiquidAsset() {
+    const name = nlName.trim();
+    const qty = toNum(nlQty);
+    const priceInput = toNum(nlPrice);
+    const purchaseDateMs = nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now();
+    const yoy = toNum(nlYoy);
+    if (!name) { alert("Enter non-liquid asset name (Land, Art, Rolex...)"); return; }
+    if (qty <= 0 || priceInput <= 0) { alert("Qty & price must be > 0"); return; }
+    const priceUSD = nlPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
+    const id = `nonliquid:${name.replace(/\s+/g, "_")}:${Date.now()}`;
+    const last = computeNonLiquidLastPrice(priceUSD, purchaseDateMs, yoy);
+    const asset = ensureNumericAsset({
+      id,
+      type: "nonliquid",
+      symbol: (name.length > 12 ? name.slice(0, 12) + "…" : name).toUpperCase(),
+      name,
+      shares: qty,
+      avgPrice: priceUSD,
+      investedUSD: priceUSD * qty,
+      lastPriceUSD: last,
+      marketValueUSD: last * qty,
+      createdAt: Date.now(),
+      purchaseDate: purchaseDateMs,
+      nonLiquidYoy: yoy,
+      description: nlDesc || "",
+    });
+    setAssets(prev => [...prev, asset]);
+    setNlName(""); setNlQty(""); setNlPrice(""); setNlPurchaseDate(""); setNlYoy("5"); setNlDesc("");
+    setOpenAdd(false);
+  }
+
+  /* BUY/SELL */
+  function openTradeModal(assetId, mode) {
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset) return;
+    const defaultPrice = asset.lastPriceUSD || asset.avgPrice || 0;
+    setTradeModal({ open: true, mode, assetId, defaultPrice });
+  }
+  function closeTradeModal() { setTradeModal({ open: false, mode: null, assetId: null, defaultPrice: null }); }
+
   function performBuy(qty, pricePerUnit) {
     const id = tradeModal.assetId; if (!id) return;
-    const q = toNum(qty), p = toNum(pricePerUnit); if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
+    const q = toNum(qty), p = toNum(pricePerUnit);
+    if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
+
     const cost = q * p;
     const tx = {
       id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
@@ -1197,19 +1061,23 @@ export default function PortfolioDashboard() {
       cost,
       date: Date.now(),
     };
-    setTransactions(prev => [tx, ...prev].slice(0, 2000));
+
+    setTransactions(prev => [tx, ...prev].slice(0, 1000));
     applyTransactionEffects(tx);
     closeTradeModal();
   }
 
   function performSell(qty, pricePerUnit) {
     const id = tradeModal.assetId; if (!id) return;
-    const q = toNum(qty), p = toNum(pricePerUnit); if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
+    const q = toNum(qty), p = toNum(pricePerUnit);
+    if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
     const a = assets.find(x => x.id === id); if (!a) return;
     const oldShares = toNum(a.shares || 0); if (q > oldShares) { alert("Cannot sell more than you own"); return; }
+
     const avg = toNum(a.avgPrice || 0);
     const proceeds = q * p, costOfSold = q * avg;
     const realized = proceeds - costOfSold;
+
     const tx = {
       id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
       assetId: a.id,
@@ -1224,26 +1092,30 @@ export default function PortfolioDashboard() {
       realized,
       date: Date.now(),
     };
+
     applyTransactionEffects(tx);
-    setTransactions(prev => [tx, ...prev].slice(0, 2000));
+    setTransactions(prev => [tx, ...prev].slice(0, 1000));
     closeTradeModal();
   }
 
   /* transactions delete/restore */
-  const [lastDeletedTx, setLastDeletedTx] = useState(null);
   function deleteTransaction(txId) {
-    const tx = transactions.find(t => t.id === txId); if (!tx) return;
-    if (!confirm(`Delete & CANCEL transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})? This will reverse its effect.`)) return;
+    const tx = transactions.find(t => t.id === txId);
+    if (!tx) return;
+    if (!confirm(`Delete & CANCEL transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})? This will reverse its effect and can be undone.`)) return;
     reverseTransactionEffects(tx);
     setTransactions(prev => prev.filter(t => t.id !== txId));
     setLastDeletedTx(tx);
   }
+
   function restoreTransaction(txId) {
-    const tx = transactions.find(t => t.id === txId); if (!tx) return;
-    if (!confirm(`Restore transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})?`)) return;
-    applyTransactionEffects(tx);
+    const tx = transactions.find(t => t.id === txId);
+    if (!tx) return;
+    if (!confirm(`Restore (reverse) transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})?`)) return;
+    reverseTransactionEffects(tx);
     setTransactions(prev => prev.filter(t => t.id !== txId));
   }
+
   function undoLastDeletedTransaction() {
     if (!lastDeletedTx) return;
     applyTransactionEffects(lastDeletedTx);
@@ -1259,9 +1131,10 @@ export default function PortfolioDashboard() {
     setAssets(prev => prev.filter(x => x.id !== id));
   }
 
-  /* ===================== computed rows & totals ===================== */
+  /* computed rows & totals */
   const rows = useMemo(() => assets.map(a => {
     const aa = ensureNumericAsset(a);
+
     if (aa.type === "nonliquid") {
       const last = computeNonLiquidLastPrice(aa.avgPrice, aa.purchaseDate || aa.createdAt, aa.nonLiquidYoy || 0);
       aa.lastPriceUSD = last;
@@ -1273,11 +1146,13 @@ export default function PortfolioDashboard() {
       }
       aa.marketValueUSD = toNum(aa.shares || 0) * aa.lastPriceUSD;
     }
-    const market = aa.marketValueUSD || (toNum(aa.shares || 0) * aa.lastPriceUSD);
+
+    const last = aa.lastPriceUSD || aa.avgPrice || 0;
+    const market = aa.marketValueUSD || (toNum(aa.shares || 0) * last);
     const invested = toNum(aa.investedUSD || 0);
     const pnl = market - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
-    return { ...aa, lastPriceUSD: aa.lastPriceUSD, marketValueUSD: market, investedUSD: invested, pnlUSD: pnl, pnlPct };
+    return { ...aa, lastPriceUSD: last, marketValueUSD: market, investedUSD: invested, pnlUSD: pnl, pnlPct };
   }), [assets, usdIdr]);
 
   const filteredRows = useMemo(() => {
@@ -1310,130 +1185,42 @@ export default function PortfolioDashboard() {
     return { invested, market, pnl, pnlPct };
   }, [filteredRows]);
 
-  /* donut data for cake */
+  /* donut/cake data */
   const donutData = useMemo(() => {
-    const sorted = filteredRows.slice().sort((a,b) => b.marketValueUSD - a.marketValueUSD);
-    const top = sorted.slice(0,6);
-    const other = sorted.slice(6);
-    const otherTotal = other.reduce((s,r) => s + (r.marketValueUSD || 0), 0);
+    const sortedRows = filteredRows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
+    const top = sortedRows.slice(0, 6);
+    const other = sortedRows.slice(6);
+    const otherTotal = other.reduce((s, r) => s + (r.marketValueUSD || 0), 0);
     const otherSymbols = other.map(r => r.symbol);
     const data = top.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
     if (otherTotal > 0) data.push({ name: "Other", value: otherTotal, symbols: otherSymbols });
     return data;
   }, [filteredRows]);
 
-  /* ===================== build growth multi-series from transactions & rows ===================== */
-  function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
-    const now = Date.now();
-    let earliest = now;
-    txs.forEach(t => { if (t.date && t.date < earliest) earliest = t.date; });
-    rowsForChart.forEach(r => { if (r.purchaseDate && r.purchaseDate < earliest) earliest = r.purchaseDate; });
-    const defaultDays = rangeKey === "1d" ? 1 : rangeKey === "2d" ? 2 : rangeKey === "1w" ? 7 : rangeKey === "1m" ? 30 : rangeKey === "1y" ? 365 : 365 * 3;
-    const start = (earliest < now) ? earliest : (now - defaultDays * 24 * 3600 * 1000);
-    let points = 180;
-    if (rangeKey === "1d") points = 48;
-    if (rangeKey === "2d") points = 96;
-    if (rangeKey === "1w") points = 56;
-    if (rangeKey === "1m") points = 90;
-    if (rangeKey === "1y") points = 180;
-    if (rangeKey === "all") points = 200;
-
-    const txsByAsset = {};
-    txs.slice().forEach(t => { if (!txsByAsset[t.assetId]) txsByAsset[t.assetId] = []; txsByAsset[t.assetId].push(t); });
-
-    // generate synthetic buys for assets without txs
-    const synthetic = [];
-    rowsForChart.forEach(r => {
-      const assetTxs = txsByAsset[r.id] || [];
-      if ((assetTxs.length === 0) && (toNum(r.shares || 0) > 0)) {
-        synthetic.push({
-          id: `synth:${r.id}:${r.purchaseDate || r.createdAt || Date.now()}`,
-          assetId: r.id,
-          assetType: r.type,
-          symbol: r.symbol,
-          name: r.name,
-          type: "buy",
-          qty: toNum(r.shares || 0),
-          pricePerUnit: toNum(r.avgPrice || 0),
-          cost: toNum(r.investedUSD || (r.avgPrice * r.shares) || 0),
-          date: r.purchaseDate || r.createdAt || Date.now(),
-        });
-      }
-    });
-    const allTxs = [...txs, ...synthetic].slice().sort((a,b) => (a.date||0) - (b.date||0));
-
-    function sharesUpTo(assetId, t) {
-      let s = 0;
-      for (const tx of allTxs) {
-        if (tx.assetId !== assetId) continue;
-        if ((tx.date || 0) <= t) {
-          if (tx.type === "buy") s += toNum(tx.qty || 0);
-          else if (tx.type === "sell") s -= toNum(tx.qty || 0);
-        }
-      }
-      return s;
-    }
-
-    function priceAtTime(asset, t) {
-      if (asset.type === "nonliquid") {
-        return computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || 0, asset.nonLiquidYoy || 0, t);
-      }
-      const pd = asset.purchaseDate || asset.createdAt || (now - defaultDays * 24 * 3600 * 1000);
-      const avg = toNum(asset.avgPrice || 0);
-      const last = toNum(asset.lastPriceUSD || avg || 0);
-      if (t <= pd) return avg || last;
-      if (t >= now) return last || avg;
-      // synthetic interpolation with seeded noise
-      const frac = (t - pd) / Math.max(1, (now - pd));
-      const seed = hashStringToSeed(asset.symbol + String(asset.id || ""));
-      const rng = seededRng(seed);
-      const vol = asset.type === "crypto" ? 0.12 : asset.type === "stock" ? 0.04 : 0.01;
-      const base = avg + (last - avg) * frac;
-      const noise = (Math.sin(frac * 12 + rng() * 10) * 0.25 + (rng() - 0.5) * 0.4) * vol;
-      return Math.max(0, base * (1 + noise));
-    }
-
-    const seriesPerKey = { all: [], crypto: [], stock: [], nonliquid: [] };
-    for (let i = 0; i < points; i++) {
-      const t = start + (i / (points - 1)) * (now - start);
-      let totals = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
-      rowsForChart.forEach(asset => {
-        const s = sharesUpTo(asset.id, t);
-        if (s <= 0) return;
-        const price = priceAtTime(asset, t);
-        const val = s * Math.max(0, price || 0);
-        totals.all += val;
-        if (asset.type === "crypto") totals.crypto += val;
-        else if (asset.type === "stock") totals.stock += val;
-        else if (asset.type === "nonliquid") totals.nonliquid += val;
-      });
-      Object.keys(totals).forEach(k => seriesPerKey[k].push({ t, v: totals[k] }));
-    }
-    return seriesPerKey;
+  function colorForIndex(i) {
+    const palette = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#FF9CEE","#B28DFF","#FFB26B","#6BFFA0","#FF6BE5","#00C49F"];
+    return palette[i % palette.length];
   }
 
-  const multiSeries = useMemo(() => buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
-
-  /* category values (small labels below growth chart were removed per request; values are available in tooltip/legend) */
-  const categoryValuesNow = useMemo(() => {
-    const out = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
-    try { Object.keys(multiSeries).forEach(k => { const arr = multiSeries[k] || []; const last = arr[arr.length - 1]; out[k] = last ? last.v : 0; }); } catch (e) {}
-    return out;
-  }, [multiSeries]);
-
-  /* ===================== CHART MODAL HANDLERS ===================== */
-  function openChartModalForAsset(assetOrId) {
-    const a = typeof assetOrId === "string" ? assets.find(x => x.id === assetOrId) : assetOrId;
-    if (!a) { alert("Asset not found for chart"); return; }
-    setChartAsset(a);
-    setChartModalOpen(true);
+  /* CSV combined export/import (BOM + headers for spreadsheet) */
+  function csvQuote(v) {
+    if (v === undefined || v === null) return "";
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    const s = String(v);
+    if (s.includes(",") || s.includes("\n") || s.includes('"')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
   }
-  function closeChartModal() { setChartModalOpen(false); setChartAsset(null); }
 
-  /* ===================== EXPORT / IMPORT CSV ===================== */
   function exportAllCSV() {
-    const assetsHeaders = ["id","type","coingeckoId","symbol","name","description","shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD","createdAt","purchaseDate","nonLiquidYoy"];
+    const assetsHeaders = [
+      "id","type","coingeckoId","symbol","name","description",
+      "shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD",
+      "createdAt","purchaseDate","nonLiquidYoy"
+    ];
     const txHeaders = ["id","type","assetId","assetType","symbol","name","qty","pricePerUnit","cost","proceeds","costOfSold","realized","date"];
+
     const lines = [];
     lines.push(`#FILE:app/dashboard/page.js`);
     lines.push(`#EXPORT:CombinedPortfolioAndTransactions,generatedAt=${isoDate(Date.now())}`);
@@ -1461,10 +1248,17 @@ export default function PortfolioDashboard() {
       lines.push(row);
     });
     lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},assets=${assets.length},transactions=${transactions.length}`);
+
     const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `portfolio_combined_export_${Date.now()}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `portfolio_combined_export_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function handleImportFile(file, { merge = true } = {}) {
@@ -1481,13 +1275,18 @@ export default function PortfolioDashboard() {
       let importedAssets = [];
       if (idxAssets >= 0) {
         let headerLineIdx = -1;
-        for (let i = idxAssets + 1; i < lines.length; i++) { if (lines[i].trim() === "") continue; headerLineIdx = i; break; }
+        for (let i = idxAssets + 1; i < lines.length; i++) {
+          if (lines[i].trim() === "") continue;
+          headerLineIdx = i; break;
+        }
         if (headerLineIdx >= 0) {
           const headers = lines[headerLineIdx].split(",").map(h => h.replace(/^"|"$/g,"").trim());
           for (let i = headerLineIdx + 1; i < lines.length; i++) {
             const l = lines[i];
             if (!l || l.startsWith("#TRANSACTIONS") || l.startsWith("#META") || l.startsWith("#FILE") || l.startsWith("#EXPORT")) break;
-            const values = []; let cur = ""; let insideQuote = false;
+            const values = [];
+            let cur = "";
+            let insideQuote = false;
             for (let k = 0; k < l.length; k++) {
               const ch = l[k];
               if (ch === '"' && l[k+1] === '"') { cur += '"'; k++; continue; }
@@ -1496,7 +1295,8 @@ export default function PortfolioDashboard() {
               cur += ch;
             }
             values.push(cur);
-            const obj = {}; headers.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
+            const obj = {};
+            headers.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
             const parsed = {
               id: obj.id || `imp:${obj.symbol || ""}:${Date.now()}`,
               type: obj.type || "stock",
@@ -1509,7 +1309,7 @@ export default function PortfolioDashboard() {
               investedUSD: toNum(obj.investedUSD || 0),
               lastPriceUSD: toNum(obj.lastPriceUSD || 0),
               marketValueUSD: toNum(obj.marketValueUSD || 0),
-              createdAt: obj.createdAt ? (Date.parse(obj.createdAt) || Date.now()) : Date.now(),
+              createdAt: obj.createdAt ? Date.parse(obj.createdAt) || Date.now() : Date.now(),
               purchaseDate: obj.purchaseDate ? (Date.parse(obj.purchaseDate) || undefined) : undefined,
               nonLiquidYoy: toNum(obj.nonLiquidYoy) || 0,
             };
@@ -1517,16 +1317,22 @@ export default function PortfolioDashboard() {
           }
         }
       }
+
       let importedTx = [];
       if (idxTx >= 0) {
         let headerLineIdx = -1;
-        for (let i = idxTx + 1; i < lines.length; i++) { if (lines[i].trim() === "") continue; headerLineIdx = i; break; }
+        for (let i = idxTx + 1; i < lines.length; i++) {
+          if (lines[i].trim() === "") continue;
+          headerLineIdx = i; break;
+        }
         if (headerLineIdx >= 0) {
           const headers = lines[headerLineIdx].split(",").map(h => h.replace(/^"|"$/g,"").trim());
           for (let i = headerLineIdx + 1; i < lines.length; i++) {
             const l = lines[i];
             if (!l || l.startsWith("#META") || l.startsWith("#FILE") || l.startsWith("#EXPORT")) break;
-            const values = []; let cur = ""; let insideQuote = false;
+            const values = [];
+            let cur = "";
+            let insideQuote = false;
             for (let k = 0; k < l.length; k++) {
               const ch = l[k];
               if (ch === '"' && l[k+1] === '"') { cur += '"'; k++; continue; }
@@ -1535,7 +1341,8 @@ export default function PortfolioDashboard() {
               cur += ch;
             }
             values.push(cur);
-            const obj = {}; headers.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
+            const obj = {};
+            headers.forEach((h, idx) => { obj[h] = values[idx] ?? ""; });
             const parsed = {
               id: obj.id || `imp_tx:${Date.now()}:${Math.random().toString(36).slice(2,6)}`,
               type: obj.type || "buy",
@@ -1555,6 +1362,7 @@ export default function PortfolioDashboard() {
           }
         }
       }
+
       if (metaLine) {
         try {
           const m = metaLine.replace(/^#META,?/, "");
@@ -1567,55 +1375,194 @@ export default function PortfolioDashboard() {
           });
         } catch (e) {}
       }
+
       if (importedAssets.length > 0) {
         if (merge) {
-          const map = {}; assets.forEach(a => map[a.symbol] = ensureNumericAsset(a)); importedAssets.forEach(i => map[i.symbol] = ensureNumericAsset(i));
-          const merged = Object.values(map); setAssets(merged);
-        } else { setAssets(importedAssets); }
+          const map = {};
+          assets.forEach(a => map[a.symbol] = ensureNumericAsset(a));
+          importedAssets.forEach(i => map[i.symbol] = ensureNumericAsset(i));
+          const merged = Object.values(map);
+          setAssets(merged);
+        } else {
+          setAssets(importedAssets);
+        }
       }
+
       if (importedTx.length > 0) {
-        if (merge) { const mergedTx = [...importedTx, ...transactions]; setTransactions(mergedTx.slice(0,2000)); }
-        else setTransactions(importedTx.slice(0,2000));
+        if (merge) {
+          const mergedTx = [...importedTx, ...transactions];
+          setTransactions(mergedTx.slice(0, 1000));
+        } else {
+          setTransactions(importedTx.slice(0, 1000));
+        }
       }
+
       alert("Import complete");
     };
     reader.readAsText(file);
   }
   function onImportClick(e) {
-    const file = e.target.files && e.target.files[0]; if (!file) return;
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
     const replace = confirm("Replace existing portfolio & transactions? (OK = replace, Cancel = merge)");
     handleImportFile(file, { merge: !replace });
     e.target.value = "";
   }
 
-  /* ===================== RENDER ===================== */
+  /* build growth series */
+  function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
+    const now = Date.now();
+    let earliest = now;
+    txs.forEach(t => { if (t.date && t.date < earliest) earliest = t.date; });
+    rowsForChart.forEach(r => { if (r.purchaseDate && r.purchaseDate < earliest) earliest = r.purchaseDate; });
+    const defaultDays = rangeKey === "1d" ? 1 : rangeKey === "2d" ? 2 : rangeKey === "1w" ? 7 : rangeKey === "1m" ? 30 : rangeKey === "1y" ? 365 : 365 * 3;
+    const start = (earliest < now) ? earliest : (now - defaultDays * 24 * 3600 * 1000);
+    let points = 180;
+    if (rangeKey === "1d") points = 48;
+    if (rangeKey === "2d") points = 96;
+    if (rangeKey === "1w") points = 56;
+    if (rangeKey === "1m") points = 90;
+    if (rangeKey === "1y") points = 180;
+    if (rangeKey === "all") points = 200;
+
+    const txsByAsset = {};
+    txs.slice().forEach(t => {
+      if (!txsByAsset[t.assetId]) txsByAsset[t.assetId] = [];
+      txsByAsset[t.assetId].push(t);
+    });
+
+    const syntheticTxs = [];
+    rowsForChart.forEach(r => {
+      const assetTxs = txsByAsset[r.id] || [];
+      if ((assetTxs.length === 0) && (toNum(r.shares || 0) > 0)) {
+        syntheticTxs.push({
+          id: `synth:${r.id}:${r.purchaseDate || r.createdAt || Date.now()}`,
+          assetId: r.id,
+          assetType: r.type,
+          symbol: r.symbol,
+          name: r.name,
+          type: "buy",
+          qty: toNum(r.shares || 0),
+          pricePerUnit: toNum(r.avgPrice || 0),
+          cost: toNum(r.investedUSD || (r.avgPrice * r.shares) || 0),
+          date: r.purchaseDate || r.createdAt || Date.now(),
+        });
+      }
+    });
+
+    const allTxs = [...txs, ...syntheticTxs].slice().sort((a,b) => (a.date||0) - (b.date||0));
+
+    function sharesUpTo(assetId, t) {
+      let s = 0;
+      for (const tx of allTxs) {
+        if (tx.assetId !== assetId) continue;
+        if ((tx.date || 0) <= t) {
+          if (tx.type === "buy") s += toNum(tx.qty || 0);
+          else if (tx.type === "sell") s -= toNum(tx.qty || 0);
+        }
+      }
+      return s;
+    }
+
+    function priceAtTime(asset, t) {
+      if (asset.type === "nonliquid") {
+        return computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || 0, asset.nonLiquidYoy || 0, t);
+      }
+      const pd = asset.purchaseDate || asset.createdAt || (now - defaultDays * 24 * 3600 * 1000);
+      const avg = toNum(asset.avgPrice || 0);
+      const last = toNum(asset.lastPriceUSD || avg || 0);
+      if (t <= pd) return avg || last;
+      if (t >= now) return last || avg;
+      const frac = (t - pd) / Math.max(1, (now - pd));
+      const seed = hashStringToSeed(asset.symbol + String(asset.id || ""));
+      const rng = seededRng(seed);
+      const vol = asset.type === "crypto" ? 0.12 : asset.type === "stock" ? 0.04 : 0.01;
+      const base = avg + (last - avg) * frac;
+      const noise = (Math.sin(frac * 12 + rng() * 10) * 0.25 + (rng() - 0.5) * 0.4) * vol;
+      return Math.max(0, base * (1 + noise));
+    }
+
+    const seriesPerKey = { all: [], crypto: [], stock: [], nonliquid: [] };
+
+    for (let i = 0; i < points; i++) {
+      const t = start + (i / (points - 1)) * (now - start);
+      let totals = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
+      rowsForChart.forEach(asset => {
+        const s = sharesUpTo(asset.id, t);
+        if (s <= 0) return;
+        const price = priceAtTime(asset, t);
+        const val = s * Math.max(0, price || 0);
+        totals.all += val;
+        if (asset.type === "crypto") totals.crypto += val;
+        else if (asset.type === "stock") totals.stock += val;
+        else if (asset.type === "nonliquid") totals.nonliquid += val;
+      });
+      Object.keys(totals).forEach(k => seriesPerKey[k].push({ t, v: totals[k] }));
+    }
+
+    return seriesPerKey;
+  }
+
+  const multiSeries = useMemo(() => buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
+
+  /* category values */
+  const categoryValuesNow = useMemo(() => {
+    const out = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
+    try {
+      Object.keys(multiSeries).forEach(k => {
+        const arr = multiSeries[k] || [];
+        const last = arr[arr.length - 1];
+        out[k] = last ? last.v : 0;
+      });
+    } catch (e) {}
+    return out;
+  }, [multiSeries]);
+
+  /* RENDER */
+  const titleForFilter = {
+    all: "All Portfolio",
+    crypto: "Crypto Portfolio",
+    stock: "Stocks Portfolio",
+    nonliquid: "Non-Liquid Portfolio",
+  };
+  const headerTitle = titleForFilter[portfolioFilter] || "Portfolio";
+
   return (
     <div className="min-h-screen bg-black text-gray-200 p-6">
       <style>{`
-        .btn { transition: transform 160ms, box-shadow 160ms, background-color 120ms; }
+        .btn { transition: transform 180ms, box-shadow 180ms, background-color 120ms; }
         .btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
         .btn-soft:hover { transform: translateY(-2px) scale(1.01); }
         .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
         .icon-box { transition: transform 160ms, background 120ms; }
-        .menu-scroll { max-height: 17.5rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
+        .slice { cursor: pointer; }
+        .menu-scroll { max-height: 16rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
       `}</style>
 
       <div className="max-w-6xl mx-auto">
         {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2 relative">
-            <h1 className="text-2xl font-semibold">All Portfolio</h1>
-            {/* filter icon-only */}
+            <h1 className="text-2xl font-semibold">{headerTitle}</h1>
+
+            {/* header filter icon-only (no box) */}
             <div className="relative">
-              <button aria-label="Filter" onClick={() => setFilterMenuOpen(v => !v)} className="ml-2 inline-flex items-center justify-center text-gray-200" style={{ fontSize: 18, padding: 6 }}>
+              <button
+                aria-label="Filter"
+                onClick={() => setFilterMenuOpen(v => !v)}
+                className="ml-2 inline-flex items-center justify-center text-gray-200"
+                style={{ fontSize: 18, padding: 6 }}
+                title="Filter portfolio"
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <path d="M3 5h18" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M7 12h10" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M11 19h2" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                 </svg>
               </button>
+
               {filterMenuOpen && (
-                <div ref={filterRef} className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-44 menu-scroll">
+                <div ref={filterMenuRef} className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-44 menu-scroll">
                   <button onClick={() => { setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">All</button>
                   <button onClick={() => { setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Crypto</button>
                   <button onClick={() => { setPortfolioFilter("stock"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Stocks</button>
@@ -1626,9 +1573,15 @@ export default function PortfolioDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* value big + dropdown arrow (no box) */}
+            {/* Currency dropdown (nominal + code + caret) - value larger */}
             <div className="relative">
-              <button aria-label="Currency" onClick={() => setCurrencyMenuOpen(v => !v)} className="inline-flex items-center gap-2" style={{ background: "transparent", border: 0, padding: "6px 8px" }}>
+              <button
+                aria-label="Currency"
+                onClick={() => setCurrencyMenuOpen(v => !v)}
+                className="inline-flex items-center gap-2"
+                style={{ background: "transparent", border: 0, padding: "6px 8px" }}
+                title="Currency"
+              >
                 <span style={{ whiteSpace: "nowrap", fontSize: 20, fontWeight: 700 }}>
                   {displayCcy === "IDR"
                     ? `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(totals.market * usdIdr)} IDR`
@@ -1638,16 +1591,24 @@ export default function PortfolioDashboard() {
                   <path d="M6 9l6 6 6-6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
+
               {currencyMenuOpen && (
-                <div ref={currencyRef} className="absolute mt-2 right-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-36">
+                <div ref={currencyMenuRef} className="absolute mt-2 right-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-36">
                   <button onClick={() => { setDisplayCcy("USD"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">USD</button>
                   <button onClick={() => { setDisplayCcy("IDR"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">IDR</button>
                 </div>
               )}
             </div>
 
-            <button aria-label="Add asset" onClick={() => setOpenAdd(v => !v)} className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold btn`} title="Add asset">
-              <span style={{ display: "inline-block", transformOrigin: "50% 50%", transition: "transform 220ms" }} className={openAdd ? "rotate-open" : ""}>+</span>
+            <button
+              aria-label="Add asset"
+              onClick={() => setOpenAdd(v => !v)}
+              className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold btn`}
+              title="Add asset"
+            >
+              <span style={{ display: "inline-block", transformOrigin: "50% 50%", transition: "transform 220ms" }} className={openAdd ? "rotate-open" : ""}>
+                +
+              </span>
             </button>
           </div>
         </div>
@@ -1691,14 +1652,15 @@ export default function PortfolioDashboard() {
             <div className={`font-semibold ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(totals.pnl * usdIdr, "IDR") : fmtMoney(totals.pnl, "USD")} ({totals.pnlPct.toFixed(2)}%)</div>
           </div>
           <div className="flex items-center justify-between text-gray-400 cursor-pointer" onClick={() => setTransactionsOpen(true)}>
-            <div>Realized P&L</div>
+            <div className="flex items-center gap-2">
+              <div>Realized P&L</div>
+            </div>
             <div className="flex items-center gap-2">
               <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
               <div className="w-6 h-6 bg-gray-800 rounded flex items-center justify-center icon-box">
-                {/* small slanted up-right arrow in a box */}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                  <path d="M6 14 L14 6" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M14 6 v8 h-8" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <svg width="12" height="12" viewBox="0 0 24 24">
+                  <path d="M6 14 L14 6" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  <path d="M14 6 v8 h-8" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
               </div>
             </div>
@@ -1707,7 +1669,7 @@ export default function PortfolioDashboard() {
 
         {/* ADD PANEL */}
         {openAdd && (
-          <div ref={addRef} className="mt-6 bg-transparent p-3 rounded">
+          <div ref={addPanelRef} className="mt-6 bg-transparent p-3 rounded">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex bg-gray-900 rounded overflow-hidden">
                 <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""} btn-soft`}>Crypto</button>
@@ -1722,7 +1684,7 @@ export default function PortfolioDashboard() {
                 <div className="relative w-full sm:max-w-lg">
                   <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
                   {suggestions.length > 0 && (
-                    <div className="suggestions absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
+                    <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
                       {suggestions.map((s, i) => (
                         <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
                           <div>
@@ -1787,12 +1749,19 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* TABLE + SORT */}
-        <div className="mt-6 overflow-x-auto">
+        {/* TABLE + SORT
+            IMPORTANT: container uses overflow-x:auto but overflow-y:visible so dropdown won't be clipped.
+        */}
+        <div className="mt-6" style={{ overflowX: 'auto', overflowY: 'visible' }}>
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm text-gray-400">Assets</div>
             <div className="flex items-center gap-2 relative">
-              <button aria-label="Sort" onClick={() => setSortMenuOpen(v => !v)} className="inline-flex items-center justify-center rounded px-2 py-1 bg-gray-900 border border-gray-800 text-gray-200 btn" title="Sort assets">
+              <button
+                aria-label="Sort"
+                onClick={() => setSortMenuOpen(v => !v)}
+                className="inline-flex items-center justify-center rounded px-2 py-1 bg-gray-900 border border-gray-800 text-gray-200 btn"
+                title="Sort assets"
+              >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                   <path d="M6 6h12" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M9 12h6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
@@ -1801,7 +1770,7 @@ export default function PortfolioDashboard() {
               </button>
 
               {sortMenuOpen && (
-                <div ref={sortRef} className="absolute right-0 mt-2 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-56 z-40 menu-scroll">
+                <div ref={sortMenuRef} className="absolute right-0 mt-2 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-56 z-40 menu-scroll">
                   <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (high → low)</button>
                   <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (high → low)</button>
                   <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (high → low)</button>
@@ -1857,7 +1826,6 @@ export default function PortfolioDashboard() {
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Buy</button>
                       <button onClick={() => openTradeModal(r.id, "sell")} className="bg-yellow-600 px-2 py-1 rounded text-xs btn">Sell</button>
-                      <button onClick={() => openChartModalForAsset(r)} className="bg-indigo-600 px-2 py-1 rounded text-xs btn">Chart</button>
                       <button onClick={() => removeAsset(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Del</button>
                     </div>
                   </td>
@@ -1878,14 +1846,30 @@ export default function PortfolioDashboard() {
             </div>
           </div>
 
-          <CandlesWithLines seriesMap={multiSeries} displayCcy={displayCcy} usdIdr={usdIdr} width={900} height={300} rangeKey={chartRange} onHover={(p)=>setChartHover(p)} />
+          <CandlesWithLines
+            seriesMap={multiSeries}
+            displayCcy={displayCcy}
+            usdIdr={usdIdr}
+            width={900}
+            height={300}
+            rangeKey={chartRange}
+            onHover={(p) => { setChartHover(p); }}
+          />
         </div>
 
-        {/* CAKE ALLOCATION */}
+        {/* CAKE (donut replacement) + legend */}
         {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="w-44 h-44 flex items-center justify-center">
-              <CakeAllocation data={donutData} size={176} inner={48} gap={0.06} displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")} displayCcy={displayCcy} usdIdr={usdIdr} />
+              <CakeAllocation
+                data={donutData}
+                size={176}
+                inner={48}
+                gap={0.06}
+                displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
+                displayCcy={displayCcy}
+                usdIdr={usdIdr}
+              />
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -1893,13 +1877,18 @@ export default function PortfolioDashboard() {
                 const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
                 return (
                   <div key={d.name} className="flex items-center gap-3">
-                    <div style={{ width: 12, height: 12, background: ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#FF9CEE","#B28DFF","#FFB26B","#6BFFA0","#FF6BE5","#00C49F"][i % 10] }} className="rounded-sm" />
+                    <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-sm" />
                     <div>
                       <div className="font-semibold text-gray-100">{d.name}</div>
                       {d.name === "Other" ? (
-                        <div className="text-xs text-gray-400">{d.symbols.join(', ')} <br />{displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%</div>
+                        <div className="text-xs text-gray-400">
+                          {d.symbols.join(', ')} <br/>
+                          {displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%
+                        </div>
                       ) : (
-                        <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%</div>
+                        <div className="text-xs text-gray-400">
+                          {displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1910,14 +1899,17 @@ export default function PortfolioDashboard() {
         )}
 
         {/* TRADE MODAL */}
-        {tradeModal.open && <TradeModal mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)} defaultPrice={tradeModal.defaultPrice} onClose={closeTradeModal} onBuy={performBuy} onSell={performSell} usdIdr={usdIdr} />}
-
-        {/* ASSET CHART MODAL */}
-        {chartModalOpen && <AssetChartModal open={chartModalOpen} onClose={closeChartModal} asset={chartAsset} displayCcy={displayCcy} usdIdr={usdIdr} />}
+        {tradeModal.open && (
+          <TradeModal
+            mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)}
+            defaultPrice={tradeModal.defaultPrice} onClose={() => closeTradeModal()}
+            onBuy={performBuy} onSell={performSell} usdIdr={usdIdr}
+          />
+        )}
 
         {/* TRANSACTIONS MODAL */}
         {transactionsOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[420]">
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[120]">
             <div className="bg-gray-900 p-6 rounded-lg w-full max-w-3xl border border-gray-800">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -1925,12 +1917,16 @@ export default function PortfolioDashboard() {
                   <div className="text-xs text-gray-400">{transactions.length} records</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {lastDeletedTx && <button onClick={() => undoLastDeletedTransaction()} className="bg-amber-500 px-3 py-1 rounded text-sm btn">Undo Delete</button>}
+                  {lastDeletedTx && (
+                    <button onClick={() => undoLastDeletedTransaction()} className="bg-amber-500 px-3 py-1 rounded text-sm btn">Undo Delete</button>
+                  )}
                   <button onClick={() => { setTransactionsOpen(false); }} className="bg-gray-800 px-3 py-1 rounded btn-soft">Close</button>
                 </div>
               </div>
 
-              {transactions.length === 0 ? <div className="text-sm text-gray-500">No transactions yet.</div> : (
+              {transactions.length === 0 ? (
+                <div className="text-sm text-gray-500">No transactions yet.</div>
+              ) : (
                 <div className="overflow-x-auto max-h-96">
                   <table className="min-w-full text-sm">
                     <thead className="text-gray-400 border-b border-gray-800">
@@ -1949,7 +1945,8 @@ export default function PortfolioDashboard() {
                           <td className="px-3 py-3">{new Date(tx.date).toLocaleString()}</td>
                           <td className="px-3 py-3">{tx.symbol} <div className="text-xs text-gray-400">{tx.name}</div></td>
                           <td className="px-3 py-3 text-right">{Number(tx.qty).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
-                          <td className="px-3 py-3 text-right">{tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.proceeds * usdIdr, "IDR") : fmtMoney(tx.proceeds, "USD")) : (displayCcy === "IDR" ? fmtMoney(tx.cost * usdIdr, "IDR") : fmtMoney(tx.cost, "USD"))}
+                          <td className="px-3 py-3 text-right">
+                            {tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.proceeds * usdIdr, "IDR") : fmtMoney(tx.proceeds, "USD")) : (displayCcy === "IDR" ? fmtMoney(tx.cost * usdIdr, "IDR") : fmtMoney(tx.cost, "USD"))}
                             <div className="text-xs">{tx.pricePerUnit ? `${displayCcy === "IDR" ? fmtMoney(tx.pricePerUnit * usdIdr, "IDR") : fmtMoney(tx.pricePerUnit, "USD")} / unit` : ""}</div>
                           </td>
                           <td className="px-3 py-3 text-right">{tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")) : "-"}</td>
@@ -1979,21 +1976,24 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* EXPORT / IMPORT CSV */}
+        {/* EXPORT / IMPORT CSV (buttons white) */}
         <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1">
             <div className="text-sm text-gray-300">CSV: export / import (combined)</div>
-            <div className="text-xs text-gray-500">Export includes assets + transactions. File has markers and ISO dates for clean spreadsheet import.</div>
+            <div className="text-xs text-gray-500">Export contains ASSETS and TRANSACTIONS in one CSV file. File includes header markers (#ASSETS, #TRANSACTIONS) and ISO dates for clean spreadsheet import.</div>
           </div>
           <div className="flex gap-2">
             <div className="relative">
-              <button onClick={exportAllCSV} className="bg-blue-600 px-3 py-2 rounded font-semibold btn">Export CSV</button>
+              <button onClick={exportAllCSV} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-blue-600 hover:text-white">Export CSV</button>
             </div>
-            <label className="bg-emerald-500 px-3 py-2 rounded font-semibold cursor-pointer btn">
+            <label className="bg-white text-black px-3 py-2 rounded font-semibold cursor-pointer btn hover:bg-emerald-500 hover:text-white">
               Import CSV
               <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
             </label>
-            <button onClick={() => { if (!confirm("This will clear your portfolio and realized P&L. Continue?")) return; setAssets([]); setRealizedUSD(0); setTransactions([]); setLastDeletedTx(null); }} className="bg-red-600 px-3 py-2 rounded font-semibold btn">Clear All</button>
+            <button onClick={() => {
+              if (!confirm("This will clear your portfolio and realized P&L. Continue?")) return;
+              setAssets([]); setRealizedUSD(0); setTransactions([]); setLastDeletedTx(null);
+            }} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-red-600 hover:text-white">Clear All</button>
           </div>
         </div>
 
