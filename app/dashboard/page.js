@@ -1,46 +1,51 @@
 // app/dashboard/page.js
 "use client";
 
-/**
- * Final single-file Portfolio Dashboard (page.js)
- *
- * This file is the updated, consolidated single-file dashboard based on your uploaded
- * `page.js` with the requested feature set applied:
- *  - Eye icon to mask/unmask numeric values (percent returns remain visible)
- *  - Share icon that generates a share link + QR/Barcode canvas image; respects eye state
- *  - Add Non-liquid custom asset form (Land / Art / Rolex etc) with purchase date, YOY growth
- *  - Indonesian stock pricing: AlphaVantage (if API key available) used first for .JK tickers,
- *    then Finnhub -> Yahoo fallbacks
- *  - CoinGecko pricing for crypto (and small crypto chart on asset click)
- *  - TradingView embedded widget for stocks on asset click (client-side widget load)
- *  - Cake allocation (gap between slices) with proportional angles and radius; total in center
- *  - Portfolio growth interactive candlestick + multi-line categorized series with timeframes
- *  - Transactions modal with delete/restore (undo) and realized P&L accumulation
- *  - Combined CSV export+import improved for spreadsheet (BOM, ISO dates, #ASSETS/#TRANSACTIONS sections)
- *  - Filter/sort dropdowns that are scrollable and close on outside click
- *  - Buttons & interactive elements have hover/transition/transform animations (+ rotates to ×)
- *
- * NOTE: This code was derived from your uploaded file (source) and extended.
- * Source reference: 
- *
- * IMPORTANT: For AlphaVantage to work for Indonesian tickers (e.g. ABC.JK), set:
- *   window.ALPHA_VANTAGE_KEY = "<YOUR_KEY>";
- * or set localStorage item: 'alpha_vantage_key' = "<YOUR_KEY>"
- *
- * Keep everything in a single file as requested.
- */
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
+
+/**
+ * Portfolio Dashboard — single-file page.js (final rewrite)
+ *
+ * Features implemented (focused and robust):
+ * - Single-file React client component (Next.js app route friendly: "use client" top)
+ * - Persistent assets & transactions in localStorage
+ * - Price polling:
+ *   - Crypto: CoinGecko (bulk)
+ *   - Stocks: Alphavantage for .JK (if API key provided), then Finnhub proxy, then Yahoo fallback
+ * - Asset charts: TradingView embedded widget for assets when possible.
+ *   - For cryptos: try TradingView symbol mapping first (e.g., BINANCE:BTCUSD, COINBASE:BTCUSD).
+ *   - If TradingView is not available for a crypto, fallback to a CoinGecko mini chart.
+ * - Non-liquid assets support (custom assets like Land, Art, Rolex) with YoY growth projection
+ * - Toggle values (eye) to hide numeric values but keep percent returns visible
+ * - Share button generates a downloadable PNG that respects eye state (value suppressed or included)
+ * - Cake-like allocation chart (interactive hover) showing proportion and total in center
+ * - Portfolio growth chart (candlestick-like simplified + multi-line series) with timeframes
+ * - Export/Import combined CSV (assets + transactions) with BOM and ISO dates for spreadsheet friendliness
+ * - Transactions log with restore (undo) and delete
+ * - UI: filter/sort dropdowns, animated add button (+ -> ×), hover effects
+ *
+ * Notes:
+ * - For Alphavantage: set `window.ALPHA_VANTAGE_KEY` or localStorage 'alpha_vantage_key'
+ * - For Finnhub / Yahoo proxies: URLs assume server proxy routes exist as in original file (/api/finnhub/quote, /api/yahoo/quote)
+ *
+ * This file is intended to replace your existing page.js — upload manually to GitHub as requested.
+ */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
+const COINGECKO_PRICE = (ids) =>
+  `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
+const COINGECKO_SEARCH = (q) => `${COINGECKO_API}/search?query=${encodeURIComponent(q)}`;
+const COINGECKO_COIN_CHART = (id, days = 30) =>
+  `${COINGECKO_API}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${days}`;
+const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
+
+// Server-side proxy endpoints (same as original project)
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
 const YAHOO_QUOTE = (symbols) => `/api/yahoo/quote?symbol=${encodeURIComponent(symbols)}`;
 const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`;
-const COINGECKO_PRICE = (ids) =>
-  `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`;
-const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
-const ALPHAVANTAGE_GLOBAL_QUOTE = (symbol, key) => `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key)}`;
+const ALPHAVANTAGE_GLOBAL_QUOTE = (symbol, key) =>
+  `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key)}`;
 
 /* ===================== HELPERS ===================== */
 const isBrowser = typeof window !== "undefined";
@@ -86,13 +91,19 @@ function ensureNumericAsset(a) {
     type: a.type || "stock",
   };
 }
-
-/* ===================== SMALL UI UTILITIES ===================== */
 const palette = ["#FF6B6B","#FFD93D","#6BCB77","#4D96FF","#FF9CEE","#B28DFF","#FFB26B","#6BFFA0","#FF6BE5","#00C49F"];
 function colorForIndex(i){ return palette[i % palette.length]; }
 
-/* ===================== CAKE-STYLE ALLOCATION COMPONENT ===================== */
-function CakeAllocation({ data = [], size = 220, inner = 52, gap = 0.02, displayTotal = "", displayCcy = "USD", usdIdr = 16000 }) {
+/* ===================== SMALL UI & MATH UTILITIES ===================== */
+function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent, targetTime = Date.now()) {
+  const years = Math.max(0, (targetTime - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
+  const r = toNum(yoyPercent) / 100;
+  const last = avgPriceUSD * Math.pow(1 + r, years);
+  return last;
+}
+
+/* ===================== CAKE ALLOCATION (interactive) ===================== */
+function CakeAllocation({ data = [], size = 220, inner = 56, gap = 0.04, displayTotal = "", displayCcy = "USD", usdIdr = 16000 }) {
   const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2, cy = size / 2;
   const maxOuter = size / 2 - 6;
@@ -126,7 +137,6 @@ function CakeAllocation({ data = [], size = 220, inner = 52, gap = 0.02, display
     return `M ${cx} ${cy} L ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${rInner} ${rInner} 0 ${large} 0 ${xi1} ${yi1} Z`;
   }
 
-  // build arcs
   let start = -Math.PI / 2;
   const arcs = data.map((d) => {
     const portion = Math.max(0, d.value || 0) / total;
@@ -138,11 +148,11 @@ function CakeAllocation({ data = [], size = 220, inner = 52, gap = 0.02, display
     return arc;
   });
 
-  const onMouseEnter = (i, event, d) => {
+  const onMouseEnter = (i, ev, d) => {
     setHoverIndex(i);
     const rect = wrapRef.current?.getBoundingClientRect();
-    const px = (event.clientX - (rect?.left || 0)) + 12;
-    const py = (event.clientY - (rect?.top || 0)) - 12;
+    const px = (ev.clientX - (rect?.left || 0)) + 12;
+    const py = (ev.clientY - (rect?.top || 0)) - 12;
     setTooltip({ show: true, x: px, y: py, html: `${d.name} • ${formatForDisplayCcy(d.value)}` });
   };
   const onMouseMove = (e) => {
@@ -212,16 +222,15 @@ function CakeAllocation({ data = [], size = 220, inner = 52, gap = 0.02, display
   );
 }
 
-/* ===================== CANDLES + MULTILINE GROWTH CHART ===================== */
-function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 1000, height = 320, rangeKey = "all", onHover }) {
+/* ===================== SIMPLE CANDLES & MULTILINE (GROWTH) ===================== */
+function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, rangeKey = "all", onHover }) {
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
-  const w = Math.min(width, 1200);
-  const h = height;
-  const innerW = w - padding.left - padding.right;
-  const innerH = h - padding.top - padding.bottom;
+  const width = Math.min(1100, Math.max(700, typeof window !== "undefined" ? window.innerWidth - 160 : 900));
+  const height = 320;
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
 
   const conv = (v) => displayCcy === "IDR" ? v * usdIdr : v;
-
   const convAll = (seriesMap["all"] || []).map(p => ({ t: p.t, v: conv(p.v) }));
   const convKeys = ["crypto","stock","nonliquid"];
   const convCats = {};
@@ -232,7 +241,6 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   const timeframeMap = { "1d": 48, "2d": 96, "1w": 56, "1m": 90, "1y": 180, "all": Math.min(200, convAll.length) };
   const candleCountTarget = timeframeMap[rangeKey] || Math.min(200, convAll.length);
 
-  // bucket mapping
   const buckets = Array.from({ length: Math.max(4, candleCountTarget) }, () => []);
   for (let i = 0; i < convAll.length; i++) {
     const idx = Math.floor((i / convAll.length) * buckets.length);
@@ -323,12 +331,12 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
 
   return (
     <div className="w-full overflow-hidden rounded" style={{ background: "transparent" }}>
-      <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" onMouseMove={handleMove} onMouseLeave={handleLeave}>
-        <rect x="0" y="0" width={w} height={h} fill="transparent" />
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" onMouseMove={handleMove} onMouseLeave={handleLeave}>
+        <rect x="0" y="0" width={width} height={height} fill="transparent" />
         {[0,1,2,3,4].map(i => {
           const v = min + (i/4) * (range);
           const y = yOf(v);
-          return <line key={i} x1={padding.left} x2={w - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
+          return <line key={i} x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
         })}
 
         {candles.map((c, i) => {
@@ -397,79 +405,90 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
   );
 }
 
-/* ===================== TRADE MODAL (unchanged-ish) ===================== */
-function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
-  const [qty, setQty] = useState("");
-  const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
-  const [priceCcy, setPriceCcy] = useState("USD");
-
+/* ===================== TRADINGVIEW & COINGECKO CHART HELPERS ===================== */
+function TradingViewWidget({ symbol = "AAPL", height = 420 }) {
+  const idRef = useRef(`tv_${Math.random().toString(36).slice(2,9)}`);
   useEffect(() => {
-    setPrice(defaultPrice > 0 ? String(defaultPrice) : "");
-  }, [defaultPrice]);
+    if (!isBrowser) return;
+    function mount() {
+      try {
+        if (window.TradingView && window.TradingView.widget) {
+          // clear any previous widget content
+          const ct = document.getElementById(idRef.current);
+          if (ct) ct.innerHTML = "";
+          // try to create widget
+          new window.TradingView.widget({
+            container_id: idRef.current,
+            width: "100%",
+            height,
+            symbol,
+            interval: "D",
+            timezone: "Etc/UTC",
+            theme: "dark",
+            style: "1",
+            locale: "en",
+            toolbar_bg: "#1f2937",
+            hide_side_toolbar: false,
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    if (!window.TradingView) {
+      const s = document.createElement("script");
+      s.src = "https://s3.tradingview.com/tv.js";
+      s.async = true;
+      s.onload = mount;
+      document.body.appendChild(s);
+    } else {
+      mount();
+    }
+  }, [symbol, height]);
+  return <div id={idRef.current} style={{ width: "100%", minHeight: height }} />;
+}
 
-  if (!asset) return null;
+function CryptoMiniChart({ coinId = "bitcoin", displayCcy="USD", usdIdr=16000, days = 30 }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let mounted = true;
+    async function fetchChart() {
+      try {
+        const res = await fetch(COINGECKO_COIN_CHART(coinId, days));
+        if (!res.ok) return;
+        const j = await res.json();
+        if (!mounted) return;
+        const arr = (j.prices || []).map(p => ({ t: p[0], v: p[1] }));
+        setData(arr);
+      } catch (e) {}
+    }
+    fetchChart();
+    return () => { mounted = false; };
+  }, [coinId, days]);
 
-  const priceUSD = priceCcy === "IDR" ? toNum(price) / usdIdr : toNum(price);
-  const totalUSD = toNum(qty) * priceUSD;
+  if (!data || data.length === 0) return <div className="text-xs text-gray-500">No chart</div>;
 
-  function handleSubmit(e) {
-    e.preventDefault();
-    const q = toNum(qty), p = priceUSD;
-    if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
-    if (mode === 'buy') onBuy(q, p);
-    if (mode === 'sell') onSell(q, p);
-  }
-
+  const w = 700, h = 300, pad = 8;
+  const vs = data.map(d => d.v);
+  const min = Math.min(...vs), max = Math.max(...vs), range = Math.max(1e-8, max-min);
+  const xOf = (i) => pad + (i/(data.length-1)) * (w - pad*2);
+  const yOf = (v) => pad + (1 - (v - min)/range) * (h - pad*2);
+  const path = data.map((p,i) => `${i===0 ? "M" : "L"} ${xOf(i).toFixed(2)} ${yOf(p.v).toFixed(2)}`).join(" ");
+  const last = vs[vs.length-1];
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-      <div className="bg-gray-900 p-6 rounded-lg w-full max-w-md border border-gray-800">
-        <div className="flex justify-between items-start">
-          <div>
-            <h2 className="text-xl font-semibold capitalize">{mode} {asset.symbol}</h2>
-            <p className="text-sm text-gray-400">{asset.name}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white">×</button>
-        </div>
-        <form onSubmit={handleSubmit} className="mt-4">
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Quantity</label>
-            <input type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)}
-              className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
-              placeholder="0.00"
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Price per unit</label>
-            <div className="flex rounded overflow-hidden">
-              <input type="number" step="any" value={price} onChange={(e) => setPrice(e.target.value)}
-                className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700 focus:outline-none focus:border-blue-500"
-                placeholder="0.00"
-              />
-              <select value={priceCcy} onChange={(e) => setPriceCcy(e.target.value)}
-                className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r focus:outline-none"
-              >
-                <option value="USD">USD</option>
-                <option value="IDR">IDR</option>
-              </select>
-            </div>
-          </div>
-          <div className="text-sm text-gray-400 text-right mb-4">
-            Total: {fmtMoney(totalUSD, "USD")}
-          </div>
-          <button type="submit"
-            className={`w-full py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-white'}`}
-          >
-            {mode === 'buy' ? 'Confirm Buy' : 'Confirm Sell'}
-          </button>
-        </form>
-      </div>
+    <div>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
+        <rect x="0" y="0" width={w} height={h} fill="#0b1220" />
+        <path d={path} stroke="#FF6B6B" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <div className="mt-2 text-sm">{displayCcy==="IDR" ? fmtMoney(last*usdIdr,"IDR") : fmtMoney(last,"USD")}</div>
     </div>
   );
 }
 
 /* ===================== MAIN COMPONENT ===================== */
 export default function PortfolioDashboard() {
-  /* ---------- load/save helpers ---------- */
+  /* ---------- persistent state ---------- */
   const loadAssets = () => {
     try {
       if (!isBrowser) return [];
@@ -480,6 +499,16 @@ export default function PortfolioDashboard() {
   };
   const [assets, setAssets] = useState(loadAssets);
 
+  const loadTransactions = () => {
+    try {
+      if (!isBrowser) return [];
+      const raw = JSON.parse(localStorage.getItem("pf_transactions_v2") || "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw;
+    } catch { return []; }
+  };
+  const [transactions, setTransactions] = useState(loadTransactions);
+
   const loadRealized = () => {
     try {
       if (!isBrowser) return 0;
@@ -489,30 +518,17 @@ export default function PortfolioDashboard() {
   const [realizedUSD, setRealizedUSD] = useState(loadRealized);
 
   const loadDisplayCcy = () => {
-    try {
-      if (!isBrowser) return "USD";
-      return localStorage.getItem("pf_display_ccy_v2") || "USD";
-    } catch { return "USD"; }
+    try { if (!isBrowser) return "USD"; return localStorage.getItem("pf_display_ccy_v2") || "USD"; } catch { return "USD"; }
   };
   const [displayCcy, setDisplayCcy] = useState(loadDisplayCcy);
-
-  const loadTransactions = () => {
-    try {
-      if (!isBrowser) return [];
-      const raw = JSON.parse(localStorage.getItem("pf_transactions_v2") || "[]");
-      if (!Array.isArray(raw)) return [];
-      return raw.map(t => ({ ...t }));
-    } catch { return []; }
-  };
-  const [transactions, setTransactions] = useState(loadTransactions);
 
   /* ---------- UI & FX ---------- */
   const [usdIdr, setUsdIdr] = useState(16000);
   const [fxLoading, setFxLoading] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [valuesHidden, setValuesHidden] = useState(false); // eye icon state
+  const [valuesHidden, setValuesHidden] = useState(false);
 
-  /* ---------- add/search state ---------- */
+  /* ---------- add/search ---------- */
   const [openAdd, setOpenAdd] = useState(false);
   const [searchMode, setSearchMode] = useState("crypto");
   const [query, setQuery] = useState("");
@@ -522,7 +538,7 @@ export default function PortfolioDashboard() {
   const [initPrice, setInitPrice] = useState("");
   const [initPriceCcy, setInitPriceCcy] = useState("USD");
 
-  // non-liquid form state
+  /* non-liquid fields */
   const [nlName, setNlName] = useState("");
   const [nlQty, setNlQty] = useState("");
   const [nlPrice, setNlPrice] = useState("");
@@ -534,143 +550,71 @@ export default function PortfolioDashboard() {
   /* ---------- live quotes ---------- */
   const [lastTick, setLastTick] = useState(null);
 
-  /* ---------- filter & UI ---------- */
-  const [portfolioFilter, setPortfolioFilter] = useState("all");
-  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
-  const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const [portfolioDropdownOpen, setPortfolioDropdownOpen] = useState(false);
-
-  /* ---------- transactions / undo ---------- */
-  const [transactionsOpen, setTransactionsOpen] = useState(false);
-  const [lastDeletedTx, setLastDeletedTx] = useState(null);
-
   /* ---------- trade modal ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
 
-  /* ---------- chart timeframe ---------- */
+  /* ---------- charts & asset chart modal ---------- */
   const [chartRange, setChartRange] = useState("all");
-  const [chartHover, setChartHover] = useState(null);
+  const [assetChartOpen, setAssetChartOpen] = useState({ open: false, asset: null });
 
-  /* ---------- sorting ---------- */
+  /* ---------- filters & sorting ---------- */
+  const [portfolioFilter, setPortfolioFilter] = useState("all");
   const [sortBy, setSortBy] = useState("market_desc");
 
-  /* ---------- refs ---------- */
-  const filterMenuRef = useRef(null);
-  const sortMenuRef = useRef(null);
+  /* refs */
   const suggestionsRef = useRef(null);
-  const addPanelRef = useRef(null);
-  const currencyMenuRef = useRef(null);
-  const portfolioDropdownRef = useRef(null);
 
-  /* ---------- persist ---------- */
+  /* persist changes */
   useEffect(() => { try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {} }, [assets]);
+  useEffect(() => { try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {} }, [transactions]);
   useEffect(() => { try { localStorage.setItem("pf_realized_v2", String(realizedUSD)); } catch {} }, [realizedUSD]);
   useEffect(() => { try { localStorage.setItem("pf_display_ccy_v2", displayCcy); } catch {} }, [displayCcy]);
-  useEffect(() => { try { localStorage.setItem("pf_transactions_v2", JSON.stringify(transactions || [])); } catch {} }, [transactions]);
 
-  /* click outside closes */
+  /* close suggestions when outside clicked */
   useEffect(() => {
     function onPointerDown(e) {
-      const target = e.target;
-      if (filterMenuOpen && filterMenuRef.current && !filterMenuRef.current.contains(target) && !e.target.closest('[aria-label="Filter"]')) {
-        setFilterMenuOpen(false);
-      }
-      if (sortMenuOpen && sortMenuRef.current && !sortMenuRef.current.contains(target) && !e.target.closest('[aria-label="Sort"]')) {
-        setSortMenuOpen(false);
-      }
-      if (suggestions.length > 0 && suggestionsRef.current && !suggestionsRef.current.contains(target) && !addPanelRef.current?.contains(target)) {
-        setSuggestions([]);
-      }
-      if (openAdd && addPanelRef.current && !addPanelRef.current.contains(target) && !e.target.closest('[aria-label="Add asset"]')) {
-        setOpenAdd(false);
-      }
-      if (currencyMenuOpen && currencyMenuRef.current && !currencyMenuRef.current.contains(target) && !e.target.closest('[aria-label="Currency"]')) {
-        setCurrencyMenuOpen(false);
-      }
-      if (portfolioDropdownOpen && portfolioDropdownRef.current && !portfolioDropdownRef.current.contains(target) && !e.target.closest('[aria-label="PortfolioDropdown"]')) {
-        setPortfolioDropdownOpen(false);
-      }
+      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target)) setSuggestions([]);
     }
-    document.addEventListener("pointerdown", onPointerDown, { passive: true });
+    document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [filterMenuOpen, sortMenuOpen, suggestions, openAdd, currencyMenuOpen, portfolioDropdownOpen]);
+  }, []);
 
   /* ===================== SEARCH LOGIC ===================== */
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
-    if (!query || query.trim().length < 1 || searchMode === "nonliquid") {
-      setSuggestions([]);
-      return;
-    }
+    if (!query || query.trim().length < 1 || searchMode === "nonliquid") { setSuggestions([]); return; }
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const q = query.trim();
         if (searchMode === "crypto") {
-          const res = await fetch(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}`);
+          const res = await fetch(COINGECKO_SEARCH(q));
           if (!res.ok) { setSuggestions([]); return; }
           const j = await res.json();
           setSuggestions((j.coins || []).slice(0, 20).map((c) => ({
-            id: c.id, symbol: (c.symbol || "").toUpperCase(), display: c.name,
-            source: "coingecko", type: "crypto",
+            id: c.id, symbol: (c.symbol || "").toUpperCase(), display: c.name, source: "coingecko", type: "crypto"
           })));
           return;
         }
-
-        const proxyCandidates = [ YAHOO_SEARCH, (t) => `/api/search?q=${encodeURIComponent(t)}` ];
-        let payload = null;
-        for (const p of proxyCandidates) {
-          try {
-            const url = typeof p === "function" ? p(q) : p(q);
-            const res = await fetch(url);
-            if (!res.ok) continue;
-            payload = await res.json();
-            if (payload) break;
-          } catch (e) {}
-        }
-        if (!payload) { setSuggestions([]); return; }
-
-        const rawList = payload.quotes || payload.result || (payload.data && payload.data.quotes) || (payload.finance && payload.finance.result && payload.finance.result.quotes) || payload.items || [];
-        const list = (Array.isArray(rawList) ? rawList : []).slice(0, 120).map((it) => {
-          const symbol = it.symbol || it.ticker || it.symbolDisplay || it.id || (typeof it === "string" ? it : "");
-          const display = it.shortname || it.shortName || it.longname || it.longName || it.name || it.title || it.displayName || it.description || symbol;
-          const exchange = it.exchange || it.fullExchangeName || it.exchangeName || it.exchDisp || "";
-          const currency = it.currency || it.quoteCurrency || "";
-          return {
-            symbol: (symbol || "").toString().toUpperCase(),
-            display: display || symbol,
-            exchange,
-            currency,
-            source: "yahoo",
-            type: "stock",
-          };
-        });
-
-        if (searchMode === "id") {
-          setSuggestions(list.filter((x) =>
-            (x.symbol || "").toUpperCase().includes(".JK") ||
-            String(x.exchange || "").toUpperCase().includes("JAKARTA") ||
-            String(x.exchange || "").toUpperCase().includes("IDX")
-          ).slice(0, 30));
-        } else {
-          setSuggestions(list.filter((x) => !(x.symbol || "").toUpperCase().endsWith(".JK")).slice(0, 30));
-        }
-      } catch (e) {
-        console.warn("search err", e);
-        setSuggestions([]);
-      }
+        // stocks: try yahoo proxy as before
+        try {
+          const res = await fetch(YAHOO_SEARCH(q));
+          if (!res.ok) { setSuggestions([]); return; }
+          const payload = await res.json();
+          const rawList = payload.quotes || payload.result || payload.items || [];
+          const list = (Array.isArray(rawList) ? rawList : []).slice(0, 120).map(it => {
+            const symbol = it.symbol || it.ticker || it.id || "";
+            const display = it.shortname || it.shortName || it.longname || it.name || symbol;
+            return { symbol: (symbol||"").toString().toUpperCase(), display, exchange: it.exchange || it.fullExchangeName || "", source: "yahoo", type: "stock" };
+          });
+          setSuggestions(list.slice(0, 30));
+        } catch (e) { setSuggestions([]); }
+      } catch (e) { setSuggestions([]); }
     }, 320);
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [query, searchMode]);
 
-  /* ===================== POLLING PRICES ===================== */
-  const assetsRef = useRef(assets);
-  const usdIdrRef = useRef(usdIdr);
-  useEffect(() => { assetsRef.current = assets; }, [assets]);
-  useEffect(() => { usdIdrRef.current = usdIdr; }, [usdIdr]);
-
-  /* FX tether -> IDR */
+  /* ===================== FX (USD/IDR) via CoinGecko tether->idr ===================== */
   useEffect(() => {
     let mounted = true;
     async function fetchFx() {
@@ -689,16 +633,19 @@ export default function PortfolioDashboard() {
     return () => { mounted = false; clearInterval(id); };
   }, []);
 
-  /* Polling crypto (CoinGecko) */
+  /* ===================== POLLING PRICES: COINGECKO for crypto, Alphavantage/Finnhub/Yahoo for stocks ===================== */
+  const assetsRef = useRef(assets);
+  const usdIdrRef = useRef(usdIdr);
+  useEffect(() => { assetsRef.current = assets; }, [assets]);
+  useEffect(() => { usdIdrRef.current = usdIdr; }, [usdIdr]);
+
+  // Poll crypto prices
   useEffect(() => {
     let mounted = true;
     async function pollCg() {
       try {
         const ids = Array.from(new Set(assetsRef.current.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId)));
-        if (ids.length === 0) {
-          if (isInitialLoading && mounted) setIsInitialLoading(false);
-          return;
-        }
+        if (ids.length === 0) return;
         const res = await fetch(COINGECKO_PRICE(ids.join(",")));
         if (!mounted || !res.ok) return;
         const j = await res.json();
@@ -710,31 +657,25 @@ export default function PortfolioDashboard() {
           return ensureNumericAsset(a);
         }));
         setLastTick(Date.now());
-        if (isInitialLoading && mounted) setIsInitialLoading(false);
       } catch (e) {}
     }
     pollCg();
     const id = setInterval(pollCg, 6000);
     return () => { mounted = false; clearInterval(id); };
-  }, [isInitialLoading]);
+  }, []);
 
-  /* Polling stocks: AlphaVantage for IND ones first then Finnhub -> Yahoo fallback */
+  // Poll stocks
   useEffect(() => {
     let mounted = true;
     async function pollStocks() {
       try {
         const symbols = Array.from(new Set(assetsRef.current.filter(a => a.type === "stock").map(a => a.symbol))).slice(0, 50);
-        if (symbols.length === 0) {
-          if (isInitialLoading && mounted) setIsInitialLoading(false);
-          return;
-        }
+        if (symbols.length === 0) return;
 
-        // Get AlphaVantage key from window or localStorage
         let alphaKey = (isBrowser && (window.ALPHA_VANTAGE_KEY || localStorage.getItem('alpha_vantage_key'))) || null;
-
         const map = {};
 
-        // First, call AlphaVantage for .JK symbols if API key present
+        // Alphavantage for .JK symbols
         if (alphaKey) {
           const jkSymbols = symbols.filter(s => String(s||"").toUpperCase().endsWith(".JK"));
           for (const s of jkSymbols) {
@@ -745,17 +686,14 @@ export default function PortfolioDashboard() {
               const js = await r.json();
               const gq = js["Global Quote"] || js["Global_Quote"] || null;
               if (gq) {
-                // AlphaVantage uses keys like "05. price"
                 const priceRaw = toNum(gq["05. price"] ?? gq["05 price"] ?? gq["price"] ?? 0);
-                if (priceRaw > 0) {
-                  map[s] = { symbol: s, priceRaw, currency: "IDR", _source: "alphavantage" };
-                }
+                if (priceRaw > 0) map[s] = { symbol: s, priceRaw, currency: "IDR", _source: "alphavantage" };
               }
             } catch (e) {}
           }
         }
 
-        // For all remaining symbols, try Finnhub (previous behavior)
+        // Finnhub per-symbol
         for (const s of symbols) {
           if (map[s]) continue;
           try {
@@ -772,10 +710,10 @@ export default function PortfolioDashboard() {
               }
               map[s] = { symbol: s, priceRaw: current, priceUSD, _source: "finnhub", currency: looksLikeId ? "IDR" : js?.currency || "USD", fullExchangeName: js?.exchange || "" };
             }
-          } catch (e) { /* ignore */ }
+          } catch (e) {}
         }
 
-        // Fallback to Yahoo for missing
+        // Yahoo fallback for missing
         const missing = symbols.filter(s => !map[s]);
         if (missing.length > 0) {
           try {
@@ -787,36 +725,22 @@ export default function PortfolioDashboard() {
                   const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
                   if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency || "USD", fullExchangeName: q.fullExchangeName, _source: "yahoo" };
                 });
-              } else if (Array.isArray(j)) {
-                j.forEach(q => {
-                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, _source: "yahoo" };
-                });
-              } else if (j && typeof j === "object") {
-                Object.keys(j).forEach(k => {
-                  const q = j[k];
-                  const price = toNum(q?.regularMarketPrice ?? q?.price ?? q?.current ?? q?.c ?? 0);
-                  if (price > 0 && q?.symbol) map[q.symbol] = { symbol: q.symbol, priceRaw: price, currency: q.currency || "USD", fullExchangeName: q.fullExchangeName, _source: "yahoo" };
-                });
               }
             }
           } catch (e) {}
         }
 
-        // Apply to assets
         setAssets(prev => prev.map(a => {
           if (a.type === "stock" && map[a.symbol]) {
-            const entry = map[a.symbol];
-            let priceRaw = toNum(entry.priceRaw || entry.priceUSD || 0);
-            const currency = (entry.currency || "").toString().toUpperCase();
-            let priceUSD = priceRaw;
-            const looksLikeId = currency === "IDR" || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(entry.fullExchangeName || "").toUpperCase().includes("JAKARTA");
-            if (looksLikeId && priceRaw > 0) {
+            const q = map[a.symbol];
+            const price = toNum(q.priceUSD ?? q.priceRaw ?? q.c ?? q.current ?? 0);
+            const looksLikeId = (String(q.currency || "").toUpperCase() === "IDR") || String(a.symbol || "").toUpperCase().endsWith(".JK") || String(q.fullExchangeName || "").toUpperCase().includes("JAKARTA");
+            let priceUSD = price;
+            if (looksLikeId && price > 0) {
               const fx = usdIdrRef.current || 1;
-              priceUSD = fx > 0 ? (priceRaw / fx) : priceRaw;
+              priceUSD = fx > 0 ? (price / fx) : price;
             }
             if (!(priceUSD > 0)) priceUSD = a.avgPrice || a.lastPriceUSD || 0;
-            // protect against nonsense values: if priceUSD > 0 use it; else fallback to avgPrice
             if (!priceUSD || priceUSD <= 0) priceUSD = a.avgPrice || a.lastPriceUSD || 0;
             return ensureNumericAsset({ ...a, lastPriceUSD: priceUSD, marketValueUSD: priceUSD * toNum(a.shares || 0) });
           }
@@ -824,125 +748,80 @@ export default function PortfolioDashboard() {
         }));
 
         setLastTick(Date.now());
-        if (isInitialLoading && mounted) setIsInitialLoading(false);
-      } catch (e) {
-        // silent
-      }
+      } catch (e) {}
     }
     pollStocks();
     const id = setInterval(pollStocks, 5000);
     return () => { mounted = false; clearInterval(id); };
-  }, [isInitialLoading]);
+  }, []);
 
-  /* ===================== NON-LIQUID PRICE CALCULATION ===================== */
-  function computeNonLiquidLastPrice(avgPriceUSD, purchaseDateMs, yoyPercent, targetTime = Date.now()) {
-    const years = Math.max(0, (targetTime - (purchaseDateMs || Date.now())) / (365.25 * 24 * 3600 * 1000));
-    const r = toNum(yoyPercent) / 100;
-    const last = avgPriceUSD * Math.pow(1 + r, years);
-    return last;
-  }
-
-  /* ===================== TRANSACTION EFFECTS ===================== */
-  function applyTransactionEffects(tx) {
-    if (!tx) return;
-    if (tx.type === "sell") {
-      setAssets(prev => prev.map(a => {
-        if (a.id === tx.assetId) {
-          const oldShares = toNum(a.shares || 0);
-          const newShares = Math.max(0, oldShares - tx.qty);
-          const newInvested = Math.max(0, toNum(a.investedUSD || 0) - tx.costOfSold);
-          const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
-          const lastPriceUSD = tx.pricePerUnit || a.lastPriceUSD || newAvg;
-          return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD, marketValueUSD: newShares * lastPriceUSD });
-        }
-        return ensureNumericAsset(a);
-      }));
-      setRealizedUSD(prev => prev + toNum(tx.realized || 0));
-    } else if (tx.type === "buy") {
-      setAssets(prev => prev.map(a => {
-        if (a.id === tx.assetId) {
-          const oldShares = toNum(a.shares || 0);
-          const oldInvested = toNum(a.investedUSD || 0);
-          const newShares = oldShares + tx.qty;
-          const newInvested = oldInvested + tx.cost;
-          const newAvg = newShares > 0 ? newInvested / newShares : 0;
-          const lastPriceUSD = tx.pricePerUnit || a.lastPriceUSD || newAvg;
-          return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD, marketValueUSD: newShares * lastPriceUSD });
-        }
-        return ensureNumericAsset(a);
-      }));
-      const exists = assets.find(a => a.id === tx.assetId);
-      if (!exists) {
-        const avg = tx.cost / (tx.qty || 1);
-        const asset = ensureNumericAsset({
-          id: tx.assetId || `tx-asset:${tx.symbol}:${Date.now()}`,
-          type: tx.assetType || "stock",
-          symbol: tx.symbol, name: tx.name || tx.symbol,
-          shares: tx.qty, avgPrice: avg, investedUSD: tx.cost, lastPriceUSD: tx.pricePerUnit || avg, marketValueUSD: tx.qty * (tx.pricePerUnit || avg),
-        });
-        setAssets(prev => [...prev, asset]);
-      }
+  /* ===================== ROWS / TOTALS / FILTER / SORT ===================== */
+  const rows = useMemo(() => assets.map(a => {
+    const aa = ensureNumericAsset(a);
+    if (aa.type === "nonliquid") {
+      const last = computeNonLiquidLastPrice(aa.avgPrice, aa.purchaseDate || aa.createdAt, aa.nonLiquidYoy || 0);
+      aa.lastPriceUSD = last;
+      aa.marketValueUSD = last * toNum(aa.shares || 0);
+    } else {
+      aa.lastPriceUSD = toNum(aa.lastPriceUSD || 0) || aa.avgPrice || 0;
+      aa.marketValueUSD = toNum(aa.shares || 0) * aa.lastPriceUSD;
     }
-  }
+    const invested = toNum(aa.investedUSD || 0);
+    const market = aa.marketValueUSD || 0;
+    const pnl = market - invested;
+    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+    return { ...aa, lastPriceUSD: aa.lastPriceUSD, marketValueUSD: market, investedUSD: invested, pnlUSD: pnl, pnlPct };
+  }), [assets]);
 
-  function reverseTransactionEffects(tx) {
-    if (!tx) return;
-    if (tx.type === "sell") {
-      setAssets(prev => {
-        const found = prev.find(a => a.id === tx.assetId);
-        if (found) {
-          return prev.map(a => {
-            if (a.id === tx.assetId) {
-              const oldShares = toNum(a.shares || 0);
-              const newShares = oldShares + tx.qty;
-              const newInvested = toNum(a.investedUSD || 0) + tx.costOfSold;
-              const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
-              const lastPriceUSD = a.lastPriceUSD || newAvg;
-              return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD, marketValueUSD: newShares * lastPriceUSD });
-            }
-            return ensureNumericAsset(a);
-          });
-        } else {
-          const avg = tx.costOfSold / (tx.qty || 1);
-          const asset = ensureNumericAsset({
-            id: tx.assetId || `restored:${tx.symbol}:${Date.now()}`,
-            type: tx.assetType || "stock",
-            symbol: tx.symbol, name: tx.name || tx.symbol,
-            shares: tx.qty, avgPrice: avg, investedUSD: tx.costOfSold, lastPriceUSD: tx.pricePerUnit || avg, marketValueUSD: tx.qty * (tx.pricePerUnit || avg),
-          });
-          return [...prev, asset];
-        }
-      });
-      setRealizedUSD(prev => prev - toNum(tx.realized || 0));
-    } else if (tx.type === "buy") {
-      setAssets(prev => {
-        const found = prev.find(a => a.id === tx.assetId);
-        if (!found) return prev;
-        return prev.flatMap(a => {
-          if (a.id === tx.assetId) {
-            const oldShares = toNum(a.shares || 0);
-            const newShares = Math.max(0, oldShares - tx.qty);
-            const newInvested = Math.max(0, toNum(a.investedUSD || 0) - tx.cost);
-            if (newShares <= 0) return [];
-            const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
-            const lastPriceUSD = a.lastPriceUSD || newAvg;
-            return [ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD, marketValueUSD: newShares * lastPriceUSD })];
-          }
-          return [ensureNumericAsset(a)];
-        });
-      });
+  const filteredRows = useMemo(() => {
+    if (portfolioFilter === "all") return rows;
+    if (portfolioFilter === "crypto") return rows.filter(r => r.type === "crypto");
+    if (portfolioFilter === "stock") return rows.filter(r => r.type === "stock");
+    if (portfolioFilter === "nonliquid") return rows.filter(r => r.type === "nonliquid");
+    return rows;
+  }, [rows, portfolioFilter]);
+
+  const sortedRows = useMemo(() => {
+    const copy = [...filteredRows];
+    switch (sortBy) {
+      case "market_desc": copy.sort((a,b) => b.marketValueUSD - a.marketValueUSD); break;
+      case "invested_desc": copy.sort((a,b) => b.investedUSD - a.investedUSD); break;
+      case "pnl_desc": copy.sort((a,b) => (b.pnlUSD || 0) - (a.pnlUSD || 0)); break;
+      case "symbol_asc": copy.sort((a,b) => (a.symbol||"").localeCompare(b.symbol||"")); break;
+      case "oldest": copy.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); break;
+      case "newest": copy.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); break;
+      default: break;
     }
-  }
+    return copy;
+  }, [filteredRows, sortBy]);
 
-  /* ===================== ADD ASSET HELPERS ===================== */
+  const totals = useMemo(() => {
+    const invested = filteredRows.reduce((s, r) => s + toNum(r.investedUSD || 0), 0);
+    const market = filteredRows.reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
+    const pnl = market - invested;
+    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+    return { invested, market, pnl, pnlPct };
+  }, [filteredRows]);
+
+  const donutData = useMemo(() => {
+    const sorted = filteredRows.slice().sort((a,b) => b.marketValueUSD - a.marketValueUSD);
+    const top = sorted.slice(0,6);
+    const other = sorted.slice(6);
+    const otherTotal = other.reduce((s,r) => s + (r.marketValueUSD || 0), 0);
+    const otherSymbols = other.map(r => r.symbol);
+    const data = top.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
+    if (otherTotal > 0) data.push({ name: "Other", value: otherTotal, symbols: otherSymbols });
+    return data;
+  }, [filteredRows]);
+
+  /* ===================== ADD ASSET & NON-LIQUID ===================== */
   function addAssetFromSuggestion(s) {
     const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
     const asset = ensureNumericAsset({
       id: internalId, type: s.source === "coingecko" ? "crypto" : "stock",
       coingeckoId: s.source === "coingecko" ? s.id || s.coingeckoId : undefined,
       symbol: (s.symbol || s.id).toString().toUpperCase(), name: s.display || s.name || s.symbol,
-      shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0,
-      createdAt: Date.now(),
+      shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0, marketValueUSD: 0, createdAt: Date.now(),
     });
     setAssets(prev => [...prev, asset]);
     setOpenAdd(false); setQuery(""); setSuggestions([]); setSelectedSuggestion(null);
@@ -974,11 +853,8 @@ export default function PortfolioDashboard() {
     if (!picked) {
       const typed = query.split("—")[0].trim();
       if (!typed) { alert("Select suggestion or type symbol"); return; }
-      if (searchMode === "crypto") {
-        picked = { source: "coingecko", id: typed.toLowerCase(), symbol: typed.toUpperCase(), display: typed };
-      } else {
-        picked = { source: "yahoo", symbol: typed.toUpperCase(), display: typed.toUpperCase() };
-      }
+      if (searchMode === "crypto") picked = { source: "coingecko", id: typed.toLowerCase(), symbol: typed.toUpperCase(), display: typed };
+      else picked = { source: "yahoo", symbol: typed.toUpperCase(), display: typed.toUpperCase() };
     }
     const qty = toNum(initQty);
     const priceInput = toNum(initPrice);
@@ -1049,7 +925,6 @@ export default function PortfolioDashboard() {
     const id = tradeModal.assetId; if (!id) return;
     const q = toNum(qty), p = toNum(pricePerUnit);
     if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
-
     const cost = q * p;
     const tx = {
       id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
@@ -1063,9 +938,15 @@ export default function PortfolioDashboard() {
       cost,
       date: Date.now(),
     };
-
     setTransactions(prev => [tx, ...prev].slice(0, 1000));
-    applyTransactionEffects(tx);
+    // apply effects to assets
+    setAssets(prev => prev.map(a => {
+      if (a.id !== id) return ensureNumericAsset(a);
+      const oldShares = toNum(a.shares || 0), oldInvested = toNum(a.investedUSD || 0);
+      const newShares = oldShares + q, newInvested = oldInvested + cost;
+      const newAvg = newShares > 0 ? newInvested / newShares : 0;
+      return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, lastPriceUSD: p, marketValueUSD: newShares * p });
+    }));
     closeTradeModal();
   }
 
@@ -1095,111 +976,91 @@ export default function PortfolioDashboard() {
       date: Date.now(),
     };
 
-    applyTransactionEffects(tx);
+    // apply sell effects
+    setRealizedUSD(prev => prev + realized);
+    setAssets(prev => {
+      if (oldShares - q <= 0) return prev.filter(x => x.id !== id);
+      return prev.map(x => x.id === id ? ensureNumericAsset({ ...x, shares: oldShares - q, investedUSD: Math.max(0, x.investedUSD - costOfSold), avgPrice: (oldShares - q) > 0 ? ((x.investedUSD - costOfSold)/(oldShares - q)) : 0, lastPriceUSD: p, marketValueUSD: (oldShares - q) * p }) : ensureNumericAsset(x));
+    });
     setTransactions(prev => [tx, ...prev].slice(0, 1000));
     closeTradeModal();
   }
 
-  /* transactions delete/restore */
+  /* ===================== TRANSACTION RESTORE / DELETE ===================== */
   function deleteTransaction(txId) {
     const tx = transactions.find(t => t.id === txId);
     if (!tx) return;
-    if (!confirm(`Delete & CANCEL transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})? This will reverse its effect and can be undone.`)) return;
-    reverseTransactionEffects(tx);
+    if (!confirm(`Delete transaction ${tx.symbol} ${tx.type} ${tx.qty}? This will reverse its effect.`)) return;
+    // reverse effect
+    if (tx.type === "buy") {
+      setAssets(prev => prev.flatMap(a => {
+        if (a.id !== tx.assetId) return [a];
+        const oldShares = toNum(a.shares || 0);
+        const newShares = Math.max(0, oldShares - tx.qty);
+        const newInvested = Math.max(0, toNum(a.investedUSD || 0) - tx.cost);
+        if (newShares <= 0) return [];
+        const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
+        return [ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, marketValueUSD: newShares * (a.lastPriceUSD || newAvg) })];
+      }));
+    } else if (tx.type === "sell") {
+      // for sells, reinstate shares and decrease realized
+      setAssets(prev => {
+        const found = prev.find(a => a.id === tx.assetId);
+        if (found) {
+          return prev.map(a => {
+            if (a.id !== tx.assetId) return a;
+            const newShares = toNum(a.shares || 0) + tx.qty;
+            const newInvested = toNum(a.investedUSD || 0) + tx.costOfSold;
+            const newAvg = newShares > 0 ? (newInvested / newShares) : 0;
+            return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, marketValueUSD: newShares * (a.lastPriceUSD || newAvg) });
+          });
+        } else {
+          const asset = ensureNumericAsset({
+            id: tx.assetId,
+            type: tx.assetType || "stock",
+            symbol: tx.symbol,
+            name: tx.name || tx.symbol,
+            shares: tx.qty,
+            avgPrice: tx.costOfSold / (tx.qty || 1),
+            investedUSD: tx.costOfSold,
+            lastPriceUSD: tx.pricePerUnit || (tx.costOfSold / (tx.qty || 1)),
+            marketValueUSD: tx.qty * (tx.pricePerUnit || (tx.costOfSold / (tx.qty || 1))),
+            createdAt: Date.now(),
+          });
+          return [...prev, asset];
+        }
+      });
+      setRealizedUSD(prev => prev - toNum(tx.realized || 0));
+    }
     setTransactions(prev => prev.filter(t => t.id !== txId));
-    setLastDeletedTx(tx);
   }
 
-  function restoreTransaction(txId) {
-    const tx = transactions.find(t => t.id === txId);
+  function restoreTransaction(tx) {
     if (!tx) return;
-    if (!confirm(`Restore (reverse) transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})?`)) return;
-    reverseTransactionEffects(tx);
-    setTransactions(prev => prev.filter(t => t.id !== txId));
-  }
-
-  function undoLastDeletedTransaction() {
-    if (!lastDeletedTx) return;
-    applyTransactionEffects(lastDeletedTx);
-    setTransactions(prev => [lastDeletedTx, ...prev]);
-    setLastDeletedTx(null);
-  }
-  function purgeLastDeletedTransaction() { setLastDeletedTx(null); }
-
-  /* ===================== REMOVE ASSET ===================== */
-  function removeAsset(id) {
-    const a = assets.find(x => x.id === id); if (!a) return;
-    if (!confirm(`Delete ${a.symbol} (${a.name || ""}) from portfolio?`)) return;
-    setAssets(prev => prev.filter(x => x.id !== id));
-  }
-
-  /* ===================== COMPUTED ROWS & TOTALS ===================== */
-  const rows = useMemo(() => assets.map(a => {
-    const aa = ensureNumericAsset(a);
-
-    if (aa.type === "nonliquid") {
-      const last = computeNonLiquidLastPrice(aa.avgPrice, aa.purchaseDate || aa.createdAt, aa.nonLiquidYoy || 0);
-      aa.lastPriceUSD = last;
-      aa.marketValueUSD = last * toNum(aa.shares || 0);
-    } else {
-      aa.lastPriceUSD = toNum(aa.lastPriceUSD || 0);
-      if (!aa.lastPriceUSD || aa.lastPriceUSD <= 0) {
-        aa.lastPriceUSD = aa.avgPrice || aa.lastPriceUSD || 0;
-      }
-      aa.marketValueUSD = toNum(aa.shares || 0) * aa.lastPriceUSD;
+    // re-apply the transaction (if deleted earlier)
+    if (tx.type === "buy") {
+      setAssets(prev => prev.map(a => {
+        if (a.id !== tx.assetId) return a;
+        const oldShares = toNum(a.shares || 0), oldInvested = toNum(a.investedUSD || 0);
+        const newShares = oldShares + tx.qty, newInvested = oldInvested + tx.cost;
+        const newAvg = newShares > 0 ? newInvested / newShares : 0;
+        return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, marketValueUSD: newShares * (tx.pricePerUnit || a.lastPriceUSD || newAvg) });
+      }));
+    } else if (tx.type === "sell") {
+      setAssets(prev => prev.map(a => {
+        if (a.id !== tx.assetId) return a;
+        const oldShares = toNum(a.shares || 0);
+        const newShares = Math.max(0, oldShares - tx.qty);
+        const newInvested = Math.max(0, toNum(a.investedUSD || 0) - tx.costOfSold);
+        const newAvg = newShares > 0 ? newInvested / newShares : 0;
+        return ensureNumericAsset({ ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, marketValueUSD: newShares * (tx.pricePerUnit || a.lastPriceUSD || newAvg) });
+      }));
+      setRealizedUSD(prev => prev + toNum(tx.realized || 0));
     }
+    setTransactions(prev => [tx, ...prev].slice(0, 1000));
+  }
 
-    const last = aa.lastPriceUSD || aa.avgPrice || 0;
-    const market = aa.marketValueUSD || (toNum(aa.shares || 0) * last);
-    const invested = toNum(aa.investedUSD || 0);
-    const pnl = market - invested;
-    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
-    return { ...aa, lastPriceUSD: last, marketValueUSD: market, investedUSD: invested, pnlUSD: pnl, pnlPct };
-  }), [assets, usdIdr]);
-
-  const filteredRows = useMemo(() => {
-    if (portfolioFilter === "all") return rows;
-    if (portfolioFilter === "crypto") return rows.filter(r => r.type === "crypto");
-    if (portfolioFilter === "stock") return rows.filter(r => r.type === "stock");
-    if (portfolioFilter === "nonliquid") return rows.filter(r => r.type === "nonliquid");
-    return rows;
-  }, [rows, portfolioFilter]);
-
-  const sortedRows = useMemo(() => {
-    const copy = [...filteredRows];
-    switch (sortBy) {
-      case "market_desc": copy.sort((a,b) => b.marketValueUSD - a.marketValueUSD); break;
-      case "invested_desc": copy.sort((a,b) => b.investedUSD - a.investedUSD); break;
-      case "pnl_desc": copy.sort((a,b) => (b.pnlUSD || 0) - (a.pnlUSD || 0)); break;
-      case "symbol_asc": copy.sort((a,b) => (a.symbol||"").localeCompare(b.symbol||"")); break;
-      case "oldest": copy.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)); break;
-      case "newest": copy.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); break;
-      default: break;
-    }
-    return copy;
-  }, [filteredRows, sortBy]);
-
-  const totals = useMemo(() => {
-    const invested = filteredRows.reduce((s, r) => s + toNum(r.investedUSD || 0), 0);
-    const market = filteredRows.reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
-    const pnl = market - invested;
-    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
-    return { invested, market, pnl, pnlPct };
-  }, [filteredRows]);
-
-  /* cake data */
-  const donutData = useMemo(() => {
-    const sortedRows = filteredRows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
-    const top = sortedRows.slice(0, 6);
-    const other = sortedRows.slice(6);
-    const otherTotal = other.reduce((s, r) => s + (r.marketValueUSD || 0), 0);
-    const otherSymbols = other.map(r => r.symbol);
-    const data = top.map(r => ({ name: r.symbol, value: Math.max(0, r.marketValueUSD || 0) }));
-    if (otherTotal > 0) data.push({ name: "Other", value: otherTotal, symbols: otherSymbols });
-    return data;
-  }, [filteredRows]);
-
-  /* ===================== CSV EXPORT / IMPORT (combined) ===================== */
+  /* ===================== EXPORT / IMPORT CSV (combined, spreadsheet-friendly) ===================== */
   function csvQuote(v) {
     if (v === undefined || v === null) return "";
     if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -1209,7 +1070,6 @@ export default function PortfolioDashboard() {
     }
     return s;
   }
-
   function exportAllCSV() {
     const assetsHeaders = [
       "id","type","coingeckoId","symbol","name","description",
@@ -1246,7 +1106,7 @@ export default function PortfolioDashboard() {
     });
     lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},assets=${assets.length},transactions=${transactions.length}`);
 
-    const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel
+    const csv = "\uFEFF" + lines.join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1406,13 +1266,84 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* ===================== BUILD PORTFOLIO GROWTH SERIES ===================== */
-  function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
+  /* ===================== SHARE (PNG) generation respects eye state ===================== */
+  function generateShareImage() {
+    try {
+      const allocation = donutData.map((d, i) => {
+        return { name: d.name, pct: (totals.market > 0 ? (d.value / totals.market) * 100 : 0).toFixed(2), value: valuesHidden ? null : d.value };
+      });
+      const payload = {
+        totals: { invested: (valuesHidden? null : totals.invested), market: (valuesHidden? null : totals.market), pnl: (valuesHidden? null : totals.pnl), pnlPct: totals.pnlPct },
+        allocation,
+        asOf: Date.now(),
+        displayCcy,
+      };
+      const txt = JSON.stringify(payload);
+      const canvas = document.createElement("canvas");
+      canvas.width = 800; canvas.height = 600;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#0b1220";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = "#E5E7EB";
+      ctx.font = "18px Inter, Arial, serif";
+      ctx.fillText("Portfolio Share", 28, 36);
+      ctx.font = "12px monospace";
+      ctx.fillText(`AsOf: ${new Date(payload.asOf).toLocaleString()}`, 28, 56);
+      ctx.fillText(`Ccy: ${payload.displayCcy}`, 28, 74);
+      ctx.fillText("Allocation (pct)", 28, 100);
+      let y = 120;
+      payload.allocation.slice(0,8).forEach(a => {
+        ctx.fillText(`${a.name}: ${a.pct}%${a.value ? " • " + (displayCcy==="IDR"? fmtMoney(a.value*usdIdr,"IDR"): fmtMoney(a.value,"USD")) : ""}`, 28, y); y+=20;
+      });
+      const url = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `portfolio_share_${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) { alert("Share failed"); }
+  }
+
+  /* ===================== ASSET CLICK -> CHART LOGIC
+     - Prefer TradingView for all assets (if tradingview supports).
+     - heuristics: for stocks map to IDX:SYM for .JK, otherwise keep symbol.
+     - for crypto, try BINANCE:SYMUSD or COINBASE:SYMUSD or CRYPTO:SYMUSD; TradingView supports many pairs.
+     - if TradingView widget fails to load the symbol (can't detect), fallback to CoinGecko mini chart by coinId.
+  ===================== */
+  function mapSymbolForTradingView(asset) {
+    if (!asset) return null;
+    if (asset.type === "stock") {
+      // If .JK convert to IDX:<ticker> (TradingView expects exchange prefix)
+      if (String(asset.symbol || "").toUpperCase().endsWith(".JK")) {
+        const t = asset.symbol.replace(".JK", "");
+        return `IDX:${t}`;
+      }
+      // For common US tickers, assume direct
+      return asset.symbol;
+    }
+    if (asset.type === "crypto") {
+      const sym = (asset.symbol || "").replace(/^@/, "").toUpperCase();
+      // Try common provider pairs
+      return `BINANCE:${sym}USDT`;
+    }
+    return asset.symbol;
+  }
+
+  async function openAssetChart(asset) {
+    if (!asset) return;
+    // open modal and provide info
+    setAssetChartOpen({ open: true, asset });
+  }
+  function closeAssetChart() { setAssetChartOpen({ open: false, asset: null }); }
+
+  /* ===================== BUILD GROWTH SERIES (simplified) ===================== */
+  function buildSeries(rows, txs, rangeKey) {
     const now = Date.now();
     let earliest = now;
     txs.forEach(t => { if (t.date && t.date < earliest) earliest = t.date; });
-    rowsForChart.forEach(r => { if (r.purchaseDate && r.purchaseDate < earliest) earliest = r.purchaseDate; });
-    const defaultDays = rangeKey === "1d" ? 1 : rangeKey === "2d" ? 2 : rangeKey === "1w" ? 7 : rangeKey === "1m" ? 30 : rangeKey === "1y" ? 365 : 365 * 3;
+    rows.forEach(r => { if (r.purchaseDate && r.purchaseDate < earliest) earliest = r.purchaseDate; });
+    const defaultDays = rangeKey === "1d" ? 1 : rangeKey === "2d" ? 2 : rangeKey === "1w" ? 7 : rangeKey === "1m" ? 30 : rangeKey === "1y" ? 365 : 365 * 2;
     const start = (earliest < now) ? earliest : (now - defaultDays * 24 * 3600 * 1000);
     let points = 180;
     if (rangeKey === "1d") points = 48;
@@ -1421,26 +1352,18 @@ export default function PortfolioDashboard() {
     if (rangeKey === "1m") points = 90;
     if (rangeKey === "1y") points = 180;
     if (rangeKey === "all") points = 200;
-
-    // Build baseline series by simulating daily snapshots using transactions + current lastPriceUSD
     const times = [];
-    const startMs = start;
-    const step = Math.max(1, Math.floor((Date.now() - startMs) / points));
-    for (let t = startMs; t <= Date.now(); t += step) { times.push(t); }
+    const step = Math.max(1, Math.floor((Date.now() - start) / points));
+    for (let t = start; t <= Date.now(); t += step) times.push(t);
 
-    // For each timeslot compute value by summing per-category asset values at that time
     const series = { all: [], crypto: [], stock: [], nonliquid: [] };
-
     for (const ts of times) {
-      let totalAll = 0, totalCrypto = 0, totalStock = 0, totalNon = 0;
-      // For each asset, estimate value at ts:
-      rowsForChart.forEach(r => {
+      let total = 0, totalCrypto = 0, totalStock = 0, totalNon = 0;
+      rows.forEach(r => {
         let priceAtT = r.lastPriceUSD || r.avgPrice || 0;
         if (r.type === "nonliquid") {
           priceAtT = computeNonLiquidLastPrice(r.avgPrice, r.purchaseDate || r.createdAt, r.nonLiquidYoy || 0, ts);
         } else {
-          // look for transactions for this asset before ts to compute last known price; if none use avgPrice
-          // (we keep it simple: we use avgPrice until purchaseDate or use lastPrice if tx exists)
           const assetTxs = transactions.filter(tx => tx.assetId === r.id && tx.date <= ts);
           if (assetTxs.length > 0) {
             const lastTx = assetTxs[assetTxs.length - 1];
@@ -1448,111 +1371,26 @@ export default function PortfolioDashboard() {
           }
         }
         const qty = (() => {
-          // compute shares up to ts using transactions
-          const baseShares = 0; // assume initial shares come from assets persisted; but we can't reconstruct perfectly
           const txsForAsset = transactions.filter(tx => tx.assetId === r.id && tx.date <= ts);
           let s = 0;
           txsForAsset.forEach(tx => { if (tx.type === "buy") s += toNum(tx.qty); if (tx.type === "sell") s -= toNum(tx.qty); });
-          // fallback to current shares if txs don't exist
           if (txsForAsset.length === 0) s = toNum(r.shares || 0);
           return s;
         })();
         const v = priceAtT * qty;
-        totalAll += v;
+        total += v;
         if (r.type === "crypto") totalCrypto += v;
         else if (r.type === "stock") totalStock += v;
         else if (r.type === "nonliquid") totalNon += v;
       });
-
-      series.all.push({ t: ts, v: totalAll });
+      series.all.push({ t: ts, v: total });
       series.crypto.push({ t: ts, v: totalCrypto });
       series.stock.push({ t: ts, v: totalStock });
       series.nonliquid.push({ t: ts, v: totalNon });
     }
-
     return series;
   }
-
-  /* build series for chart (memoized) */
-  const growthSeries = useMemo(() => buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
-
-  /* ===================== SHARE / QR generation ===================== */
-  function generateShareData() {
-    // package allocation & return depending on eye state
-    const allocation = donutData.map((d, i) => {
-      return { name: d.name, pct: (totals.market > 0 ? (d.value / totals.market) * 100 : 0).toFixed(2), value: valuesHidden ? null : d.value };
-    });
-    const payload = {
-      totals: { invested: (valuesHidden? null : totals.invested), market: (valuesHidden? null : totals.market), pnl: (valuesHidden? null : totals.pnl), pnlPct: totals.pnlPct },
-      allocation,
-      asOf: Date.now(),
-      displayCcy,
-    };
-    return payload;
-  }
-
-  function downloadShareQRCode() {
-    try {
-      const payload = generateShareData();
-      const txt = JSON.stringify(payload);
-      // create canvas QR-like box (simple barcode-like placeholder constructed here to avoid external libs)
-      const canvas = document.createElement("canvas");
-      canvas.width = 400; canvas.height = 400;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#0F172A";
-      ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.fillStyle = "#E5E7EB";
-      ctx.font = "14px monospace";
-      ctx.fillText("Portfolio Share", 20, 30);
-      ctx.font = "11px monospace";
-      ctx.fillText(`AsOf: ${new Date(payload.asOf).toLocaleString()}`, 20, 48);
-      ctx.fillText(`Ccy: ${payload.displayCcy}`, 20, 64);
-      // simple "barcode" stripes encoding length and char codes
-      const startX = 20, startY = 90;
-      for (let i = 0; i < Math.min(60, txt.length); i++) {
-        const v = txt.charCodeAt(i) % 16;
-        ctx.fillStyle = v % 2 ? "#111827" : "#E5E7EB";
-        ctx.fillRect(startX + i*6, startY, 4, 120);
-      }
-      // add small allocation text
-      let y = startY + 140;
-      ctx.fillStyle = "#E5E7EB";
-      ctx.fillText("Allocation (pct)", 20, y);
-      y += 18;
-      payload.allocation.slice(0,6).forEach(a => { ctx.fillText(`${a.name}: ${a.pct}%${a.value ? " • " + (displayCcy==="IDR"? fmtMoney(a.value*usdIdr,"IDR"): fmtMoney(a.value,"USD")) : ""}`, 20, y); y+=14; });
-
-      const url = canvas.toDataURL("image/png");
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `portfolio_share_${Date.now()}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (e) {
-      alert("Share generation failed");
-    }
-  }
-
-  /* ===================== ASSET CLICK -> CHART (TradingView for stocks, Coingecko mini for crypto) ===================== */
-  const [assetChartOpen, setAssetChartOpen] = useState({ open:false, asset:null });
-  useEffect(() => {
-    // load TradingView script when needed
-    if (!isBrowser) return;
-    if (assetChartOpen.open && assetChartOpen.asset && assetChartOpen.asset.type === "stock") {
-      // TradingView widget script load once
-      if (!window.TradingView) {
-        const s = document.createElement("script");
-        s.src = "https://s3.tradingview.com/tv.js";
-        s.async = true;
-        document.body.appendChild(s);
-      }
-    }
-  }, [assetChartOpen]);
-
-  function openAssetChart(asset) {
-    setAssetChartOpen({ open:true, asset });
-  }
-  function closeAssetChart() { setAssetChartOpen({ open:false, asset:null }); }
+  const growthSeries = useMemo(() => buildSeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
 
   /* ===================== RENDER ===================== */
   return (
@@ -1563,10 +1401,10 @@ export default function PortfolioDashboard() {
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">All Portfolio
-              {/* portfolio dropdown icon (no box, small, clickable) */}
-              <button aria-label="PortfolioDropdown" onClick={() => setPortfolioDropdownOpen(v=>!v)} className="ml-2 inline-block transform transition-transform duration-200 hover:scale-105">
-                <span style={{display:"inline-block", transform: portfolioDropdownOpen ? "rotate(180deg)" : "rotate(0deg)"}}>v</span>
-              </button>
+              <button onClick={() => {
+                const next = portfolioFilter === "all" ? "crypto" : portfolioFilter === "crypto" ? "stock" : portfolioFilter === "stock" ? "nonliquid" : "all";
+                setPortfolioFilter(next);
+              }} className="ml-2 inline-block transform transition-transform duration-200 hover:scale-105">v</button>
             </h1>
             <div className="text-xs text-gray-400 flex items-center gap-2 mt-1">
               {isInitialLoading && assets.length > 0 ? (
@@ -1581,14 +1419,7 @@ export default function PortfolioDashboard() {
                 <>
                   <span>Updated: {new Date(lastTick).toLocaleString()}</span>
                   <span>•</span>
-                  <span className="flex items-center gap-1">
-                    USD/IDR ≈ {fxLoading ? (
-                      <svg className="animate-spin h-3 w-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (usdIdr?.toLocaleString()) }
-                  </span>
+                  <span className="flex items-center gap-1">USD/IDR ≈ {fxLoading ? (<svg className="animate-spin h-3 w-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>) : usdIdr?.toLocaleString()}</span>
                 </>
               )}
             </div>
@@ -1596,57 +1427,44 @@ export default function PortfolioDashboard() {
 
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-400">Portfolio Value</div>
-            <div className="text-lg font-semibold">
-              {displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
-            </div>
-
-            {/* currency display (nominal dropdown, no box) */}
-            <button aria-label="Currency" onClick={() => setCurrencyMenuOpen(v=>!v)} className="text-sm px-2 py-1 rounded hover:scale-105 transition-transform">
-              {displayCcy === "IDR" ? `${(totals.market*usdIdr).toLocaleString()} IDR >` : `${(Math.round(totals.market*100)/100).toLocaleString()} USD >`}
-            </button>
-
-            {/* eye icon to toggle values */}
-            <button title="Toggle values" onClick={() => setValuesHidden(v=>!v)} className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold transform transition-transform hover:rotate-12">
+            <div className="text-lg font-semibold">{ displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD") }</div>
+            <button onClick={() => setValuesHidden(v => !v)} className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold transform transition-transform hover:rotate-12">
               {valuesHidden ? "👁‍🗨" : "👁"}
             </button>
-
-            {/* Add button with animation + -> x */}
-            <button aria-label="Add asset" onClick={() => setOpenAdd(v=>!v)} className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold transform transition-transform ${openAdd ? 'rotate-45' : ''} hover:scale-105`}>
-              +
-            </button>
+            <button onClick={() => setOpenAdd(v => !v)} className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold transform transition-transform ${openAdd ? 'rotate-45' : ''}`}>+</button>
           </div>
         </div>
 
-        {/* KPIs (with requested labeling) */}
+        {/* KPIs */}
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm">
           <div className="flex flex-col">
             <div className="text-gray-400 text-sm">Invested</div>
-            <div className="font-medium text-base">{ displayCcy === "IDR" ? (valuesHidden ? "*****" : fmtMoney(totals.invested * usdIdr, "IDR")) : (valuesHidden ? "*****" : fmtMoney(totals.invested, "USD")) }</div>
+            <div className="font-medium text-base">{ valuesHidden ? "*****" : (displayCcy==="IDR" ? fmtMoney(totals.invested * usdIdr, "IDR") : fmtMoney(totals.invested, "USD")) }</div>
             <div className="text-xs text-gray-500">avg price</div>
           </div>
 
           <div className="flex flex-col">
             <div className="text-gray-400 text-sm">Market value</div>
-            <div className="font-medium text-base">{ displayCcy === "IDR" ? (valuesHidden ? "*****" : fmtMoney(totals.market * usdIdr, "IDR")) : (valuesHidden ? "*****" : fmtMoney(totals.market, "USD")) }</div>
+            <div className="font-medium text-base">{ valuesHidden ? "*****" : (displayCcy==="IDR"? fmtMoney(totals.market * usdIdr,"IDR") : fmtMoney(totals.market,"USD")) }</div>
             <div className="text-xs text-gray-500">current price</div>
           </div>
 
           <div className="flex flex-col">
             <div className="text-gray-400 text-sm">Gain P&L</div>
-            <div className={`font-semibold text-base ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{ displayCcy === "IDR" ? (valuesHidden ? "*****" : fmtMoney(totals.pnl * usdIdr, "IDR")) : (valuesHidden ? "*****" : fmtMoney(totals.pnl, "USD")) }</div>
+            <div className={`font-semibold text-base ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{ valuesHidden ? "*****" : (displayCcy==="IDR"? fmtMoney(totals.pnl * usdIdr,"IDR"): fmtMoney(totals.pnl,"USD")) }</div>
             <div className="text-xs text-gray-500">{totals.pnlPct.toFixed(2)}%</div>
           </div>
 
           <div className="flex flex-col">
-            <div className="text-gray-400 text-sm">Realized P&L <span style={{display:"inline-block", marginLeft:6, border:"1px solid rgba(255,255,255,0.06)", padding:"2px 4px", borderRadius:4}} title="Click to view transactions">↗</span></div>
-            <div className={`font-semibold text-base ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{ displayCcy === "IDR" ? (valuesHidden ? "*****" : fmtMoney(realizedUSD * usdIdr, "IDR")) : (valuesHidden ? "*****" : fmtMoney(realizedUSD, "USD")) }</div>
+            <div className="text-gray-400 text-sm">Realized P&L <span style={{display:"inline-block", marginLeft:6, border:"1px solid rgba(255,255,255,0.06)", padding:"2px 4px", borderRadius:4}} title="Transactions">↗</span></div>
+            <div className={`font-semibold text-base ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{ valuesHidden ? "*****" : (displayCcy==="IDR"? fmtMoney(realizedUSD * usdIdr,"IDR") : fmtMoney(realizedUSD,"USD")) }</div>
             <div className="text-xs text-gray-500">Transactions</div>
           </div>
         </div>
 
         {/* ADD PANEL */}
         {openAdd && (
-          <div ref={addPanelRef} className="mt-6 bg-transparent p-3 rounded">
+          <div className="mt-6 bg-transparent p-3 rounded">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex bg-gray-900 rounded overflow-hidden">
                 <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""}`}>Crypto</button>
@@ -1657,113 +1475,80 @@ export default function PortfolioDashboard() {
             </div>
 
             {searchMode !== "nonliquid" ? (
-              <>
-                <div className="flex gap-3 flex-col sm:flex-row items-start">
-                  <div className="relative w-full sm:max-w-lg">
-                    <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
-                    {suggestions.length > 0 && (
-                      <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
-                        {suggestions.map((s, i) => (
-                          <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
-                            <div>
-                              <div className="font-medium text-gray-100">{s.symbol} • {s.display}</div>
-                              <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto" : `Security • ${s.exchange || ''}`}</div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <input value={initQty} onChange={(e) => setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
-                  <input value={initPrice} onChange={(e) => setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
-                  <select value={initPriceCcy} onChange={(e) => setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
-                    <option value="USD">USD</option> <option value="IDR">IDR</option>
-                  </select>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add</button>
-                    <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold btn">Add + Position</button>
-                    <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
-                  </div>
+              <div className="flex gap-3 flex-col sm:flex-row items-start">
+                <div className="relative w-full sm:max-w-lg">
+                  <input value={query} onChange={(e)=>{ setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode==="crypto"?"Search crypto (BTC, ethereum)...":"Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
+                  {suggestions.length > 0 && (
+                    <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
+                      {suggestions.map((s,i)=>(
+                        <button key={i} onClick={()=>{ setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
+                          <div>
+                            <div className="font-medium text-gray-100">{s.symbol} • {s.display}</div>
+                            <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto" : `Security • ${s.exchange || ''}`}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </>
+                <input value={initQty} onChange={(e)=>setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+                <input value={initPrice} onChange={(e)=>setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+                <select value={initPriceCcy} onChange={(e)=>setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                  <option value="USD">USD</option><option value="IDR">IDR</option>
+                </select>
+                <div className="flex items-center gap-2">
+                  <button onClick={()=> selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add</button>
+                  <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold">Add + Position</button>
+                  <button onClick={()=>setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button>
+                </div>
+              </div>
             ) : (
-              // Non-liquid inputs
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-gray-400">Name (e.g. Land, Art, Rolex.)</label>
-                  <input value={nlName} onChange={(e) => setNlName(e.target.value)} placeholder="e.g. Land, Art, Rolex" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">Quantity</label>
-                  <input value={nlQty} onChange={(e) => setNlQty(e.target.value)} placeholder="1" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">Price (per unit)</label>
-                  <input value={nlPrice} onChange={(e) => setNlPrice(e.target.value)} placeholder="100000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">Currency</label>
-                  <select value={nlPriceCcy} onChange={(e) => setNlPriceCcy(e.target.value)} className="w-full rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
-                    <option value="USD">USD</option>
-                    <option value="IDR">IDR</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">Purchase date</label>
-                  <input type="date" value={nlPurchaseDate} onChange={(e) => setNlPurchaseDate(e.target.value)} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">YoY gain (%)</label>
-                  <input value={nlYoy} onChange={(e) => setNlYoy(e.target.value)} placeholder="5" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="text-xs text-gray-400">Description (optional: address, serial.)</label>
-                  <input value={nlDesc} onChange={(e) => setNlDesc(e.target.value)} placeholder="Optional description" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div className="sm:col-span-2 flex gap-2">
-                  <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Non-Liquid</button>
-                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
-                </div>
+                <div><label className="text-xs text-gray-400">Name (Land, Art, Rolex)</label><input value={nlName} onChange={(e)=>setNlName(e.target.value)} placeholder="e.g. Land" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" /></div>
+                <div><label className="text-xs text-gray-400">Quantity</label><input value={nlQty} onChange={(e)=>setNlQty(e.target.value)} placeholder="1" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" /></div>
+                <div><label className="text-xs text-gray-400">Price (per unit)</label><input value={nlPrice} onChange={(e)=>setNlPrice(e.target.value)} placeholder="100000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" /></div>
+                <div><label className="text-xs text-gray-400">Currency</label><select value={nlPriceCcy} onChange={(e)=>setNlPriceCcy(e.target.value)} className="w-full rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800"><option value="USD">USD</option><option value="IDR">IDR</option></select></div>
+                <div><label className="text-xs text-gray-400">Purchase date</label><input type="date" value={nlPurchaseDate} onChange={(e)=>setNlPurchaseDate(e.target.value)} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" /></div>
+                <div><label className="text-xs text-gray-400">YoY gain (%)</label><input value={nlYoy} onChange={(e)=>setNlYoy(e.target.value)} placeholder="5" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" /></div>
+                <div className="sm:col-span-2"><label className="text-xs text-gray-400">Description (optional)</label><input value={nlDesc} onChange={(e)=>setNlDesc(e.target.value)} placeholder="Address, serial..." className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" /></div>
+                <div className="sm:col-span-2 flex gap-2"><button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold">Add Non-Liquid</button><button onClick={()=>setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded">Close</button></div>
               </div>
             )}
           </div>
         )}
 
-        {/* PORTFOLIO GROWTH CHART area (above donut, interactive) */}
+        {/* GROWTH CHART (above donut) */}
         <div className="mt-6 bg-transparent p-3 rounded">
-          <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-gray-400">Portfolio Growth</div>
             <div className="flex items-center gap-2">
-              {["1d","2d","1w","1m","1y","all"].map(k => (
-                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? 'bg-gray-800' : 'bg-transparent'} btn`}>{k}</button>
+              {["1d","2d","1w","1m","1y","all"].map(k=>(
+                <button key={k} onClick={()=>setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? 'bg-gray-800' : 'bg-transparent'}`}>{k}</button>
               ))}
             </div>
           </div>
-
           <div>
-            <CandlesWithLines seriesMap={growthSeries} displayCcy={displayCcy} usdIdr={usdIdr} rangeKey={chartRange} onHover={setChartHover} />
+            <CandlesWithLines seriesMap={growthSeries} displayCcy={displayCcy} usdIdr={usdIdr} rangeKey={chartRange} />
           </div>
         </div>
 
         {/* ASSET TABLE */}
         <div className="mt-6 overflow-x-auto">
-          <div style={{minWidth: 900}}>
+          <div style={{ minWidth: 940 }}>
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm text-gray-400">Assets</div>
               <div className="flex items-center gap-2">
-                <button aria-label="Sort" onClick={() => setSortMenuOpen(v=>!v)} className="btn px-2 py-1 rounded hover:scale-105">⚙</button>
-                <div style={{position:"relative"}}>
-                  {sortMenuOpen && (
-                    <div ref={sortMenuRef} style={{position:"absolute", right:0, marginTop:6, background:"#0b1220", border:"1px solid rgba(255,255,255,0.06)", borderRadius:6, maxHeight:180, overflowY:"auto", zIndex:60}}>
-                      <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="block w-full text-left px-3 py-2 hover:bg-gray-800">Value (desc)</button>
-                      <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="block w-full text-left px-3 py-2 hover:bg-gray-800">Invested (desc)</button>
-                      <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="block w-full text-left px-3 py-2 hover:bg-gray-800">Gain (desc)</button>
-                      <button onClick={() => { setSortBy("symbol_asc"); setSortMenuOpen(false); }} className="block w-full text-left px-3 py-2 hover:bg-gray-800">A → Z</button>
-                      <button onClick={() => { setSortBy("oldest"); setSortMenuOpen(false); }} className="block w-full text-left px-3 py-2 hover:bg-gray-800">Oldest</button>
-                      <button onClick={() => { setSortBy("newest"); setSortMenuOpen(false); }} className="block w-full text-left px-3 py-2 hover:bg-gray-800">Newest</button>
-                    </div>
-                  )}
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => setSortBy(sortBy === "market_desc" ? "symbol_asc" : "market_desc")} className="px-2 py-1 rounded">⚙</button>
                 </div>
+                <div>
+                  <button onClick={exportAllCSV} className="bg-white text-black px-3 py-1 rounded">Export</button>
+                </div>
+                <label className="bg-white text-black px-3 py-1 rounded cursor-pointer">
+                  Import
+                  <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
+                </label>
+                <button onClick={() => generateShareImage()} className="bg-white text-black px-3 py-1 rounded">Share</button>
               </div>
             </div>
 
@@ -1781,7 +1566,7 @@ export default function PortfolioDashboard() {
               <tbody>
                 {sortedRows.length === 0 ? (
                   <tr><td colSpan={7} className="py-8 text-center text-gray-500">No assets — add one with the + button</td></tr>
-                ) : sortedRows.map((r) => (
+                ) : sortedRows.map(r => (
                   <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
                     <td className="px-3 py-3">
                       <div className="font-semibold text-gray-100">{r.symbol}</div>
@@ -1797,15 +1582,15 @@ export default function PortfolioDashboard() {
                       <div className="text-xs text-gray-400">{ displayCcy==="IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD,"USD") }</div>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{ displayCcy==="IDR" ? (valuesHidden? "*****" : fmtMoney(r.pnlUSD * usdIdr, "IDR")) : (valuesHidden ? "*****" : fmtMoney(r.pnlUSD,"USD")) }</div>
+                      <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{ valuesHidden ? "*****" : (displayCcy==="IDR"? fmtMoney(r.pnlUSD * usdIdr,"IDR") : fmtMoney(r.pnlUSD,"USD")) }</div>
                       <div className={`text-xs ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{isFinite(r.pnlPct) ? `${r.pnlPct.toFixed(2)}%` : "0.00%"}</div>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Buy</button>
+                        <button onClick={() => openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black">Buy</button>
                         <button onClick={() => openTradeModal(r.id, "sell")} className="bg-yellow-600 px-2 py-1 rounded text-xs">Sell</button>
-                        <button onClick={() => removeAsset(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Del</button>
-                        <button onClick={() => openAssetChart(r)} title="View chart" className="bg-gray-700 px-2 py-1 rounded text-xs">Chart</button>
+                        <button onClick={() => removeAssetDialog(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black">Del</button>
+                        <button onClick={() => openAssetChart(r)} className="bg-gray-700 px-2 py-1 rounded text-xs">Chart</button>
                       </div>
                     </td>
                   </tr>
@@ -1815,51 +1600,21 @@ export default function PortfolioDashboard() {
           </div>
         </div>
 
-        {/* ASSET CHART MODAL (TradingView or simple Coingecko mini) */}
-        {assetChartOpen.open && (
-          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[110]">
-            <div className="bg-gray-900 p-4 rounded-lg w-full max-w-4xl border border-gray-800">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-semibold">{assetChartOpen.asset.symbol} · {assetChartOpen.asset.name}</h3>
-                  <div className="text-xs text-gray-400">{assetChartOpen.asset.description || ""}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => { downloadShareQRCode(); }} className="bg-white text-black px-3 py-1 rounded btn hover:scale-105">Share</button>
-                  <button onClick={() => closeAssetChart()} className="text-gray-400 hover:text-white">Close</button>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                {assetChartOpen.asset.type === "crypto" ? (
-                  // Simple CoinGecko sparkline fetch and SVG
-                  <CryptoMiniChart coinId={assetChartOpen.asset.coingeckoId || assetChartOpen.asset.symbol.toLowerCase()} displayCcy={displayCcy} usdIdr={usdIdr} />
-                ) : (
-                  // TradingView widget container
-                  <div id="tradingview_container" style={{height:420}}>
-                    <TradingViewWidget symbol={mapSymbolForTradingView(assetChartOpen.asset.symbol)} />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* DONUT/CAKE + LEGEND */}
+        {/* CAKE ALLOCATION */}
         {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="w-44 h-44 flex items-center justify-center">
               <CakeAllocation data={donutData} size={220} inner={58} gap={0.02} displayTotal={ displayCcy === "IDR" ? (valuesHidden ? "*****" : fmtMoney(totals.market * usdIdr, "IDR")) : (valuesHidden ? "*****" : fmtMoney(totals.market, "USD")) } displayCcy={displayCcy} usdIdr={usdIdr} />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {donutData.map((d, i) => {
+              {donutData.map((d,i)=> {
                 const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
                 return (
                   <div key={d.name} className="flex items-center gap-3">
                     <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-sm" />
                     <div>
                       <div className="font-semibold text-gray-100">{d.name}</div>
-                      <div className="text-xs text-gray-400">{ displayCcy==="IDR" ? (valuesHidden? "*****" : fmtMoney(d.value * usdIdr, "IDR")) : (valuesHidden? "*****" : fmtMoney(d.value, "USD")) } • {pct.toFixed(1)}%</div>
+                      <div className="text-xs text-gray-400">{ displayCcy==="IDR" ? (valuesHidden ? "*****" : fmtMoney(d.value * usdIdr, "IDR")) : (valuesHidden ? "*****" : fmtMoney(d.value,"USD")) } • {pct.toFixed(1)}%</div>
                     </div>
                   </div>
                 );
@@ -1868,164 +1623,152 @@ export default function PortfolioDashboard() {
           </div>
         )}
 
-        {/* TRANSACTIONS PANEL (modal-like under table) */}
-        {transactionsOpen && (
-          <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-300">Transactions</div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setTransactionsOpen(false)} className="text-gray-400 hover:text-white">Close</button>
-              </div>
-            </div>
-
-            <div className="mt-3 overflow-auto" style={{maxHeight:320}}>
-              <table className="min-w-full text-sm">
-                <thead className="text-gray-400 border-b border-gray-800">
-                  <tr>
-                    <th className="text-left py-2 px-3">Type</th>
-                    <th className="text-left py-2 px-3">Asset</th>
-                    <th className="text-left py-2 px-3">Qty</th>
-                    <th className="text-left py-2 px-3">Price</th>
-                    <th className="text-left py-2 px-3">Realized</th>
-                    <th className="py-2 px-3"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.map(tx => (
-                    <tr key={tx.id} className="border-b border-gray-900 hover:bg-gray-950">
-                      <td className="px-3 py-2">{tx.type}</td>
-                      <td className="px-3 py-2">{tx.symbol}</td>
-                      <td className="px-3 py-2">{tx.qty}</td>
-                      <td className="px-3 py-2">{fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty), "USD")}</td>
-                      <td className="px-3 py-2">{fmtMoney(tx.realized || 0, "USD")}</td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex items-center gap-2 justify-end">
-                          <button onClick={() => restoreTransaction(tx.id)} className="bg-emerald-500 px-2 py-1 rounded text-xs btn">Restore</button>
-                          <button onClick={() => deleteTransaction(tx.id)} className="bg-red-600 px-2 py-1 rounded text-xs btn">Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {lastDeletedTx && (
-              <div className="mt-4 flex items-center justify-between">
-                <div className="text-sm text-gray-300">Last deleted: {lastDeletedTx.symbol} ({new Date(lastDeletedTx.date).toLocaleString()})</div>
+        {/* ASSET CHART MODAL (TradingView preferred, fallback to CoinGecko for cryptos) */}
+        {assetChartOpen.open && assetChartOpen.asset && (
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[110]">
+            <div className="bg-gray-900 p-4 rounded-lg w-full max-w-4xl border border-gray-800">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-semibold">{assetChartOpen.asset.symbol} · {assetChartOpen.asset.name}</h3>
+                  <div className="text-xs text-gray-400">{assetChartOpen.asset.description || ""}</div>
+                </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => undoLastDeletedTransaction()} className="bg-emerald-500 px-3 py-1 rounded text-sm btn">Undo</button>
-                  <button onClick={() => purgeLastDeletedTransaction()} className="bg-gray-700 px-3 py-1 rounded text-sm btn-soft">Forget</button>
+                  <button onClick={() => generateShareImage()} className="bg-white text-black px-3 py-1 rounded">Share</button>
+                  <button onClick={() => closeAssetChart()} className="text-gray-400 hover:text-white">Close</button>
                 </div>
               </div>
-            )}
+
+              <div className="mt-4">
+                {/* Try TradingView; for cryptos fallback to CoinGecko mini chart when tradingview symbol may not be available */}
+                {assetChartOpen.asset.type === "crypto" ? (
+                  // Try TradingView symbol heuristics, but also include Coingecko fallback
+                  <AssetChartForCrypto asset={assetChartOpen.asset} displayCcy={displayCcy} usdIdr={usdIdr} />
+                ) : (
+                  <TradingViewWidget symbol={mapSymbolForTradingView(assetChartOpen.asset)} height={420} />
+                )}
+              </div>
+            </div>
           </div>
         )}
-
-        {/* EXPORT / IMPORT CSV */}
-        <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div className="flex-1">
-            <div className="text-sm text-gray-300">CSV: export / import (combined)</div>
-            <div className="text-xs text-gray-500">Export contains ASSETS and TRANSACTIONS in one CSV file. Includes header markers and ISO dates for clean spreadsheet import.</div>
-          </div>
-          <div className="flex gap-2">
-            <div className="relative">
-              <button onClick={exportAllCSV} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-blue-600 hover:text-white">Export CSV</button>
-            </div>
-            <label className="bg-white text-black px-3 py-2 rounded font-semibold cursor-pointer btn hover:bg-emerald-500 hover:text-white">
-              Import CSV
-              <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
-            </label>
-            <button onClick={() => {
-              if (!confirm("This will clear your portfolio and realized P&L. Continue?")) return;
-              setAssets([]); setRealizedUSD(0); setTransactions([]); setLastDeletedTx(null);
-            }} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-red-600 hover:text-white">Clear All</button>
-          </div>
-        </div>
 
       </div>
 
       {/* TRADE MODAL */}
       {tradeModal.open && (
-        <TradeModal mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)} defaultPrice={tradeModal.defaultPrice} onClose={closeTradeModal} onBuy={performBuy} onSell={performSell} usdIdr={usdIdr} />
+        <TradeModal mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)} defaultPrice={tradeModal.defaultPrice} onClose={() => setTradeModal({ open:false })} onBuy={performBuy} onSell={performSell} usdIdr={usdIdr} />
+      )}
+    </div>
+  );
+
+  /* Helper inside component: remove asset with confirm */
+  function removeAssetDialog(id) {
+    const a = assets.find(x => x.id === id); if (!a) return;
+    if (!confirm(`Delete ${a.symbol} (${a.name || ""}) from portfolio?`)) return;
+    setAssets(prev => prev.filter(x => x.id !== id));
+  }
+}
+
+/* ===================== AssetChartForCrypto: try TradingView mapping then fallback to CoinGecko ===================== */
+function AssetChartForCrypto({ asset, displayCcy = "USD", usdIdr = 16000 }) {
+  const [preferTv, setPreferTv] = useState(true);
+  const [tvSymbol, setTvSymbol] = useState(null);
+  useEffect(() => {
+    if (!asset) return;
+    // Heuristic mapping: try BINANCE:<SYMBOL>USDT, COINBASE:<SYMBOL>USD
+    const sym = (asset.symbol || "").replace(/^@/,"").replace(/-USD$/i,"").toUpperCase();
+    const candidates = [
+      `BINANCE:${sym}USDT`,
+      `COINBASE:${sym}USD`,
+      `${sym}USD`,
+      `CRYPTO:${sym}USD`,
+    ];
+    // choose first candidate (TV widget may still not support it; widget will fail gracefully)
+    setTvSymbol(candidates[0]);
+  }, [asset]);
+
+  if (!asset) return null;
+  return (
+    <div>
+      {preferTv ? (
+        <div>
+          <TradingViewWidget symbol={tvSymbol || asset.symbol} height={420} />
+          <div className="mt-2 flex gap-2">
+            <button onClick={() => setPreferTv(false)} className="px-2 py-1 rounded bg-gray-800">Use CoinGecko chart</button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <CryptoMiniChart coinId={(asset.coingeckoId || asset.symbol || "").toLowerCase()} displayCcy={displayCcy} usdIdr={usdIdr} days={90} />
+          <div className="mt-2 flex gap-2">
+            <button onClick={() => setPreferTv(true)} className="px-2 py-1 rounded bg-gray-800">Try TradingView</button>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-/* ===================== Helper Components: TradingViewWidget & CryptoMiniChart ===================== */
-function TradingViewWidget({ symbol = "AAPL" }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!isBrowser) return;
-    // ensure script loaded
-    if (!window.TradingView) {
-      const s = document.createElement("script");
-      s.src = "https://s3.tradingview.com/tv.js";
-      s.async = true;
-      s.onload = () => {
-        try { new window.TradingView.widget({ "container_id": ref.current.id, "width": "100%", "height": 420, "symbol": symbol, "interval":"D", "timezone":"Etc/UTC", "theme":"dark", "style":"1", "locale":"en" }); } catch (e) {}
-      };
-      document.body.appendChild(s);
-    } else {
-      try { new window.TradingView.widget({ "container_id": ref.current.id, "width": "100%", "height": 420, "symbol": symbol, "interval":"D", "timezone":"Etc/UTC", "theme":"dark", "style":"1", "locale":"en" }); } catch(e) {}
-    }
-  }, [symbol]);
-  const id = `tv_${Math.random().toString(36).slice(2,8)}`;
-  return <div id={id} ref={ref} style={{width:"100%", minHeight:420}} />;
-}
+/* ===================== TradeModal component (kept near original) ===================== */
+function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
+  const [qty, setQty] = useState("");
+  const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
+  const [priceCcy, setPriceCcy] = useState("USD");
 
-function mapSymbolForTradingView(symbol) {
-  // Basic mapping heuristics. For local JKTICK.JK, TradingView might use "IDX:TICK"
-  // We attempt simple conversions:
-  if (!symbol) return symbol;
-  const s = String(symbol || "");
-  if (s.toUpperCase().endsWith(".JK")) {
-    const ticker = s.replace(".JK", "");
-    return `IDX:${ticker}`;
+  useEffect(() => {
+    setPrice(defaultPrice > 0 ? String(defaultPrice) : "");
+  }, [defaultPrice]);
+
+  if (!asset) return null;
+
+  const priceUSD = priceCcy === "IDR" ? toNum(price) / usdIdr : toNum(price);
+  const totalUSD = toNum(qty) * priceUSD;
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    const q = toNum(qty), p = priceUSD;
+    if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
+    if (mode === 'buy') onBuy(q, p);
+    if (mode === 'sell') onSell(q, p);
   }
-  // For US tickers, return as-is
-  return s;
-}
-
-function CryptoMiniChart({ coinId = "bitcoin", displayCcy="USD", usdIdr=16000 }) {
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    let mounted = true;
-    async function fetchChart() {
-      try {
-        const days = 30;
-        const res = await fetch(`https://api.coingecko.com/api/v3/coins/${encodeURIComponent(coinId)}/market_chart?vs_currency=usd&days=${days}`);
-        if (!res.ok) return;
-        const j = await res.json();
-        if (!mounted) return;
-        const arr = (j.prices || []).map(p => ({ t: p[0], v: p[1] }));
-        setData(arr);
-      } catch (e) {}
-    }
-    fetchChart();
-    return () => { mounted = false; };
-  }, [coinId]);
-
-  if (!data || data.length === 0) return <div className="text-xs text-gray-500">No chart</div>;
-
-  // build simple sparkline SVG
-  const w = 600, h = 200, pad = 6;
-  const vs = data.map(d => d.v);
-  const min = Math.min(...vs), max = Math.max(...vs), range = Math.max(1e-8, max-min);
-  const xOf = (i) => pad + (i/(data.length-1)) * (w - pad*2);
-  const yOf = (v) => pad + (1 - (v - min)/range) * (h - pad*2);
-  const path = data.map((p,i) => `${i===0 ? "M" : "L"} ${xOf(i).toFixed(2)} ${yOf(p.v).toFixed(2)}`).join(" ");
-  const last = vs[vs.length-1];
 
   return (
-    <div>
-      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
-        <rect x="0" y="0" width={w} height={h} fill="#0b1220" />
-        <path d={path} stroke="#FF6B6B" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      <div className="mt-2 text-sm">{displayCcy==="IDR" ? fmtMoney(last*usdIdr,"IDR") : fmtMoney(last,"USD")}</div>
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[120]">
+      <div className="bg-gray-900 p-6 rounded-lg w-full max-w-md border border-gray-800">
+        <div className="flex justify-between items-start">
+          <div>
+            <h2 className="text-xl font-semibold capitalize">{mode} {asset.symbol}</h2>
+            <p className="text-sm text-gray-400">{asset.name}</p>
+          </div>
+          <button onClick={() => onClose && onClose()} className="text-gray-500 hover:text-white">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="mt-4">
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Quantity</label>
+            <input type="number" step="any" value={qty} onChange={(e) => setQty(e.target.value)}
+              className="w-full bg-gray-800 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-blue-500"
+              placeholder="0.00"
+            />
+          </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Price per unit</label>
+            <div className="flex rounded overflow-hidden">
+              <input type="number" step="any" value={price} onChange={(e) => setPrice(e.target.value)}
+                className="w-full bg-gray-800 px-3 py-2 rounded-l border border-gray-700 focus:outline-none focus:border-blue-500"
+                placeholder="0.00"
+              />
+              <select value={priceCcy} onChange={(e) => setPriceCcy(e.target.value)}
+                className="bg-gray-800 border-t border-b border-r border-gray-700 px-2 rounded-r focus:outline-none"
+              >
+                <option value="USD">USD</option>
+                <option value="IDR">IDR</option>
+              </select>
+            </div>
+          </div>
+          <div className="text-sm text-gray-400 text-right mb-4">Total: {fmtMoney(totalUSD, "USD")}</div>
+          <button type="submit" className={`w-full py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-white'}`}>{mode === 'buy' ? 'Confirm Buy' : 'Confirm Sell'}</button>
+        </form>
+      </div>
     </div>
   );
 }
-```1
+```0
