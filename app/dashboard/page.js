@@ -9,7 +9,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * - Fix sort/filter dropdown scrolling (not clipped) — uses overflow-y: visible on table wrapper
  * - Throttle chart mousemove with requestAnimationFrame for smoother interactivity
  * - CSV/Export/Import buttons: white background, hover colored
- * - Cake allocation: slices sized proportionally (angle) and radius scales with value
+ * - Donut allocation: slices now have a constant outer radius for a perfect circle shape.
+ * - Layout reordered as requested.
+ * - Add Asset buttons modified as requested.
  *
  * Keep everything in this single file as requested.
  */
@@ -87,19 +89,16 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== CAKE-STYLE ALLOCATION (PROPORTIONAL ANGLE + RADIUS) ===================== */
-function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
+/* ===================== DONUT ALLOCATION CHART ===================== */
+function DonutAllocation({ data = [], size = 200, inner = 48, gap = 0.02, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
   // compute total and angles proportional to value
   const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2, cy = size / 2;
   const maxOuter = size / 2 - 6;
-  const minOuter = inner + 8;
-  const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
 
-  const scaleOuter = (v) => {
-    if (!v || v <= 0) return inner + 6;
-    const frac = v / maxValue;
-    return Math.round(minOuter + frac * (maxOuter - minOuter));
+  const scaleOuter = () => {
+    // Return a constant outer radius for a perfect donut shape
+    return maxOuter;
   };
 
   const colors = [
@@ -139,7 +138,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
     const portion = Math.max(0, d.value || 0) / total;
     const angle = portion * Math.PI * 2;
     const end = start + angle;
-    const rOuter = scaleOuter(d.value || 0);
+    const rOuter = scaleOuter(); // Use constant outer radius
     const arc = { start, end, outer: rOuter };
     start = end;
     return arc;
@@ -218,6 +217,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
     </div>
   );
 }
+
 
 /* ===================== CANDLE + MULTI-LINE CHART (throttled mousemove) ===================== */
 function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 960, height = 300, rangeKey = "all", onHover }) {
@@ -1185,7 +1185,7 @@ export default function PortfolioDashboard() {
     return { invested, market, pnl, pnlPct };
   }, [filteredRows]);
 
-  /* donut/cake data */
+  /* donut data */
   const donutData = useMemo(() => {
     const sortedRows = filteredRows.slice().sort((a, b) => b.marketValueUSD - a.marketValueUSD);
     const top = sortedRows.slice(0, 6);
@@ -1702,8 +1702,7 @@ export default function PortfolioDashboard() {
                   <option value="USD">USD</option> <option value="IDR">IDR</option>
                 </select>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add</button>
-                  <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold btn">Add + Position</button>
+                  <button onClick={addAssetWithInitial} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Assets</button>
                   <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
                 </div>
               </div>
@@ -1835,33 +1834,11 @@ export default function PortfolioDashboard() {
           </table>
         </div>
 
-        {/* PORTFOLIO GROWTH */}
-        <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold">Portfolio Growth</div>
-            <div className="flex items-center gap-2">
-              {["1d","2d","1w","1m","1y","all"].map(k => (
-                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"} btn`}>{k}</button>
-              ))}
-            </div>
-          </div>
-
-          <CandlesWithLines
-            seriesMap={multiSeries}
-            displayCcy={displayCcy}
-            usdIdr={usdIdr}
-            width={900}
-            height={300}
-            rangeKey={chartRange}
-            onHover={(p) => { setChartHover(p); }}
-          />
-        </div>
-
-        {/* CAKE (donut replacement) + legend */}
+        {/* DONUT ALLOCATION + LEGEND */}
         {filteredRows.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="w-44 h-44 flex items-center justify-center">
-              <CakeAllocation
+              <DonutAllocation
                 data={donutData}
                 size={176}
                 inner={48}
@@ -1897,6 +1874,28 @@ export default function PortfolioDashboard() {
             </div>
           </div>
         )}
+        
+        {/* PORTFOLIO GROWTH */}
+        <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-semibold">Portfolio Growth</div>
+            <div className="flex items-center gap-2">
+              {["1d","2d","1w","1m","1y","all"].map(k => (
+                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"} btn`}>{k}</button>
+              ))}
+            </div>
+          </div>
+
+          <CandlesWithLines
+            seriesMap={multiSeries}
+            displayCcy={displayCcy}
+            usdIdr={usdIdr}
+            width={900}
+            height={300}
+            rangeKey={chartRange}
+            onHover={(p) => { setChartHover(p); }}
+          />
+        </div>
 
         {/* TRADE MODAL */}
         {tradeModal.open && (
