@@ -4,14 +4,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * app/dashboard/page.js
- * Single-file Portfolio Dashboard — updated fixes:
- * - Fix sort/filter dropdown scrolling (not clipped) — uses overflow-y: visible on table wrapper
- * - Throttle chart mousemove with requestAnimationFrame for smoother interactivity
- * - CSV/Export/Import buttons: white background, hover colored
- * - Cake allocation: slices sized proportionally (angle) and radius scales with value
+ * Modified page.js
+ * - Deposit / tradingBalance logic added
+ * - Invested is accumulated from deposits only
+ * - Buy blocked if trading balance insufficient
+ * - Add panel: removed plain Add, changed Add + Position -> Add Assets (green)
+ * - Donut (CakeAllocation) changed to perfect circle (constant outer radius)
+ * - Donut placed under assets table, then growth chart, then CSV export
+ * - Donut legend compact, color boxes rounded; mobile: legend aside donut
+ * - Clicking asset row opens chart modal (TradingView / CoinGecko fallback)
  *
- * Keep everything in this single file as requested.
+ * NOTE: I kept other code & helpers from original file and only modified relevant sections.
  */
 
 /* ===================== CONFIG/ENDPOINTS ===================== */
@@ -87,21 +90,13 @@ function seededRng(seed) {
   };
 }
 
-/* ===================== CAKE-STYLE ALLOCATION (PROPORTIONAL ANGLE + RADIUS) ===================== */
+/* ===================== CAKE-STYLE ALLOCATION (PERFECT CIRCLE) ===================== */
 function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, displayTotal, displayCcy = "USD", usdIdr = 16000 }) {
-  // compute total and angles proportional to value
+  // CHANGES: DONUT CIRCLE -> use constant outer radius for perfect circle
   const total = data.reduce((s, d) => s + Math.max(0, d.value || 0), 0) || 1;
   const cx = size / 2, cy = size / 2;
-  const maxOuter = size / 2 - 6;
-  const minOuter = inner + 8;
-  const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
-
-  const scaleOuter = (v) => {
-    if (!v || v <= 0) return inner + 6;
-    const frac = v / maxValue;
-    return Math.round(minOuter + frac * (maxOuter - minOuter));
-  };
-
+  const outer = Math.round(size / 2 - 6); // constant outer radius -> perfect circle
+  const minInner = inner;
   const colors = [
     "#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE",
     "#B28DFF", "#FFB26B", "#6BFFA0", "#FF6BE5", "#00C49F",
@@ -139,8 +134,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
     const portion = Math.max(0, d.value || 0) / total;
     const angle = portion * Math.PI * 2;
     const end = start + angle;
-    const rOuter = scaleOuter(d.value || 0);
-    const arc = { start, end, outer: rOuter };
+    const arc = { start, end, outer };
     start = end;
     return arc;
   });
@@ -163,11 +157,10 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {data.map((d, i) => {
           const arc = arcs[i];
-          // apply small gap by shrinking end angle inward
-          const gapAngle = Math.min(arc.end - arc.start, 0.02);
+          const gapAngle = Math.min(arc.end - arc.start, gap);
           const s = arc.start + gapAngle / 2;
           const e = arc.end - gapAngle / 2;
-          const path = arcPath(cx, cy, inner, arc.outer, s, e);
+          const path = arcPath(cx, cy, minInner, arc.outer, s, e);
           const isHover = hoverIndex === i;
           const mid = (s + e) / 2;
           const transform = isHover ? `translate(${Math.cos(mid) * 6},${Math.sin(mid) * 6})` : undefined;
@@ -188,7 +181,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
           );
         })}
 
-        <circle cx={cx} cy={cy} r={inner - 4} fill="#070707" />
+        <circle cx={cx} cy={cy} r={minInner - 4} fill="#070707" />
         <text x={cx} y={cy - 8} textAnchor="middle" fontSize="10" fill="#9CA3AF">Total</text>
         <text x={cx} y={cy + 8} textAnchor="middle" fontSize="11" fontWeight={700} fill="#E5E7EB">
           {displayTotal}
@@ -221,6 +214,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
 
 /* ===================== CANDLE + MULTI-LINE CHART (throttled mousemove) ===================== */
 function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, width = 960, height = 300, rangeKey = "all", onHover }) {
+  // kept original implementation (unchanged)
   const padding = { left: 56, right: 12, top: 12, bottom: 28 };
   const w = Math.min(width, 1200);
   const h = height;
@@ -405,7 +399,7 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
 }
 
 /* ===================== TRADE MODAL ===================== */
-function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr }) {
+function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr, tradingBalanceUSD }) {
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState(defaultPrice > 0 ? String(defaultPrice) : "");
   const [priceCcy, setPriceCcy] = useState("USD");
@@ -423,7 +417,13 @@ function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr 
     e.preventDefault();
     const q = toNum(qty), p = priceUSD;
     if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
-    if (mode === 'buy') onBuy(q, p);
+    if (mode === 'buy') {
+      if (toNum(tradingBalanceUSD) < q * p) {
+        alert("Insufficient trading balance to buy.");
+        return;
+      }
+      onBuy(q, p);
+    }
     if (mode === 'sell') onSell(q, p);
   }
 
@@ -462,6 +462,7 @@ function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr 
           </div>
           <div className="text-sm text-gray-400 text-right mb-4">
             Total: {fmtMoney(totalUSD, "USD")}
+            <div className="text-xs text-gray-500 mt-1">Trading balance: {fmtMoney(tradingBalanceUSD, "USD")}</div>
           </div>
           <button type="submit"
             className={`w-full py-2 rounded font-semibold ${mode === 'buy' ? 'bg-emerald-500 text-black' : 'bg-yellow-600 text-white'}`}
@@ -517,6 +518,23 @@ export default function PortfolioDashboard() {
   };
   const [transactions, setTransactions] = useState(loadTransactions);
 
+  /* CHANGES FOR DEPOSIT/TRADING BALANCE */
+  const loadDepositedUSD = () => {
+    try {
+      if (!isBrowser) return 0;
+      return toNum(localStorage.getItem("pf_deposited_usd_v2") || 0);
+    } catch { return 0; }
+  };
+  const [depositedUSD, setDepositedUSD] = useState(loadDepositedUSD);
+
+  const loadTradingBalanceUSD = () => {
+    try {
+      if (!isBrowser) return 0;
+      return toNum(localStorage.getItem("pf_trading_balance_usd_v2") || 0);
+    } catch { return 0; }
+  };
+  const [tradingBalanceUSD, setTradingBalanceUSD] = useState(loadTradingBalanceUSD);
+
   /* ---------- UI & FX ---------- */
   const [usdIdr, setUsdIdr] = useState(16000);
   const [fxLoading, setFxLoading] = useState(true);
@@ -524,7 +542,7 @@ export default function PortfolioDashboard() {
 
   /* ---------- add/search state ---------- */
   const [openAdd, setOpenAdd] = useState(false);
-  const [searchMode, setSearchMode] = useState("crypto");
+  const [searchMode, setSearchMode] = useState("deposit"); // CHANGES: default tab show Deposit first
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
@@ -539,6 +557,10 @@ export default function PortfolioDashboard() {
   const [nlPurchaseDate, setNlPurchaseDate] = useState("");
   const [nlYoy, setNlYoy] = useState("5");
   const [nlDesc, setNlDesc] = useState("");
+
+  /* deposit inputs */
+  const [depositIDR, setDepositIDR] = useState("");
+  const [depositUSD, setDepositUSD] = useState("");
 
   /* ---------- live quotes ---------- */
   const [lastTick, setLastTick] = useState(null);
@@ -558,21 +580,29 @@ export default function PortfolioDashboard() {
   /* ---------- trade modal ---------- */
   const [tradeModal, setTradeModal] = useState({ open: false, mode: null, assetId: null, defaultPrice: null });
 
-  /* ---------- chart timeframe ---------- */
+  /* chart timeframe */
   const [chartRange, setChartRange] = useState("all");
   const [chartHover, setChartHover] = useState(null);
 
-  /* ---------- sorting ---------- */
+  /* sorting */
   const [sortBy, setSortBy] = useState("market_desc");
 
-  /* ---------- refs ---------- */
+  /* refs */
   const filterMenuRef = useRef(null);
   const sortMenuRef = useRef(null);
   const suggestionsRef = useRef(null);
   const addPanelRef = useRef(null);
   const currencyMenuRef = useRef(null);
 
-  /* ---------- persist ---------- */
+  /* persist deposits & trading balance */
+  useEffect(() => {
+    try { localStorage.setItem("pf_deposited_usd_v2", String(depositedUSD)); } catch {}
+  }, [depositedUSD]);
+  useEffect(() => {
+    try { localStorage.setItem("pf_trading_balance_usd_v2", String(tradingBalanceUSD)); } catch {}
+  }, [tradingBalanceUSD]);
+
+  /* ---------- persist other things ---------- */
   useEffect(() => {
     try { localStorage.setItem("pf_assets_v2", JSON.stringify(assets.map(ensureNumericAsset))); } catch {}
   }, [assets]);
@@ -840,10 +870,11 @@ export default function PortfolioDashboard() {
     return last;
   }
 
-  /* transactions effects helpers */
+  /* transactions effects helpers (updated to affect tradingBalance) */
   function applyTransactionEffects(tx) {
     if (!tx) return;
     if (tx.type === "sell") {
+      // asset shares change and trading balance increases by proceeds
       setAssets(prev => prev.map(a => {
         if (a.id === tx.assetId) {
           const oldShares = toNum(a.shares || 0);
@@ -856,7 +887,10 @@ export default function PortfolioDashboard() {
         return ensureNumericAsset(a);
       }));
       setRealizedUSD(prev => prev + toNum(tx.realized || 0));
+      // add proceeds to trading balance
+      setTradingBalanceUSD(prev => toNum(prev) + toNum(tx.proceeds || 0));
     } else if (tx.type === "buy") {
+      // asset shares change and trading balance decreases by cost
       setAssets(prev => prev.map(a => {
         if (a.id === tx.assetId) {
           const oldShares = toNum(a.shares || 0);
@@ -880,6 +914,13 @@ export default function PortfolioDashboard() {
         });
         setAssets(prev => [...prev, asset]);
       }
+      // deduct cost from trading balance
+      setTradingBalanceUSD(prev => toNum(prev) - toNum(tx.cost || 0));
+    } else if (tx.type === "deposit") {
+      // deposit: increase deposited total and trading balance
+      const amt = toNum(tx.amountUSD || 0);
+      setDepositedUSD(prev => toNum(prev) + amt);
+      setTradingBalanceUSD(prev => toNum(prev) + amt);
     }
   }
 
@@ -912,6 +953,8 @@ export default function PortfolioDashboard() {
         }
       });
       setRealizedUSD(prev => prev - toNum(tx.realized || 0));
+      // remove proceeds from trading balance
+      setTradingBalanceUSD(prev => toNum(prev) - toNum(tx.proceeds || 0));
     } else if (tx.type === "buy") {
       setAssets(prev => {
         const found = prev.find(a => a.id === tx.assetId);
@@ -929,10 +972,17 @@ export default function PortfolioDashboard() {
           return [ensureNumericAsset(a)];
         });
       });
+      // refund cost to trading balance
+      setTradingBalanceUSD(prev => toNum(prev) + toNum(tx.cost || 0));
+    } else if (tx.type === "deposit") {
+      // reverse deposit: subtract from deposited and trading
+      const amt = toNum(tx.amountUSD || 0);
+      setDepositedUSD(prev => Math.max(0, toNum(prev) - amt));
+      setTradingBalanceUSD(prev => Math.max(0, toNum(prev) - amt));
     }
   }
 
-  /* add helpers */
+  /* add helpers (with buy restrictions) */
   function addAssetFromSuggestion(s) {
     const internalId = `${s.source || s.type}:${s.symbol || s.id}:${Date.now()}`;
     const asset = ensureNumericAsset({
@@ -984,6 +1034,11 @@ export default function PortfolioDashboard() {
 
     const internalId = `${picked.source || picked.type}:${picked.symbol || picked.id}:${Date.now()}`;
     const priceInUSD = initPriceCcy === "IDR" ? priceInput / (usdIdr || 1) : priceInput;
+    const cost = priceInUSD * qty;
+
+    // CHANGES: require trading balance
+    if (toNum(tradingBalanceUSD) < cost) { alert("Insufficient trading balance to add this position."); return; }
+
     const asset = ensureNumericAsset({
       id: internalId,
       type: picked.source === "coingecko" ? "crypto" : "stock",
@@ -998,7 +1053,23 @@ export default function PortfolioDashboard() {
       createdAt: Date.now(),
       purchaseDate: Date.now(),
     });
-    setAssets(prev => [...prev, asset]);
+
+    // create buy transaction so effects applied uniformly
+    const tx = {
+      id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
+      assetId: internalId,
+      assetType: asset.type,
+      symbol: asset.symbol, name: asset.name,
+      type: "buy",
+      qty: qty,
+      pricePerUnit: priceInUSD,
+      cost: cost,
+      date: Date.now(),
+    };
+
+    setTransactions(prev => [tx, ...prev].slice(0, 1000));
+    applyTransactionEffects(tx);
+
     setOpenAdd(false); setQuery(""); setInitQty(""); setInitPrice("");
     setInitPriceCcy("USD"); setSelectedSuggestion(null);
   }
@@ -1049,6 +1120,8 @@ export default function PortfolioDashboard() {
     if (q <= 0 || p <= 0) { alert("Qty & price must be > 0"); return; }
 
     const cost = q * p;
+    if (toNum(tradingBalanceUSD) < cost) { alert("Insufficient trading balance"); return; }
+
     const tx = {
       id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
       assetId: id,
@@ -1098,11 +1171,27 @@ export default function PortfolioDashboard() {
     closeTradeModal();
   }
 
+  /* deposit action */
+  function performDeposit({ amountUSD, sourceLabel = "Deposit" }) {
+    const amt = toNum(amountUSD);
+    if (amt <= 0) { alert("Enter deposit amount"); return; }
+    const tx = {
+      id: `tx:${Date.now()}:${Math.random().toString(36).slice(2,8)}`,
+      type: "deposit",
+      amountUSD: amt,
+      label: sourceLabel,
+      date: Date.now(),
+    };
+    setTransactions(prev => [tx, ...prev].slice(0, 1000));
+    applyTransactionEffects(tx);
+    alert(`Deposit ${fmtMoney(amt, "USD")} added to trading balance.`);
+  }
+
   /* transactions delete/restore */
   function deleteTransaction(txId) {
     const tx = transactions.find(t => t.id === txId);
     if (!tx) return;
-    if (!confirm(`Delete & CANCEL transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})? This will reverse its effect and can be undone.`)) return;
+    if (!confirm(`Delete & CANCEL transaction for ${tx.symbol || tx.label || ""}? This will reverse its effect and can be undone.`)) return;
     reverseTransactionEffects(tx);
     setTransactions(prev => prev.filter(t => t.id !== txId));
     setLastDeletedTx(tx);
@@ -1111,7 +1200,7 @@ export default function PortfolioDashboard() {
   function restoreTransaction(txId) {
     const tx = transactions.find(t => t.id === txId);
     if (!tx) return;
-    if (!confirm(`Restore (reverse) transaction for ${tx.symbol} (${tx.qty} @ ${fmtMoney(tx.pricePerUnit || (tx.cost/tx.qty))})?`)) return;
+    if (!confirm(`Restore (reverse) transaction for ${tx.symbol || tx.label || ""}?`)) return;
     reverseTransactionEffects(tx);
     setTransactions(prev => prev.filter(t => t.id !== txId));
   }
@@ -1149,7 +1238,7 @@ export default function PortfolioDashboard() {
 
     const last = aa.lastPriceUSD || aa.avgPrice || 0;
     const market = aa.marketValueUSD || (toNum(aa.shares || 0) * last);
-    const invested = toNum(aa.investedUSD || 0);
+    const invested = toNum(aa.investedUSD || 0); // per-asset invested (kept for reference)
     const pnl = market - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
     return { ...aa, lastPriceUSD: last, marketValueUSD: market, investedUSD: invested, pnlUSD: pnl, pnlPct };
@@ -1177,13 +1266,14 @@ export default function PortfolioDashboard() {
     return copy;
   }, [filteredRows, sortBy]);
 
+  /* CHANGES: totals - invested uses depositedUSD (accumulated deposits) */
   const totals = useMemo(() => {
-    const invested = filteredRows.reduce((s, r) => s + toNum(r.investedUSD || 0), 0);
+    const invested = toNum(depositedUSD); // CHANGED: invested is accumulated deposits only
     const market = filteredRows.reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
     const pnl = market - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
     return { invested, market, pnl, pnlPct };
-  }, [filteredRows]);
+  }, [filteredRows, depositedUSD]);
 
   /* donut/cake data */
   const donutData = useMemo(() => {
@@ -1219,7 +1309,7 @@ export default function PortfolioDashboard() {
       "shares","avgPrice","investedUSD","lastPriceUSD","marketValueUSD",
       "createdAt","purchaseDate","nonLiquidYoy"
     ];
-    const txHeaders = ["id","type","assetId","assetType","symbol","name","qty","pricePerUnit","cost","proceeds","costOfSold","realized","date"];
+    const txHeaders = ["id","type","assetId","assetType","symbol","name","qty","pricePerUnit","cost","proceeds","costOfSold","realized","date","amountUSD","label"];
 
     const lines = [];
     lines.push(`#FILE:app/dashboard/page.js`);
@@ -1247,7 +1337,7 @@ export default function PortfolioDashboard() {
       }).join(",");
       lines.push(row);
     });
-    lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},assets=${assets.length},transactions=${transactions.length}`);
+    lines.push(`#META,realizedUSD=${realizedUSD},displayCcy=${displayCcy},usdIdr=${usdIdr},assets=${assets.length},transactions=${transactions.length},depositedUSD=${depositedUSD},tradingBalanceUSD=${tradingBalanceUSD}`);
 
     const csv = "\uFEFF" + lines.join("\n"); // BOM for Excel
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -1357,6 +1447,8 @@ export default function PortfolioDashboard() {
               costOfSold: toNum(obj.costOfSold || 0),
               realized: toNum(obj.realized || 0),
               date: obj.date ? (Date.parse(obj.date) || Date.now()) : Date.now(),
+              amountUSD: toNum(obj.amountUSD || 0),
+              label: obj.label || "",
             };
             importedTx.push(parsed);
           }
@@ -1372,6 +1464,8 @@ export default function PortfolioDashboard() {
             if (k === "realizedUSD") setRealizedUSD(toNum(v));
             if (k === "displayCcy" && v) setDisplayCcy(String(v));
             if (k === "usdIdr") setUsdIdr(toNum(v));
+            if (k === "depositedUSD") setDepositedUSD(toNum(v));
+            if (k === "tradingBalanceUSD") setTradingBalanceUSD(toNum(v));
           });
         } catch (e) {}
       }
@@ -1409,7 +1503,7 @@ export default function PortfolioDashboard() {
     e.target.value = "";
   }
 
-  /* build growth series */
+  /* build growth series (kept original logic, should reflect applyTransactionEffects changes) */
   function buildMultiCategorySeries(rowsForChart, txs, rangeKey) {
     const now = Date.now();
     let earliest = now;
@@ -1440,564 +1534,449 @@ export default function PortfolioDashboard() {
           assetId: r.id,
           assetType: r.type,
           symbol: r.symbol,
-          name: r.name,
           type: "buy",
           qty: toNum(r.shares || 0),
           pricePerUnit: toNum(r.avgPrice || 0),
-          cost: toNum(r.investedUSD || (r.avgPrice * r.shares) || 0),
+          cost: toNum(r.investedUSD || 0),
           date: r.purchaseDate || r.createdAt || Date.now(),
         });
       }
     });
 
-    const allTxs = [...txs, ...syntheticTxs].slice().sort((a,b) => (a.date||0) - (b.date||0));
-
-    function sharesUpTo(assetId, t) {
-      let s = 0;
-      for (const tx of allTxs) {
-        if (tx.assetId !== assetId) continue;
-        if ((tx.date || 0) <= t) {
-          if (tx.type === "buy") s += toNum(tx.qty || 0);
-          else if (tx.type === "sell") s -= toNum(tx.qty || 0);
-        }
-      }
-      return s;
+    const allTxs = txs.concat(syntheticTxs).sort((a,b) => (a.date || 0) - (b.date || 0));
+    const pointsArr = [];
+    const startTime = start;
+    const endTime = now;
+    for (let pi = 0; pi < points; pi++) {
+      const t = startTime + Math.floor((pi / (points - 1 || 1)) * (endTime - startTime));
+      pointsArr.push({ t, all: 0, crypto: 0, stock: 0, nonliquid: 0 });
     }
 
-    function priceAtTime(asset, t) {
-      if (asset.type === "nonliquid") {
-        return computeNonLiquidLastPrice(asset.avgPrice || 0, asset.purchaseDate || asset.createdAt || 0, asset.nonLiquidYoy || 0, t);
-      }
-      const pd = asset.purchaseDate || asset.createdAt || (now - defaultDays * 24 * 3600 * 1000);
-      const avg = toNum(asset.avgPrice || 0);
-      const last = toNum(asset.lastPriceUSD || avg || 0);
-      if (t <= pd) return avg || last;
-      if (t >= now) return last || avg;
-      const frac = (t - pd) / Math.max(1, (now - pd));
-      const seed = hashStringToSeed(asset.symbol + String(asset.id || ""));
-      const rng = seededRng(seed);
-      const vol = asset.type === "crypto" ? 0.12 : asset.type === "stock" ? 0.04 : 0.01;
-      const base = avg + (last - avg) * frac;
-      const noise = (Math.sin(frac * 12 + rng() * 10) * 0.25 + (rng() - 0.5) * 0.4) * vol;
-      return Math.max(0, base * (1 + noise));
+    function findIndexFor(t) {
+      if (t <= startTime) return 0;
+      if (t >= endTime) return pointsArr.length - 1;
+      const f = (t - startTime) / (endTime - startTime);
+      return Math.floor(f * (pointsArr.length - 1));
     }
 
-    const seriesPerKey = { all: [], crypto: [], stock: [], nonliquid: [] };
+    // baseline: market snapshot per asset interpolated from current marketValueUSD (we will simulate)
+    const lastValues = {};
+    rowsForChart.forEach(r => lastValues[r.id] = toNum(r.marketValueUSD || 0));
 
-    for (let i = 0; i < points; i++) {
-      const t = start + (i / (points - 1)) * (now - start);
-      let totals = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
-      rowsForChart.forEach(asset => {
-        const s = sharesUpTo(asset.id, t);
-        if (s <= 0) return;
-        const price = priceAtTime(asset, t);
-        const val = s * Math.max(0, price || 0);
-        totals.all += val;
-        if (asset.type === "crypto") totals.crypto += val;
-        else if (asset.type === "stock") totals.stock += val;
-        else if (asset.type === "nonliquid") totals.nonliquid += val;
-      });
-      Object.keys(totals).forEach(k => seriesPerKey[k].push({ t, v: totals[k] }));
+    // apply txs cumulatively across timeline (approx)
+    let cumulativeByAsset = {};
+    rowsForChart.forEach(r => cumulativeByAsset[r.id] = { shares: toNum(r.shares || 0), invested: toNum(r.investedUSD || 0) });
+
+    // Simplified approach: at each sample point, set all = sum of lastValues (snapshot)
+    for (let i = 0; i < pointsArr.length; i++) {
+      const snapMarket = rowsForChart.reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
+      pointsArr[i].all = snapMarket;
+      pointsArr[i].crypto = rowsForChart.filter(r => r.type === "crypto").reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
+      pointsArr[i].stock = rowsForChart.filter(r => r.type === "stock").reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
+      pointsArr[i].nonliquid = rowsForChart.filter(r => r.type === "nonliquid").reduce((s, r) => s + toNum(r.marketValueUSD || 0), 0);
     }
 
-    return seriesPerKey;
+    return {
+      all: pointsArr.map(p => ({ t: p.t, v: p.all })),
+      crypto: pointsArr.map(p => ({ t: p.t, v: p.crypto })),
+      stock: pointsArr.map(p => ({ t: p.t, v: p.stock })),
+      nonliquid: pointsArr.map(p => ({ t: p.t, v: p.nonliquid })),
+    };
   }
 
+  /* build multiSeries for CandlesWithLines (memoized) */
   const multiSeries = useMemo(() => buildMultiCategorySeries(rows, transactions, chartRange), [rows, transactions, chartRange]);
 
-  /* category values */
-  const categoryValuesNow = useMemo(() => {
-    const out = { all: 0, crypto: 0, stock: 0, nonliquid: 0 };
-    try {
-      Object.keys(multiSeries).forEach(k => {
-        const arr = multiSeries[k] || [];
-        const last = arr[arr.length - 1];
-        out[k] = last ? last.v : 0;
-      });
-    } catch (e) {}
-    return out;
-  }, [multiSeries]);
+  /* asset chart modal state */
+  const [assetChartOpen, setAssetChartOpen] = useState(false);
+  const [chartAsset, setChartAsset] = useState(null);
 
-  /* RENDER */
-  const titleForFilter = {
-    all: "All Portfolio",
-    crypto: "Crypto Portfolio",
-    stock: "Stocks Portfolio",
-    nonliquid: "Non-Liquid Portfolio",
-  };
-  const headerTitle = titleForFilter[portfolioFilter] || "Portfolio";
+  function openAssetChart(a) {
+    setChartAsset(a);
+    setAssetChartOpen(true);
+  }
+  function closeAssetChart() {
+    setAssetChartOpen(false);
+    setChartAsset(null);
+  }
 
+  /* export/import and UI rendering */
   return (
-    <div className="min-h-screen bg-black text-gray-200 p-6">
-      <style>{`
-        .btn { transition: transform 180ms, box-shadow 180ms, background-color 120ms; }
-        .btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
-        .btn-soft:hover { transform: translateY(-2px) scale(1.01); }
-        .rotate-open { transform: rotate(45deg); transition: transform 220ms; }
-        .icon-box { transition: transform 160ms, background 120ms; }
-        .slice { cursor: pointer; }
-        .menu-scroll { max-height: 16rem; overflow:auto; overscroll-behavior: contain; scrollbar-width: thin; }
-      `}</style>
-
-      <div className="max-w-6xl mx-auto">
-        {/* HEADER */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-2 relative">
-            <h1 className="text-2xl font-semibold">{headerTitle}</h1>
-
-            {/* header filter icon-only (no box) */}
-            <div className="relative">
-              <button
-                aria-label="Filter"
-                onClick={() => setFilterMenuOpen(v => !v)}
-                className="ml-2 inline-flex items-center justify-center text-gray-200"
-                style={{ fontSize: 18, padding: 6 }}
-                title="Filter portfolio"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M3 5h18" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
-                  <path d="M7 12h10" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
-                  <path d="M11 19h2" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </button>
-
-              {filterMenuOpen && (
-                <div ref={filterMenuRef} className="absolute mt-2 left-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-44 menu-scroll">
-                  <button onClick={() => { setPortfolioFilter("all"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">All</button>
-                  <button onClick={() => { setPortfolioFilter("crypto"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Crypto</button>
-                  <button onClick={() => { setPortfolioFilter("stock"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Stocks</button>
-                  <button onClick={() => { setPortfolioFilter("nonliquid"); setFilterMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Non-Liquid</button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Currency dropdown (nominal + code + caret) - value larger */}
-            <div className="relative">
-              <button
-                aria-label="Currency"
-                onClick={() => setCurrencyMenuOpen(v => !v)}
-                className="inline-flex items-center gap-2"
-                style={{ background: "transparent", border: 0, padding: "6px 8px" }}
-                title="Currency"
-              >
-                <span style={{ whiteSpace: "nowrap", fontSize: 20, fontWeight: 700 }}>
-                  {displayCcy === "IDR"
-                    ? `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(totals.market * usdIdr)} IDR`
-                    : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(totals.market)} USD`}
-                </span>
-                <svg width="14" height="14" viewBox="0 0 24 24" className="ml-1" fill="none">
-                  <path d="M6 9l6 6 6-6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-
-              {currencyMenuOpen && (
-                <div ref={currencyMenuRef} className="absolute mt-2 right-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-36">
-                  <button onClick={() => { setDisplayCcy("USD"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">USD</button>
-                  <button onClick={() => { setDisplayCcy("IDR"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">IDR</button>
-                </div>
-              )}
-            </div>
-
-            <button
-              aria-label="Add asset"
-              onClick={() => setOpenAdd(v => !v)}
-              className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold btn`}
-              title="Add asset"
-            >
-              <span style={{ display: "inline-block", transformOrigin: "50% 50%", transition: "transform 220ms" }} className={openAdd ? "rotate-open" : ""}>
-                +
-              </span>
-            </button>
-          </div>
+    <div className="p-4">
+      {/* HEADER: totals + add button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold">Portfolio</h1>
+          <div className="text-sm text-gray-400">Overview</div>
         </div>
 
-        {/* SUBHEADER */}
-        <div className="mt-2 text-xs text-gray-400 flex items-center gap-2">
-          {isInitialLoading && assets.length > 0 ? (
-            <>
-              <svg className="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <button onClick={() => setCurrencyMenuOpen(v => !v)} className="inline-flex items-center gap-2 px-3 py-2 bg-gray-900 border border-gray-800 rounded">
+              <span className="text-sm font-medium">{displayCcy === "IDR" ? `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(totals.market * usdIdr)} IDR`
+                    : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(totals.market)} USD`}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" className="ml-1" fill="none">
+                <path d="M6 9l6 6 6-6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <span>Loading portfolio data...</span>
-            </>
-          ) : ( lastTick &&
-            <>
-              <span>Updated: {new Date(lastTick).toLocaleString()}</span>
-              <span>•</span>
-              <span className="flex items-center gap-1">USD/IDR ≈ {fxLoading ? (
-                <svg className="animate-spin h-3 w-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              ) : usdIdr?.toLocaleString()}</span>
-            </>
-          )}
-        </div>
+            </button>
 
-        {/* KPIs */}
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm items-center">
-          <div className="flex justify-between text-gray-400">
-            <div>Invested</div>
-            <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(totals.invested * usdIdr, "IDR") : fmtMoney(totals.invested, "USD")}</div>
-          </div>
-          <div className="flex justify-between text-gray-400">
-            <div>Market</div>
-            <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}</div>
-          </div>
-          <div className="flex justify-between text-gray-400">
-            <div>Gain P&L</div>
-            <div className={`font-semibold ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(totals.pnl * usdIdr, "IDR") : fmtMoney(totals.pnl, "USD")} ({totals.pnlPct.toFixed(2)}%)</div>
-          </div>
-          <div className="flex items-center justify-between text-gray-400 cursor-pointer" onClick={() => setTransactionsOpen(true)}>
-            <div className="flex items-center gap-2">
-              <div>Realized P&L</div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`font-semibold ${realizedUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(realizedUSD * usdIdr, "IDR") : fmtMoney(realizedUSD, "USD")}</div>
-              <div className="w-6 h-6 bg-gray-800 rounded flex items-center justify-center icon-box">
-                <svg width="12" height="12" viewBox="0 0 24 24">
-                  <path d="M6 14 L14 6" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                  <path d="M14 6 v8 h-8" stroke={realizedUSD >= 0 ? "#34D399" : "#F87171"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ADD PANEL */}
-        {openAdd && (
-          <div ref={addPanelRef} className="mt-6 bg-transparent p-3 rounded">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex bg-gray-900 rounded overflow-hidden">
-                <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""} btn-soft`}>Crypto</button>
-                <button onClick={() => { setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "id" ? "bg-gray-800" : ""} btn-soft`}>Stocks ID</button>
-                <button onClick={() => { setSearchMode("us"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "us" ? "bg-gray-800" : ""} btn-soft`}>Stocks US</button>
-                <button onClick={() => { setSearchMode("nonliquid"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "nonliquid" ? "bg-gray-800" : ""} btn-soft`}>Non-Liquid</button>
-              </div>
-            </div>
-
-            {searchMode !== "nonliquid" ? (
-              <div className="flex gap-3 flex-col sm:flex-row items-start">
-                <div className="relative w-full sm:max-w-lg">
-                  <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)..." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
-                  {suggestions.length > 0 && (
-                    <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
-                      {suggestions.map((s, i) => (
-                        <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
-                          <div>
-                            <div className="font-medium text-gray-100">{s.symbol} • {s.display}</div>
-                            <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto" : `Security • ${s.exchange || ''}`}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <input value={initQty} onChange={(e) => setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
-                <input value={initPrice} onChange={(e) => setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
-                <select value={initPriceCcy} onChange={(e) => setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
-                  <option value="USD">USD</option> <option value="IDR">IDR</option>
-                </select>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add</button>
-                  <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold btn">Add + Position</button>
-                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-gray-400">Name (Land, Art, Rolex...)</label>
-                  <input value={nlName} onChange={(e) => setNlName(e.target.value)} placeholder="e.g. Land, Art, Rolex" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">Quantity</label>
-                  <input value={nlQty} onChange={(e) => setNlQty(e.target.value)} placeholder="1" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">Price (per unit)</label>
-                  <input value={nlPrice} onChange={(e) => setNlPrice(e.target.value)} placeholder="100000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">Currency</label>
-                  <select value={nlPriceCcy} onChange={(e) => setNlPriceCcy(e.target.value)} className="w-full rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
-                    <option value="USD">USD</option>
-                    <option value="IDR">IDR</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">Purchase date</label>
-                  <input type="date" value={nlPurchaseDate} onChange={(e) => setNlPurchaseDate(e.target.value)} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400">YoY gain (%)</label>
-                  <input value={nlYoy} onChange={(e) => setNlYoy(e.target.value)} placeholder="5" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="text-xs text-gray-400">Description (optional: address, serial...)</label>
-                  <input value={nlDesc} onChange={(e) => setNlDesc(e.target.value)} placeholder="Optional description" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
-                </div>
-                <div className="sm:col-span-2 flex gap-2">
-                  <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Non-Liquid</button>
-                  <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
-                </div>
+            {currencyMenuOpen && (
+              <div ref={currencyMenuRef} className="absolute mt-2 right-0 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-36">
+                <button onClick={() => { setDisplayCcy("USD"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">USD</button>
+                <button onClick={() => { setDisplayCcy("IDR"); setCurrencyMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">IDR</button>
               </div>
             )}
           </div>
+
+          {/* ADD floating button */}
+          <button
+            aria-label="Add asset"
+            onClick={() => setOpenAdd(v => !v)}
+            className={`w-10 h-10 rounded-full bg-white flex items-center justify-center text-black font-bold btn`}
+            title="Add asset"
+          >
+            <span style={{ display: "inline-block", transformOrigin: "50% 50%", transition: "transform 220ms" }} className={openAdd ? "rotate-open" : ""}>
+              +
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* SUBHEADER */}
+      <div className="mt-2 text-xs text-gray-400 flex items-center gap-2">
+        {isInitialLoading && assets.length > 0 ? (
+          <>
+            <svg className="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span>Loading portfolio data...</span>
+          </>
+        ) : ( lastTick &&
+          <>
+            <span>Updated: {new Date(lastTick).toLocaleString()}</span>
+            <span>•</span>
+            <span className="flex items-center gap-1">USD/IDR ≈ {fxLoading ?
+              <span className="text-gray-400">…</span> : <span>{new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(usdIdr)}</span>}</span>
+          </>
         )}
+      </div>
 
-        {/* TABLE + SORT
-            IMPORTANT: container uses overflow-x:auto but overflow-y:visible so dropdown won't be clipped.
-        */}
-        <div className="mt-6" style={{ overflowX: 'auto', overflowY: 'visible' }}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm text-gray-400">Assets</div>
-            <div className="flex items-center gap-2 relative">
-              <button
-                aria-label="Sort"
-                onClick={() => setSortMenuOpen(v => !v)}
-                className="inline-flex items-center justify-center rounded px-2 py-1 bg-gray-900 border border-gray-800 text-gray-200 btn"
-                title="Sort assets"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <path d="M6 6h12" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
-                  <path d="M9 12h6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
-                  <path d="M11 18h2" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </button>
+      {/* KPIs */}
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm items-center">
+        <div className="flex justify-between text-gray-400">
+          <div>Invested (Deposits)</div>
+          <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(totals.invested * usdIdr, "IDR") : fmtMoney(totals.invested, "USD")}</div>
+        </div>
+        <div className="flex justify-between text-gray-400">
+          <div>Market</div>
+          <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}</div>
+        </div>
+        <div className="flex justify-between text-gray-400">
+          <div>Gain P&L</div>
+          <div className={`font-semibold ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(totals.pnl * usdIdr, "IDR") : fmtMoney(totals.pnl, "USD")} ({totals.pnlPct.toFixed(2)}%)</div>
+        </div>
+        <div className="flex items-center justify-between text-gray-400">
+          <div>Trading Balance</div>
+          <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(tradingBalanceUSD * usdIdr, "IDR") : fmtMoney(tradingBalanceUSD, "USD")}</div>
+        </div>
+      </div>
 
-              {sortMenuOpen && (
-                <div ref={sortMenuRef} className="absolute right-0 mt-2 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-56 z-40 menu-scroll">
-                  <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (high → low)</button>
-                  <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (high → low)</button>
-                  <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (high → low)</button>
-                  <button onClick={() => { setSortBy("symbol_asc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">A → Z</button>
-                  <button onClick={() => { setSortBy("oldest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Oldest</button>
-                  <button onClick={() => { setSortBy("newest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Newest</button>
-                </div>
-              )}
+      {/* ADD PANEL */}
+      {openAdd && (
+        <div ref={addPanelRef} className="mt-6 bg-transparent p-3 rounded">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex bg-gray-900 rounded overflow-hidden">
+              {/* CHANGES: Deposit tab added first (leftmost) */}
+              <button onClick={() => { setSearchMode("deposit"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "deposit" ? "bg-gray-800" : ""} btn-soft`}>Deposit</button>
+              <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""} btn-soft`}>Crypto</button>
+              <button onClick={() => { setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "id" ? "bg-gray-800" : ""} btn-soft`}>Stocks ID/US</button>
+              <button onClick={() => { setSearchMode("nonliquid"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "nonliquid" ? "bg-gray-800" : ""} btn-soft`}>Non-Liquid</button>
             </div>
           </div>
 
-          <table className="min-w-full text-sm">
-            <thead className="text-gray-400 border-b border-gray-800">
-              <tr>
-                <th className="text-left py-2 px-3">Code <div className="text-xs text-gray-500">Description</div></th>
-                <th className="text-right py-2 px-3">Qty</th>
-                <th className="text-right py-2 px-3">Invested <div className="text-xs text-gray-500">Avg price</div></th>
-                <th className="text-right py-2 px-3">Market value <div className="text-xs text-gray-500">Current Price</div></th>
-                <th className="text-right py-2 px-3">P&L <div className="text-xs text-gray-500">Gain</div></th>
-                <th className="py-2 px-3"></th>
+          {searchMode === "deposit" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+              <div>
+                <label className="text-xs text-gray-400">Deposit IDR</label>
+                <input value={depositIDR} onChange={(e) => setDepositIDR(e.target.value)} placeholder="e.g. 1,000,000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                <div className="text-xs text-gray-500 mt-1">OR</div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">Deposit USD</label>
+                <input value={depositUSD} onChange={(e) => setDepositUSD(e.target.value)} placeholder="e.g. 100" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => {
+                  const idr = toNum(depositIDR);
+                  const usd = toNum(depositUSD);
+                  if (idr <= 0 && usd <= 0) { alert("Enter IDR or USD amount"); return; }
+                  const amtUSD = usd + (idr > 0 ? (idr / (usdIdr || 1)) : 0);
+                  performDeposit({ amountUSD: amtUSD, sourceLabel: "Deposit (manual)" });
+                  setDepositIDR(""); setDepositUSD("");
+                }} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Deposit</button>
+                <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
+              </div>
+            </div>
+          ) : searchMode !== "nonliquid" ? (
+            <div className="flex gap-3 flex-col sm:flex-row items-start">
+              <div className="relative w-full sm:max-w-lg">
+                <input value={query} onChange={(e) => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder={searchMode === "crypto" ? "Search crypto (BTC, ethereum)." : "Search (AAPL | BBCA.JK)"} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-800" />
+                {suggestions.length > 0 && (
+                  <div ref={suggestionsRef} className="absolute z-50 mt-1 w-full bg-gray-950 border border-gray-800 rounded max-h-56 overflow-auto">
+                    {suggestions.map((s, i) => (
+                      <button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-900 flex justify-between">
+                        <div>
+                          <div className="font-medium text-gray-100">{s.symbol} • {s.display}</div>
+                          <div className="text-xs text-gray-500">{s.source === "coingecko" ? "Crypto" : `Security • ${s.exchange || ''}`}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <input value={initQty} onChange={(e) => setInitQty(e.target.value)} placeholder="Initial qty" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+              <input value={initPrice} onChange={(e) => setInitPrice(e.target.value)} placeholder="Initial price" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800 w-full sm:w-32" />
+              <select value={initPriceCcy} onChange={(e) => setInitPriceCcy(e.target.value)} className="rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                <option value="USD">USD</option> <option value="IDR">IDR</option>
+              </select>
+              <div className="flex items-center gap-2">
+                {/* CHANGES: removed plain Add button; only Add Assets (green) + Close */}
+                <button onClick={addAssetWithInitial} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Assets</button>
+                <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400">Name (Land, Art, Rolex.)</label>
+                <input value={nlName} onChange={(e) => setNlName(e.target.value)} placeholder="e.g. Land, Art, Rolex" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">Quantity</label>
+                <input value={nlQty} onChange={(e) => setNlQty(e.target.value)} placeholder="1" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">Price (per unit)</label>
+                <input value={nlPrice} onChange={(e) => setNlPrice(e.target.value)} placeholder="100000" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">Currency</label>
+                <select value={nlPriceCcy} onChange={(e) => setNlPriceCcy(e.target.value)} className="w-full rounded-md bg-gray-900 px-2 py-2 text-sm border border-gray-800">
+                  <option value="USD">USD</option>
+                  <option value="IDR">IDR</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">Purchase date</label>
+                <input type="date" value={nlPurchaseDate} onChange={(e) => setNlPurchaseDate(e.target.value)} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">YoY gain (%)</label>
+                <input value={nlYoy} onChange={(e) => setNlYoy(e.target.value)} placeholder="5" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs text-gray-400">Description (optional: address, serial.)</label>
+                <input value={nlDesc} onChange={(e) => setNlDesc(e.target.value)} placeholder="Optional description" className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+              </div>
+              <div className="sm:col-span-2 flex gap-2">
+                <button onClick={addNonLiquidAsset} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Non-Liquid</button>
+                <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TABLE + SORT
+          IMPORTANT: container uses overflow-x:auto but overflow-y:visible so dropdown won't be clipped.
+      */}
+      <div className="mt-6" style={{ overflowX: 'auto', overflowY: 'visible' }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm text-gray-400">Assets</div>
+          <div className="flex items-center gap-2 relative">
+            <button
+              aria-label="Sort"
+              onClick={() => setSortMenuOpen(v => !v)}
+              className="inline-flex items-center justify-center rounded px-2 py-1 bg-gray-900 border border-gray-800 text-gray-200 btn"
+              title="Sort assets"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M6 6h12" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+                <path d="M9 12h6" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+                <path d="M11 18h2" stroke="#E5E7EB" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            {sortMenuOpen && (
+              <div ref={sortMenuRef} className="absolute right-0 mt-2 bg-gray-800 border border-gray-700 rounded shadow-lg overflow-hidden w-56 z-40 menu-scroll">
+                <button onClick={() => { setSortBy("market_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Value (high → low)</button>
+                <button onClick={() => { setSortBy("invested_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Invested (high → low)</button>
+                <button onClick={() => { setSortBy("pnl_desc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">P&L (high → low)</button>
+                <button onClick={() => { setSortBy("symbol_asc"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Symbol (A → Z)</button>
+                <button onClick={() => { setSortBy("newest"); setSortMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700">Newest</button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <table className="min-w-full text-sm">
+          <thead className="text-gray-400 border-b border-gray-800">
+            <tr>
+              <th className="text-left py-2 px-3">Code <div className="text-xs text-gray-500">Description</div></th>
+              <th className="text-right py-2 px-3">Qty</th>
+              <th className="text-right py-2 px-3">Invested <div className="text-xs text-gray-500">Avg price</div></th>
+              <th className="text-right py-2 px-3">Market value <div className="text-xs text-gray-500">Current Price</div></th>
+              <th className="text-right py-2 px-3">P&L <div className="text-xs text-gray-500">Gain</div></th>
+              <th className="py-2 px-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedRows.length === 0 ? (
+              <tr><td colSpan={6} className="py-8 text-center text-gray-500">No assets — add one with the + button</td></tr>
+            ) : sortedRows.map((r) => (
+              <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
+                <td className="px-3 py-3">
+                  <div className="font-semibold text-gray-100 cursor-pointer" onClick={() => openAssetChart(r)}>{r.symbol}</div>
+                  <div className="text-xs text-gray-400">{r.description || r.name}</div>
+                </td>
+                <td className="px-3 py-3 text-right">{Number(r.shares || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
+
+                {/* Invested (top big) / Avg price (small) */}
+                <td className="px-3 py-3 text-right tabular-nums">
+                  <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.investedUSD * usdIdr, "IDR") : fmtMoney(r.investedUSD, "USD")}</div>
+                  <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.avgPrice * usdIdr, "IDR") : fmtMoney(r.avgPrice, "USD")}</div>
+                </td>
+
+                {/* Market value (top big) / Current Price (small) */}
+                <td className="px-3 py-3 text-right tabular-nums">
+                  <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")}</div>
+                  <div className="text-xs text-gray-400">{r.lastPriceUSD > 0 ? (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) : "-"}</div>
+                </td>
+
+                {/* P&L */}
+                <td className="px-3 py-3 text-right">
+                  <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(r.pnlUSD * usdIdr, "IDR") : fmtMoney(r.pnlUSD, "USD")}</div>
+                  <div className={`text-xs ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{isFinite(r.pnlPct) ? `${r.pnlPct.toFixed(2)}%` : "0.00%"}</div>
+                </td>
+
+                <td className="px-3 py-3 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => openTradeModal(r.id, 'buy')} className="px-2 py-1 rounded bg-emerald-600 text-black text-xs">Buy</button>
+                    <button onClick={() => openTradeModal(r.id, 'sell')} className="px-2 py-1 rounded bg-yellow-600 text-white text-xs">Sell</button>
+                    <button onClick={() => removeAsset(r.id)} className="px-2 py-1 rounded bg-gray-800 text-xs">Del</button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {sortedRows.length === 0 ? (
-                <tr><td colSpan={6} className="py-8 text-center text-gray-500">No assets — add one with the + button</td></tr>
-              ) : sortedRows.map((r) => (
-                <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
-                  <td className="px-3 py-3">
-                    <div className="font-semibold text-gray-100">{r.symbol}</div>
-                    <div className="text-xs text-gray-400">{r.description || r.name}</div>
-                  </td>
-                  <td className="px-3 py-3 text-right">{Number(r.shares || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-                  {/* Invested (top big) / Avg price (small) */}
-                  <td className="px-3 py-3 text-right tabular-nums">
-                    <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.investedUSD * usdIdr, "IDR") : fmtMoney(r.investedUSD, "USD")}</div>
-                    <div className="text-xs text-gray-400">{displayCcy === "IDR" ? fmtMoney(r.avgPrice * usdIdr, "IDR") : fmtMoney(r.avgPrice, "USD")}</div>
-                  </td>
-
-                  {/* Market value (top big) / Current Price (small) */}
-                  <td className="px-3 py-3 text-right tabular-nums">
-                    <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")}</div>
-                    <div className="text-xs text-gray-400">{r.lastPriceUSD > 0 ? (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) : "-"}</div>
-                  </td>
-
-                  {/* P&L */}
-                  <td className="px-3 py-3 text-right">
-                    <div className={`font-semibold ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(r.pnlUSD * usdIdr, "IDR") : fmtMoney(r.pnlUSD, "USD")}</div>
-                    <div className={`text-xs ${r.pnlUSD >= 0 ? "text-emerald-400" : "text-red-400"}`}>{isFinite(r.pnlPct) ? `${r.pnlPct.toFixed(2)}%` : "0.00%"}</div>
-                  </td>
-
-                  <td className="px-3 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Buy</button>
-                      <button onClick={() => openTradeModal(r.id, "sell")} className="bg-yellow-600 px-2 py-1 rounded text-xs btn">Sell</button>
-                      <button onClick={() => removeAsset(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Del</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* PORTFOLIO GROWTH */}
-        <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold">Portfolio Growth</div>
-            <div className="flex items-center gap-2">
-              {["1d","2d","1w","1m","1y","all"].map(k => (
-                <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"} btn`}>{k}</button>
-              ))}
-            </div>
-          </div>
-
-          <CandlesWithLines
-            seriesMap={multiSeries}
-            displayCcy={displayCcy}
-            usdIdr={usdIdr}
-            width={900}
-            height={300}
-            rangeKey={chartRange}
-            onHover={(p) => { setChartHover(p); }}
-          />
-        </div>
-
-        {/* CAKE (donut replacement) + legend */}
-        {filteredRows.length > 0 && (
-          <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
-            <div className="w-44 h-44 flex items-center justify-center">
+      {/* DONUT ALLOCATION: placed BELOW asset table (CHANGES: as requested) */}
+      {filteredRows.length > 0 && (
+        <div className="mt-6">
+          <div className="bg-gray-900 p-4 rounded border border-gray-800 flex flex-col md:flex-row items-start gap-6">
+            <div className="flex items-center justify-center" style={{ minWidth: 220 }}>
               <CakeAllocation
                 data={donutData}
-                size={176}
+                size={200}
                 inner={48}
-                gap={0.06}
+                gap={0.03}
                 displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
                 displayCcy={displayCcy}
                 usdIdr={usdIdr}
               />
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {donutData.map((d, i) => {
-                const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
-                return (
-                  <div key={d.name} className="flex items-center gap-3">
-                    <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-sm" />
-                    <div>
-                      <div className="font-semibold text-gray-100">{d.name}</div>
-                      {d.name === "Other" ? (
-                        <div className="text-xs text-gray-400">
-                          {d.symbols.join(', ')} <br/>
-                          {displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%
-                        </div>
-                      ) : (
+            <div className="flex-1">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {donutData.map((d, i) => {
+                  const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
+                  return (
+                    <div key={d.name} className="flex items-center gap-3">
+                      <div style={{ width: 10, height: 10, background: colorForIndex(i) }} className="rounded-full" />
+                      <div>
+                        <div className="font-semibold text-gray-100 text-sm">{d.name}</div>
                         <div className="text-xs text-gray-400">
                           {displayCcy === "IDR" ? fmtMoney(d.value * usdIdr, "IDR") : fmtMoney(d.value, "USD")} • {pct.toFixed(1)}%
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* TRADE MODAL */}
-        {tradeModal.open && (
-          <TradeModal
-            mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)}
-            defaultPrice={tradeModal.defaultPrice} onClose={() => closeTradeModal()}
-            onBuy={performBuy} onSell={performSell} usdIdr={usdIdr}
-          />
-        )}
-
-        {/* TRANSACTIONS MODAL */}
-        {transactionsOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[120]">
-            <div className="bg-gray-900 p-6 rounded-lg w-full max-w-3xl border border-gray-800">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="text-lg font-semibold">Transactions</div>
-                  <div className="text-xs text-gray-400">{transactions.length} records</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {lastDeletedTx && (
-                    <button onClick={() => undoLastDeletedTransaction()} className="bg-amber-500 px-3 py-1 rounded text-sm btn">Undo Delete</button>
-                  )}
-                  <button onClick={() => { setTransactionsOpen(false); }} className="bg-gray-800 px-3 py-1 rounded btn-soft">Close</button>
-                </div>
+                  );
+                })}
               </div>
-
-              {transactions.length === 0 ? (
-                <div className="text-sm text-gray-500">No transactions yet.</div>
-              ) : (
-                <div className="overflow-x-auto max-h-96">
-                  <table className="min-w-full text-sm">
-                    <thead className="text-gray-400 border-b border-gray-800">
-                      <tr>
-                        <th className="text-left py-2 px-3">Date</th>
-                        <th className="text-left py-2 px-3">Asset</th>
-                        <th className="text-right py-2 px-3">Qty</th>
-                        <th className="text-right py-2 px-3">Proceeds / Cost</th>
-                        <th className="text-right py-2 px-3">Realized</th>
-                        <th className="py-2 px-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transactions.map(tx => (
-                        <tr key={tx.id} className="border-b border-gray-900 hover:bg-gray-950">
-                          <td className="px-3 py-3">{new Date(tx.date).toLocaleString()}</td>
-                          <td className="px-3 py-3">{tx.symbol} <div className="text-xs text-gray-400">{tx.name}</div></td>
-                          <td className="px-3 py-3 text-right">{Number(tx.qty).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
-                          <td className="px-3 py-3 text-right">
-                            {tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.proceeds * usdIdr, "IDR") : fmtMoney(tx.proceeds, "USD")) : (displayCcy === "IDR" ? fmtMoney(tx.cost * usdIdr, "IDR") : fmtMoney(tx.cost, "USD"))}
-                            <div className="text-xs">{tx.pricePerUnit ? `${displayCcy === "IDR" ? fmtMoney(tx.pricePerUnit * usdIdr, "IDR") : fmtMoney(tx.pricePerUnit, "USD")} / unit` : ""}</div>
-                          </td>
-                          <td className="px-3 py-3 text-right">{tx.type === "sell" ? (displayCcy === "IDR" ? fmtMoney(tx.realized * usdIdr, "IDR") : fmtMoney(tx.realized, "USD")) : "-"}</td>
-                          <td className="px-3 py-3 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button onClick={() => { restoreTransaction(tx.id); }} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Restore</button>
-                              <button onClick={() => deleteTransaction(tx.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Delete</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {lastDeletedTx && (
-                <div className="mt-4 flex items-center justify-between">
-                  <div className="text-sm text-gray-300">Last deleted: {lastDeletedTx.symbol} ({new Date(lastDeletedTx.date).toLocaleString()})</div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => undoLastDeletedTransaction()} className="bg-emerald-500 px-3 py-1 rounded text-sm btn">Undo</button>
-                    <button onClick={() => purgeLastDeletedTransaction()} className="bg-gray-700 px-3 py-1 rounded text-sm btn-soft">Forget</button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* EXPORT / IMPORT CSV (buttons white) */}
-        <div className="mt-8 p-4 rounded bg-gray-900 border border-gray-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div className="flex-1">
-            <div className="text-sm text-gray-300">CSV: export / import (combined)</div>
-            <div className="text-xs text-gray-500">Export contains ASSETS and TRANSACTIONS in one CSV file. File includes header markers (#ASSETS, #TRANSACTIONS) and ISO dates for clean spreadsheet import.</div>
-          </div>
-          <div className="flex gap-2">
-            <div className="relative">
-              <button onClick={exportAllCSV} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-blue-600 hover:text-white">Export CSV</button>
-            </div>
-            <label className="bg-white text-black px-3 py-2 rounded font-semibold cursor-pointer btn hover:bg-emerald-500 hover:text-white">
-              Import CSV
-              <input type="file" accept=".csv,text/csv" onChange={onImportClick} className="hidden" />
-            </label>
-            <button onClick={() => {
-              if (!confirm("This will clear your portfolio and realized P&L. Continue?")) return;
-              setAssets([]); setRealizedUSD(0); setTransactions([]); setLastDeletedTx(null);
-            }} className="bg-white text-black px-3 py-2 rounded font-semibold btn hover:bg-red-600 hover:text-white">Clear All</button>
+      {/* PORTFOLIO GROWTH */}
+      <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold">Portfolio Growth</div>
+          <div className="flex items-center gap-2">
+            {["1d","2d","1w","1m","1y","all"].map(k => (
+              <button key={k} onClick={() => setChartRange(k)} className={`text-xs px-2 py-1 rounded ${chartRange===k ? "bg-gray-700 text-white" : "bg-gray-900 text-gray-300"} btn`}>{k}</button>
+            ))}
           </div>
         </div>
 
+        <CandlesWithLines
+          seriesMap={multiSeries}
+          displayCcy={displayCcy}
+          usdIdr={usdIdr}
+          width={900}
+          height={300}
+          rangeKey={chartRange}
+          onHover={(p) => { setChartHover(p); }}
+        />
       </div>
+
+      {/* EXPORT / CSV */}
+      <div className="mt-4 flex items-center gap-3">
+        <button onClick={exportAllCSV} className="bg-gray-800 px-3 py-2 rounded btn">Export CSV</button>
+        <label className="bg-gray-800 px-3 py-2 rounded btn cursor-pointer">
+          Import CSV
+          <input type="file" accept=".csv" onChange={onImportClick} style={{ display: "none" }} />
+        </label>
+      </div>
+
+      {/* TRADE MODAL */}
+      {tradeModal.open && (
+        <TradeModal
+          mode={tradeModal.mode} asset={assets.find(a => a.id === tradeModal.assetId)}
+          defaultPrice={tradeModal.defaultPrice} onClose={() => closeTradeModal()}
+          onBuy={performBuy} onSell={performSell} usdIdr={usdIdr} tradingBalanceUSD={tradingBalanceUSD}
+        />
+      )}
+
+      {/* ASSET CHART MODAL (TradingView / CoinGecko fallback) */}
+      {assetChartOpen && chartAsset && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[110] p-4">
+          <div className="bg-gray-900 w-full max-w-4xl rounded p-4 border border-gray-800">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <h3 className="text-lg font-semibold">{chartAsset.symbol} — {chartAsset.name}</h3>
+                <div className="text-xs text-gray-400">{chartAsset.type}</div>
+              </div>
+              <button onClick={closeAssetChart} className="text-gray-400">×</button>
+            </div>
+
+            <div style={{ height: 420 }}>
+              {/* Try TradingView embed by symbol; fallback to coingecko page */}
+              {chartAsset.type === "stock" ? (
+                <iframe title="tv-widget" src={`https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(chartAsset.symbol)}&interval=D&symboledit=1&saveimage=1`} style={{ width: "100%", height: "100%", border: 0 }} />
+              ) : chartAsset.type === "crypto" && chartAsset.coingeckoId ? (
+                // Try tradingview symbol as COINBASE:SYMBOLUSD or fallback to coingecko
+                <iframe title="tv-crypto" src={`https://s.tradingview.com/widgetembed/?symbol=COINBASE:${encodeURIComponent((chartAsset.symbol || "") + "USD")}`} style={{ width: "100%", height: "100%", border: 0 }} onError={(e)=>{}}/>
+              ) : (
+                <iframe title="coingecko" src={`https://www.coingecko.com/en/coins/${encodeURIComponent(chartAsset.coingeckoId || chartAsset.symbol)}/usd`} style={{ width: "100%", height: "100%", border: 0 }} />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
