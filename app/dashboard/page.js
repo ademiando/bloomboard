@@ -389,7 +389,7 @@ export default function PortfolioDashboard() {
     localStorage.setItem("pf_transactions", JSON.stringify(transactions));
   }, [transactions]);
 
-  useEffect(() => {
+  useEffect(() {
     localStorage.setItem("pf_deposited_usd", depositedUSD);
   }, [depositedUSD]);
 
