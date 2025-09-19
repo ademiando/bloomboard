@@ -96,11 +96,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
   const minOuter = inner + 8;
   const maxValue = Math.max(...data.map(d => Math.max(0, d.value || 0)), 1);
 
-  const scaleOuter = (v) => {
-    if (!v || v <= 0) return inner + 6;
-    const frac = v / maxValue;
-    return Math.round(minOuter + frac * (maxOuter - minOuter));
-  };
+  const scaleOuter = (v) => { return maxOuter; };
 
   const colors = [
     "#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9CEE",
@@ -214,26 +210,7 @@ function CakeAllocation({ data = [], size = 200, inner = 48, gap = 0.02, display
         zIndex: 40
       }}>
         {tooltip.html}
-      
-{chartModal.open && (
-  <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
-    <div className="bg-gray-900 p-6 rounded-lg w-full max-w-4xl border border-gray-800">
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-lg font-semibold">{chartModal.symbol} Chart</div>
-        <button onClick={() => closeChartModal()} className="text-gray-200 text-xl">&times;</button>
       </div>
-      <div className="h-96 w-full">
-        {chartModal.type === "crypto" ? (
-          <iframe src={`https://s.tradingview.com/embed-widget/mini-symbol-overview?symbol=BINANCE:${chartModal.symbol}USDT`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
-        ) : (
-          <iframe src={`https://www.tradingview.com/widgetembed/?symbol=${chartModal.symbol}`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-
-</div>
     </div>
   );
 }
@@ -403,41 +380,22 @@ function CandlesWithLines({ seriesMap = {}, displayCcy = "USD", usdIdr = 16000, 
 
       <div className="mt-2 flex items-center gap-4 text-xs">
         <div className="flex items-center gap-2">
-          <div style={{ width: 10, height: 10, background: "#4D96FF" }} className="rounded-sm" />
+          <div style={{ width: 10, height: 10, background: "#4D96FF" }} className="rounded-full" />
           <div className="text-xs text-gray-300">All</div>
         </div>
         <div className="flex items-center gap-2">
-          <div style={{ width: 10, height: 10, background: "#FF6B6B" }} className="rounded-sm" />
+          <div style={{ width: 10, height: 10, background: "#FF6B6B" }} className="rounded-full" />
           <div className="text-xs text-gray-300">Crypto</div>
         </div>
         <div className="flex items-center gap-2">
-          <div style={{ width: 10, height: 10, background: "#6BCB77" }} className="rounded-sm" />
+          <div style={{ width: 10, height: 10, background: "#6BCB77" }} className="rounded-full" />
           <div className="text-xs text-gray-300">Stocks</div>
         </div>
         <div className="flex items-center gap-2">
-          <div style={{ width: 10, height: 10, background: "#FFD93D" }} className="rounded-sm" />
+          <div style={{ width: 10, height: 10, background: "#FFD93D" }} className="rounded-full" />
           <div className="text-xs text-gray-300">Non-Liquid</div>
         </div>
-      
-{chartModal.open && (
-  <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
-    <div className="bg-gray-900 p-6 rounded-lg w-full max-w-4xl border border-gray-800">
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-lg font-semibold">{chartModal.symbol} Chart</div>
-        <button onClick={() => closeChartModal()} className="text-gray-200 text-xl">&times;</button>
       </div>
-      <div className="h-96 w-full">
-        {chartModal.type === "crypto" ? (
-          <iframe src={`https://s.tradingview.com/embed-widget/mini-symbol-overview?symbol=BINANCE:${chartModal.symbol}USDT`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
-        ) : (
-          <iframe src={`https://www.tradingview.com/widgetembed/?symbol=${chartModal.symbol}`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-
-</div>
     </div>
   );
 }
@@ -507,26 +465,7 @@ function TradeModal({ mode, asset, defaultPrice, onClose, onBuy, onSell, usdIdr 
             {mode === 'buy' ? 'Confirm Buy' : 'Confirm Sell'}
           </button>
         </form>
-      
-{chartModal.open && (
-  <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
-    <div className="bg-gray-900 p-6 rounded-lg w-full max-w-4xl border border-gray-800">
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-lg font-semibold">{chartModal.symbol} Chart</div>
-        <button onClick={() => closeChartModal()} className="text-gray-200 text-xl">&times;</button>
       </div>
-      <div className="h-96 w-full">
-        {chartModal.type === "crypto" ? (
-          <iframe src={`https://s.tradingview.com/embed-widget/mini-symbol-overview?symbol=BINANCE:${chartModal.symbol}USDT`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
-        ) : (
-          <iframe src={`https://www.tradingview.com/widgetembed/?symbol=${chartModal.symbol}`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-
-</div>
     </div>
   );
 }
@@ -581,9 +520,13 @@ export default function PortfolioDashboard() {
 
   /* ---------- add/search state ---------- */
   const [openAdd, setOpenAdd] = useState(false);
-const [depositIdrInput, setDepositIdrInput] = useState("");
-const [depositUsdInput, setDepositUsdInput] = useState("");
-const [depositTotal, setDepositTotal] = useState(0);
+  const [depositIdrInput, setDepositIdrInput] = useState("");
+  const [depositUsdInput, setDepositUsdInput] = useState("");
+  const [depositTotal, setDepositTotal] = useState(0);
+  const [depositFormOpen, setDepositFormOpen] = useState(false);
+  const [chartModal, setChartModal] = useState({ open: false, symbol: "", coingeckoId: "", type: "" });
+  function openChartModal(asset){ setChartModal({ open: true, symbol: asset.symbol, coingeckoId: asset.coingeckoId || asset.id, type: asset.type || "stock" }); }
+  function closeChartModal(){ setChartModal({ open: false, symbol: "", coingeckoId: "", type: "" }); }
 
   const [searchMode, setSearchMode] = useState("crypto");
   const [query, setQuery] = useState("");
@@ -1247,10 +1190,10 @@ const [depositTotal, setDepositTotal] = useState(0);
   }, [filteredRows]);
 
 const tradingBalance = useMemo(() => {
-  const invested = (totals && totals.invested) ? totals.invested : 0;
-  const deposits = (typeof depositTotal !== "undefined") ? depositTotal : (typeof depositTotalUSD !== "undefined" ? depositTotalUSD : 0);
-  return Math.max(0, (deposits || 0) - invested);
-}, [totals, typeof depositTotal !== "undefined" ? depositTotal : (typeof depositTotalUSD !== "undefined" ? depositTotalUSD : 0)]);
+  const investedSum = (totals && totals.invested) ? totals.invested : 0;
+  const deposits = (typeof depositTotal !== "undefined") ? depositTotal : 0;
+  return Math.max(0, (deposits || 0) - investedSum);
+}, [totals, depositTotal]);
 
 
   /* donut/cake data */
@@ -1588,7 +1531,7 @@ const tradingBalance = useMemo(() => {
 
   /* RENDER */
   const titleForFilter = {
-    all: ">",
+    all: "All Portfolio",
     crypto: "Crypto Portfolio",
     stock: "Stocks Portfolio",
     nonliquid: "Non-Liquid Portfolio",
@@ -1716,6 +1659,11 @@ const tradingBalance = useMemo(() => {
             <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}</div>
           </div>
           <div className="flex justify-between text-gray-400">
+            <div>Trading Balance</div>
+            <div className="font-medium">{displayCcy === "IDR" ? fmtMoney((depositTotal - totals.invested) * usdIdr, "IDR") : fmtMoney(depositTotal - totals.invested, "USD")}</div>
+          </div>
+    
+          <div className="flex justify-between text-gray-400">
             <div>Gain P&L</div>
             <div className={`font-semibold ${totals.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>{displayCcy === "IDR" ? fmtMoney(totals.pnl * usdIdr, "IDR") : fmtMoney(totals.pnl, "USD")} ({totals.pnlPct.toFixed(2)}%)</div>
           </div>
@@ -1739,6 +1687,15 @@ const tradingBalance = useMemo(() => {
         {openAdd && (
           <div ref={addPanelRef} className="mt-6 bg-transparent p-3 rounded">
             <div className="flex items-center gap-3 mb-3">
+              <button onClick={() => setDepositFormOpen(v => !v)} className="bg-emerald-500 hover:bg-emerald-400 text-black px-3 py-2 rounded font-semibold btn mr-2">Deposit</button>
+              {depositFormOpen && (
+                <div className="flex items-center gap-2 mr-4">
+                  <input value={depositIdrInput} onChange={(e)=>setDepositIdrInput(e.target.value)} placeholder="IDR" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                  <input value={depositUsdInput} onChange={(e)=>setDepositUsdInput(e.target.value)} placeholder="USD" className="rounded-md bg-gray-900 px-3 py-2 text-sm border border-gray-800" />
+                  <button onClick={() => { const idr = Number(depositIdrInput)||0; const usd = Number(depositUsdInput)||0; const addUSD = (idr>0? idr/(usdIdr||1):0)+usd; if(addUSD>0){ setDepositTotal(t=>t+addUSD); setDepositIdrInput(''); setDepositUsdInput(''); setDepositFormOpen(false);} }} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded font-semibold btn">Add Deposit</button>
+                </div>
+              )}
+
               <div className="flex bg-gray-900 rounded overflow-hidden">
                 <button onClick={() => { setSearchMode("crypto"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "crypto" ? "bg-gray-800" : ""} btn-soft`}>Crypto</button>
                 <button onClick={() => { setSearchMode("id"); setQuery(""); setSuggestions([]); }} className={`px-3 py-2 text-sm ${searchMode === "id" ? "bg-gray-800" : ""} btn-soft`}>Stocks ID</button>
@@ -1770,7 +1727,7 @@ const tradingBalance = useMemo(() => {
                   <option value="USD">USD</option> <option value="IDR">IDR</option>
                 </select>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add Assets</button>
+                  <button onClick={() => selectedSuggestion ? addAssetFromSuggestion(selectedSuggestion) : addManualAsset()} className="bg-emerald-500 hover:bg-emerald-400 text-black px-4 py-2 rounded font-semibold btn">Add</button>
                   <button onClick={addAssetWithInitial} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-semibold btn">Add + Position</button>
                   <button onClick={() => setOpenAdd(false)} className="bg-gray-800 px-3 py-2 rounded btn-soft">Close</button>
                 </div>
@@ -1867,7 +1824,7 @@ const tradingBalance = useMemo(() => {
               ) : sortedRows.map((r) => (
                 <tr key={r.id} className="border-b border-gray-900 hover:bg-gray-950">
                   <td className="px-3 py-3">
-                    <div className="font-semibold text-gray-100">{r.symbol}</div>
+                    <button onClick={()=>openChartModal(r)} className="font-semibold text-gray-100 text-left">{r.symbol}</button>
                     <div className="text-xs text-gray-400">{r.description || r.name}</div>
                   </td>
                   <td className="px-3 py-3 text-right">{Number(r.shares || 0).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
@@ -1881,7 +1838,7 @@ const tradingBalance = useMemo(() => {
                   {/* Market value (top big) / Current Price (small) */}
                   <td className="px-3 py-3 text-right tabular-nums">
                     <div className="font-medium">{displayCcy === "IDR" ? fmtMoney(r.marketValueUSD * usdIdr, "IDR") : fmtMoney(r.marketValueUSD, "USD")}</div>
-                    <div className="text-xs text-gray-400">{r.lastPriceUSD > 0 ? (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) : "-"}</div>
+                    <div className="text-xs text-gray-400">{ r.lastPriceUSD > 0 ? ( (displayCcy === "IDR" ? fmtMoney(r.lastPriceUSD * usdIdr, "IDR") : fmtMoney(r.lastPriceUSD, "USD")) + " â€¢ " + (totals.invested > 0 ? ((r.marketValueUSD - r.investedUSD) / totals.invested * 100).toFixed(2) : "0.00") + "%" ) : "-" }</div>
                   </td>
 
                   {/* P&L */}
@@ -1894,7 +1851,7 @@ const tradingBalance = useMemo(() => {
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => openTradeModal(r.id, "buy")} className="bg-emerald-500 px-2 py-1 rounded text-xs font-semibold text-black btn">Buy</button>
                       <button onClick={() => openTradeModal(r.id, "sell")} className="bg-yellow-600 px-2 py-1 rounded text-xs btn">Sell</button>
-                      </* table deletion button preserved elsewhere */
+                      <button onClick={() => removeAsset(r.id)} className="bg-red-600 px-2 py-1 rounded text-xs font-semibold text-black btn">Del</button>
                     </div>
                   </td>
                 </tr>
@@ -1903,7 +1860,16 @@ const tradingBalance = useMemo(() => {
           </table>
         </div>
 
-        {/* PORTFOLIO GROWTH */}
+        /* CAKE (donut replacement) + legend */}
+        {filteredRows.length > 0 && (
+          <div className="mt-6 flex flex-row items-center gap-6">
+            <div className="w-44 h-44 flex items-center justify-center">
+              <CakeAllocation
+                data={donutData}
+                size={176}
+                inner={48}
+                gap={0.06}
+                displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}{/* PORTFOLIO GROWTH */}
         <div className="mt-6 bg-gray-900 p-4 rounded border border-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold">Portfolio Growth</div>
@@ -1925,16 +1891,7 @@ const tradingBalance = useMemo(() => {
           />
         </div>
 
-        {/* CAKE (donut replacement) + legend */}
-        {filteredRows.length > 0 && (
-          <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
-            <div className="w-44 h-44 flex items-center justify-center">
-              <CakeAllocation
-                data={donutData}
-                size={176}
-                inner={48}
-                gap={0.06}
-                displayTotal={displayCcy === "IDR" ? fmtMoney(totals.market * usdIdr, "IDR") : fmtMoney(totals.market, "USD")}
+        {
                 displayCcy={displayCcy}
                 usdIdr={usdIdr}
               />
@@ -1943,16 +1900,9 @@ const tradingBalance = useMemo(() => {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {donutData.map((d, i) => {
                 const pct = totals.market > 0 ? (d.value / totals.market) * 100 : 0;
-                
-/* Chart modal (TradingView or CoinGecko fallback) */
-const [chartModal, setChartModal] = useState({ open: false, symbol: "", coingeckoId: "", type: "" });
-function openChartModal(asset) {
-  setChartModal({ open: true, symbol: asset.symbol, coingeckoId: asset.coingeckoId || asset.id, type: asset.type || "stock" });
-}
-function closeChartModal() { setChartModal({ open: false, symbol: "", coingeckoId: "", type: "" }); }
-return (
+                return (
                   <div key={d.name} className="flex items-center gap-3">
-                    <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-sm" />
+                    <div style={{ width: 12, height: 12, background: colorForIndex(i) }} className="rounded-full" />
                     <div>
                       <div className="font-semibold text-gray-100">{d.name}</div>
                       {d.name === "Other" ? (
@@ -2072,7 +2022,7 @@ return (
           </div>
         </div>
 
-      
+      </div>
 {chartModal.open && (
   <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
     <div className="bg-gray-900 p-6 rounded-lg w-full max-w-4xl border border-gray-800">
@@ -2084,15 +2034,13 @@ return (
         {chartModal.type === "crypto" ? (
           <iframe src={`https://s.tradingview.com/embed-widget/mini-symbol-overview?symbol=BINANCE:${chartModal.symbol}USDT`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
         ) : (
-          <iframe src={`https://www.tradingview.com/widgetembed/?symbol=${chartModal.symbol}`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
+          <iframe src={`https://s.tradingview.com/embed-widget/mini-symbol-overview?symbol=${chartModal.symbol}`} style={{width:"100%", height:"100%"}} frameBorder="0"></iframe>
         )}
       </div>
     </div>
   </div>
 )}
 
-</div>
     </div>
   );
 }
-
