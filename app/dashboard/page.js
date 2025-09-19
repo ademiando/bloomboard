@@ -2096,6 +2096,3 @@ return (
   );
 }
 
-const _PAD_0 = null;
-const _PAD_1 = null;
-const _PAD_2 = null;
