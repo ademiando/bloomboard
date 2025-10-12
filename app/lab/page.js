@@ -1,519 +1,707 @@
-
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-/*
-  Modified per user's instructions:
-  - Performance moved to a main tab next to Portfolio; added Trade and History tabs.
-  - Asset column now shows Invested value and Avg price under the asset name.
-  - Display currency switch (IDR/USD) affects ALL numeric values and shows small decimals for precision.
-  - Crypto pricing/search use CoinGecko; stocks use Yahoo/Finnhub endpoints. Polling for crypto + stocks implemented.
-  - Only functional / logical changes made; design left intact where possible.
-*/
+/**
+ * Final dashboard page (single-file)
+ *
+ * Realtime sources:
+ *  - Crypto: CoinGecko public API
+ *  - Stocks: expects backend proxy at /api/finnhub/quote and /api/finnhub/candle
+ *
+ * Persist: localStorage for assets, transactions, settings.
+ *
+ * Important: Avg Price displayed with 2 decimals only. All numbers show currency label (IDR/USD).
+ */
 
-/* ===================== SVG ICONS ===================== */
-const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#374151"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" fill="#9CA3AF"></path></svg>);
-const MoreVerticalIcon = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>);
-const ArrowRightIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>);
-const BackArrowIcon = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
-const GraphIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>);
+/* ----------------- Helpers ----------------- */
+const COINGECKO_API = "https://api.coingecko.com/api/v3";
+const COINGECKO_SIMPLE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd,idr`;
+const COINGECKO_SEARCH = (q) => `${COINGECKO_API}/search?query=${encodeURIComponent(q)}`;
+const COINGECKO_MARKETCHART = (id, days) => `${COINGECKO_API}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${days}&interval=hourly`;
 
-/* ===================== CONFIG & HELPERS ===================== */
-const COINGECKO_API = "https://api.coingecko.com/api/v3", YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`, FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`, COINGECKO_PRICE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd,idr`, COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
-const isBrowser = typeof window !== "undefined", toNum = (v) => { const n = Number(String(v).replace(/,/g, '')); return isNaN(n) ? 0 : n; };
+// stock proxies (expected on your server)
+const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`;
+const FINNHUB_CANDLE = (symbol, from, to) => `/api/finnhub/candle?symbol=${encodeURIComponent(symbol)}&from=${from}&to=${to}`;
 
-/*
-  fmt: unified formatting for IDR/USD with precision.
-  - displayCcy = 'IDR' or 'USD'
-  - For IDR show 2 decimals for precision; for USD show up to 6 decimals (prices often need precision)
-*/
-function fmt(val, displayCcy = "IDR", digits = null) {
-    const n = Number(val || 0);
-    if (displayCcy === "USD") {
-        const md = digits == null ? 4 : digits; // default 4 but allow override
-        return new Intl.NumberFormat("en-US", { style: "decimal", minimumFractionDigits: Math.max(2, md - 2), maximumFractionDigits: Math.max(2, md) }).format(n);
-    }
-    // IDR
-    const md = digits == null ? 2 : digits;
-    return new Intl.NumberFormat("id-ID", { style: "decimal", minimumFractionDigits: md, maximumFractionDigits: md }).format(n);
+// utilities
+const isBrowser = typeof window !== "undefined";
+const toNum = (v) => {
+  const n = Number(String(v).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
+function fmtNum(val, currency = "IDR", decimals = 0) {
+  const n = Number(val || 0);
+  if (currency === "USD") {
+    // USD: show decimals when requested (avg price 2 decimals), other numbers integer unless large
+    return `${currency} ${n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+  }
+  // IDR
+  return `${currency} ${n.toLocaleString("id-ID", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+}
+function ensureAsset(a) {
+  return {
+    id: a.id || `${a.type}:${a.symbol || a.coingeckoId || a.name}:${Date.now()}`,
+    type: a.type || "crypto", // 'crypto' | 'stock' | 'nonliquid'
+    symbol: a.symbol || (a.type === "stock" ? a.symbol : undefined),
+    coingeckoId: a.coingeckoId || undefined,
+    name: a.name || a.symbol || a.coingeckoId || "Unknown",
+    shares: toNum(a.shares || a.quantity || a.units || 0),
+    avgPrice: toNum(a.avgPrice || a.price || 0), // stored in USD base
+    investedUSD: toNum(a.investedUSD || ( (a.shares||0) * (a.avgPrice||0) )),
+    lastPriceUSD: toNum(a.lastPriceUSD || 0),
+    realizedUSD: toNum(a.realizedUSD || 0),
+    createdAt: a.createdAt || Date.now(),
+  };
 }
 
-function ensureNumericAsset(a) { return { ...a, id: a.id || `${a.type}:${a.symbol}:${Math.random()}`, shares: toNum(a.shares || 0), avgPrice: toNum(a.avgPrice || 0), investedUSD: toNum(a.investedUSD || 0), lastPriceUSD: toNum(a.lastPriceUSD || 0), createdAt: a.createdAt || Date.now(), purchaseDate: a.purchaseDate || a.createdAt || Date.now(), nonLiquidYoy: toNum(a.nonLiquidYoy || 0), type: a.type || "stock" }; }
+/* ----------------- Small UI icons ----------------- */
+const Back = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>);
+const Graph = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>);
 
-/* ===================== UI COMPONENTS ===================== */
-const Modal = ({ children, isOpen, onClose, title }) => { if (!isOpen) return null; return (<div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}><div className="bg-[#181818] rounded-lg w-full max-w-lg border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}><div className="flex justify-between items-center p-4 border-b border-gray-700"><h2 className="text-lg font-semibold text-white">{title}</h2><button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button></div><div className="p-4">{children}</div></div></div>); };
-const BottomSheet = ({ isOpen, onClose, children }) => { if (!isOpen) return null; return (<div className="fixed inset-0 bg-black/60 z-40" onClick={onClose}><div className={`fixed bottom-0 left-0 right-0 bg-[#1e1e1e] rounded-t-2xl shadow-lg transition-transform duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}><div className="w-10 h-1 bg-gray-600 rounded-full mx-auto my-3"></div>{children}</div></div>); };
-
-/* ===================== MAIN DASHBOARD COMPONENT ===================== */
+/* ----------------- Main Component ----------------- */
 export default function PortfolioDashboard() {
-    const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_assets_v9") || "[]").map(ensureNumericAsset) : []);
-    const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_realized_v9") || 0) : 0);
-    const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_transactions_v9") || "[]") : []);
-    const [tradingBalance, setTradingBalance] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_balance_v9") || 5952) : 5952);
-    const [displayCcy, setDisplayCcy] = useState(() => isBrowser ? localStorage.getItem("pf_display_ccy_v9") || "IDR" : "IDR");
-    const [usdIdr, setUsdIdr] = useState(16400);
-    const [isFxLoading, setIsFxLoading] = useState(true);
-    const [view, setView] = useState('main'); // main | performance | trade | history
-    const [isAddAssetModalOpen, setAddAssetModalOpen] = useState(false);
-    const [searchMode, setSearchMode] = useState("id");
-    const [query, setQuery] = useState("");
-    const [suggestions, setSuggestions] = useState([]);
-    const [selectedSuggestion, setSelectedSuggestion] = useState(null);
-    const [isManagePortfolioOpen, setManagePortfolioOpen] = useState(false);
-    const [isBalanceModalOpen, setBalanceModalOpen] = useState(false);
-    const [balanceModalMode, setBalanceModalMode] = useState('Add');
-    const [tradeModal, setTradeModal] = useState({ open: false, asset: null });
-    const [chartRange, setChartRange] = useState("YTD");
+  // data
+  const [assets, setAssets] = useState(() => {
+    try { return (isBrowser && JSON.parse(localStorage.getItem("pf_assets_v2") || "[]").map(ensureAsset)) || []; } catch { return []; }
+  });
+  const [transactions, setTransactions] = useState(() => {
+    try { return (isBrowser && JSON.parse(localStorage.getItem("pf_tx_v2") || "[]")) || []; } catch { return []; }
+  });
+  const [displayCcy, setDisplayCcy] = useState(() => (isBrowser && (localStorage.getItem("pf_display_ccy_v2") || "IDR")) || "IDR");
+  const [usdIdr, setUsdIdr] = useState(16400);
+  const [isFxLoading, setIsFxLoading] = useState(true);
 
-    const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
+  // UI
+  const [activeTab, setActiveTab] = useState("portfolio"); // portfolio | performance | trade | view
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(null);
+  const [tradeModal, setTradeModal] = useState({ open: false, asset: null, mode: "buy" });
+  const [chartRange, setChartRange] = useState("30"); // days for market_chart
 
-    useEffect(() => { if(isBrowser) localStorage.setItem("pf_assets_v9", JSON.stringify(assets)); }, [assets]);
-    useEffect(() => { if(isBrowser) localStorage.setItem("pf_realized_v9", String(realizedUSD)); }, [realizedUSD]);
-    useEffect(() => { if(isBrowser) localStorage.setItem("pf_transactions_v9", JSON.stringify(transactions)); }, [transactions]);
-    useEffect(() => { if(isBrowser) localStorage.setItem("pf_balance_v9", String(tradingBalance)); }, [tradingBalance]);
-    useEffect(() => { if(isBrowser) localStorage.setItem("pf_display_ccy_v9", displayCcy); }, [displayCcy]);
+  // realtime price map (USD)
+  const [priceMap, setPriceMap] = useState({}); // key: symbol or coingeckoId -> {usd, idr}
 
-    useEffect(() => {
-        const fetchFx = async () => {
-            setIsFxLoading(true);
-            try { const res = await fetch(COINGECKO_USD_IDR); const j = await res.json(); if (j?.tether?.idr) setUsdIdr(Math.round(j.tether.idr)); } catch (e) {}
-            finally { setIsFxLoading(false); }
-        };
-        fetchFx();
-        const id = setInterval(fetchFx, 70000);
-        return () => clearInterval(id);
-    }, []);
+  // persist
+  useEffect(() => { localStorage.setItem("pf_assets_v2", JSON.stringify(assets)); }, [assets]);
+  useEffect(() => { localStorage.setItem("pf_tx_v2", JSON.stringify(transactions)); }, [transactions]);
+  useEffect(() => { localStorage.setItem("pf_display_ccy_v2", displayCcy); }, [displayCcy]);
 
-    /*
-      pollPrices: unified polling for stocks (via Finnhub) and crypto (via CoinGecko).
-      Updates each asset's lastPriceUSD.
-    */
-    useEffect(() => {
-        const pollPrices = async () => {
-            if (assets.length === 0) return;
+  /* ----------------- FX (USD <-> IDR) ----------------- */
+  useEffect(() => {
+    let mounted = true;
+    const fetchFx = async () => {
+      setIsFxLoading(true);
+      try {
+        const res = await fetch(`${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`);
+        const j = await res.json();
+        if (mounted && j?.tether?.idr) setUsdIdr(Number(j.tether.idr));
+      } catch (e) {
+        // ignore
+      } finally { if (mounted) setIsFxLoading(false); }
+    };
+    fetchFx();
+    const id = setInterval(fetchFx, 60_000);
+    return () => { mounted = false; clearInterval(id); };
+  }, []);
 
-            // Stocks: use Finnhub per symbol (backend proxy expected)
-            const stockSymbols = [...new Set(assets.filter(a => a.type === "stock").map(a => a.symbol))];
-            let priceMap = {};
-            if (stockSymbols.length > 0) {
-                for (const symbol of stockSymbols) {
-                    try { const res = await fetch(FINNHUB_QUOTE(symbol)); const data = await res.json(); const price = toNum(data?.c); if (price > 0) { const isIdr = symbol.toUpperCase().endsWith('.JK'); priceMap[symbol] = { [isIdr ? 'idr' : 'usd']: price }; } } catch (e) { }
-                }
-            }
+  /* ----------------- PRICE POLLING (crypto via Coingecko, stocks via proxy) ----------------- */
+  useEffect(() => {
+    let mounted = true;
+    const poll = async () => {
+      if (assets.length === 0) return;
+      // crypto ids
+      const cryptoIds = assets.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId).filter(Boolean);
+      if (cryptoIds.length > 0) {
+        try {
+          const idsParam = [...new Set(cryptoIds)].join(",");
+          const res = await fetch(COINGECKO_SIMPLE(idsParam));
+          const j = await res.json();
+          if (mounted) {
+            const newMap = { ...priceMap };
+            Object.keys(j || {}).forEach(id => {
+              newMap[`cg:${id}`] = { usd: Number(j[id].usd || 0), idr: Number(j[id].idr || 0) };
+            });
+            setPriceMap(newMap);
+          }
+        } catch (e) {}
+      }
 
-            // Crypto: use CoinGecko simple price for all coin ids present
-            const cryptoIds = [...new Set(assets.filter(a => a.type === 'crypto' && a.coingeckoId).map(a => a.coingeckoId))];
-            let cryptoPriceMap = {};
-            if (cryptoIds.length > 0) {
-                try {
-                    const idsParam = cryptoIds.join(',');
-                    const res = await fetch(COINGECKO_PRICE(idsParam));
-                    const j = await res.json();
-                    // j: { bitcoin: { usd: 123, idr: 1230000 }, ethereum: { ... } }
-                    for (const id of cryptoIds) {
-                        if (j[id]) cryptoPriceMap[id] = { usd: toNum(j[id].usd), idr: toNum(j[id].idr) };
-                    }
-                } catch (e) {}
-            }
+      // stocks: unique symbols
+      const stockSymbols = [...new Set(assets.filter(a => a.type === "stock").map(a => a.symbol))].filter(Boolean);
+      for (const symbol of stockSymbols) {
+        try {
+          const res = await fetch(FINNHUB_QUOTE(symbol));
+          if (!res.ok) continue;
+          const j = await res.json(); // { c: current, ... }
+          if (mounted && j && j.c) {
+            setPriceMap(prev => ({ ...prev, [`st:${symbol}`]: { usd: Number(j.c), idr: Number(j.c) * usdIdr } }));
+          }
+        } catch (e) {}
+      }
+    };
 
-            if (Object.keys(priceMap).length > 0 || Object.keys(cryptoPriceMap).length > 0) {
-                setAssets(prev => prev.map(a => {
-                    if (a.type === 'stock' && priceMap[a.symbol]) {
-                        const isIdrStock = a.symbol.endsWith('.JK');
-                        const priceData = priceMap[a.symbol];
-                        let lastPriceUSD = a.lastPriceUSD;
-                        if (isIdrStock && priceData.idr) { lastPriceUSD = priceData.idr / usdIdr; }
-                        else if (priceData.usd) { lastPriceUSD = priceData.usd; }
-                        return { ...a, lastPriceUSD };
-                    }
-                    if (a.type === 'crypto' && a.coingeckoId && cryptoPriceMap[a.coingeckoId]) {
-                        const p = cryptoPriceMap[a.coingeckoId];
-                        const lastPriceUSD = p.usd || a.lastPriceUSD;
-                        return { ...a, lastPriceUSD };
-                    }
-                    return a;
-                }));
-            }
-        };
-        pollPrices();
-        const id = setInterval(pollPrices, 30000);
-        return () => clearInterval(id);
-    }, [assets.length, usdIdr]);
+    poll();
+    const id = setInterval(poll, 25_000);
+    return () => { mounted = false; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assets, usdIdr]);
 
-    const searchTimeoutRef = useRef(null);
-    useEffect(() => {
-        if (!query || query.trim().length < 2) { setSuggestions([]); return; }
-        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-        searchTimeoutRef.current = setTimeout(async () => {
-            try {
-                const q = query.trim();
-                if (searchMode === 'crypto') {
-                    const res = await fetch(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}`); const j = await res.json();
-                    setSuggestions((j.coins||[]).slice(0,10).map(c=>({symbol:c.symbol.toUpperCase(),display:c.name,id:c.id,source:"coingecko",type:"crypto"})));
-                } else {
-                    const res = await fetch(YAHOO_SEARCH(q));
-                    if (!res.ok) throw new Error('API fetch failed');
-                    const payload = await res.json();
-                    const list = (payload.quotes||[]).map(it=>({symbol:it.symbol.toUpperCase(),display:it.shortname||it.longname||it.symbol,exchange:it.exchange,source:"yahoo",type:"stock"}));
-                    if (searchMode === "id") setSuggestions(list.filter(x => x.symbol.toUpperCase().endsWith(".JK")));
-                    else if (searchMode === "us") setSuggestions(list.filter(x => !x.symbol.toUpperCase().endsWith(".JK") && (x.exchange === 'NMS' || x.exchange === 'NYQ')));
-                    else setSuggestions(list);
-                }
-            } catch (e) { setSuggestions([]); }
-        }, 350);
-        return () => clearTimeout(searchTimeoutRef.current);
-    }, [query, searchMode]);
+  /* ----------------- Search suggestions (CoinGecko + Yahoo proxy) ----------------- */
+  const searchTimeout = useRef(null);
+  useEffect(() => {
+    if (!query || query.trim().length < 2) { setSuggestions([]); return; }
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(async () => {
+      try {
+        // coingecko search (crypto first)
+        const cRes = await fetch(COINGECKO_SEARCH(query.trim()));
+        const cj = await cRes.json();
+        const coins = (cj.coins || []).slice(0, 6).map(c => ({ type: "crypto", display: c.name, symbol: c.symbol.toUpperCase(), coingeckoId: c.id }));
+        // yahoo search proxy for stocks
+        let stocks = [];
+        try {
+          const sRes = await fetch(`/api/yahoo/search?q=${encodeURIComponent(query.trim())}`);
+          if (sRes.ok) {
+            const sj = await sRes.json();
+            stocks = (sj.quotes || []).slice(0, 8).map(s => ({ type: "stock", display: s.shortname || s.longname || s.symbol, symbol: s.symbol.toUpperCase() }));
+          }
+        } catch (e) {}
+        setSuggestions([...coins, ...stocks]);
+      } catch (e) {
+        setSuggestions([]);
+      }
+    }, 320);
+    return () => clearTimeout(searchTimeout.current);
+  }, [query]);
 
-    const handleBuy = (assetStub, qty, priceUSD) => {
-        const costUSD = qty * priceUSD;
-        if (costUSD * usdIdr > tradingBalance) { alert("Insufficient trading balance."); return false; }
-        const existingAsset = assets.find(a => a.symbol === assetStub.symbol && a.type === assetStub.type);
-        const newTx = { id:`tx:${Date.now()}`, type:"buy", qty, pricePerUnit: priceUSD, cost: costUSD, date: Date.now(), symbol: assetStub.symbol, name: assetStub.name };
-        if (existingAsset) {
-            newTx.assetId = existingAsset.id;
-            setAssets(assets.map(a => a.id === existingAsset.id ? {...a, shares: a.shares + qty, investedUSD: a.investedUSD + costUSD, avgPrice: (a.investedUSD + costUSD) / (a.shares + qty)} : a));
-        } else {
-            const newAsset = ensureNumericAsset({ ...assetStub, shares: qty, avgPrice: priceUSD, investedUSD: costUSD });
-            newTx.assetId = newAsset.id;
-            setAssets([...assets, newAsset]);
+  /* ----------------- Derived metrics: per-asset and totals ----------------- */
+  const { rows, totals } = useMemo(() => {
+    const r = assets.map(a => {
+      // last price USD resolution:
+      let lastPriceUSD = a.lastPriceUSD || 0;
+      if (a.type === "crypto" && a.coingeckoId && priceMap[`cg:${a.coingeckoId}`]) {
+        lastPriceUSD = Number(priceMap[`cg:${a.coingeckoId}`].usd || lastPriceUSD);
+      }
+      if (a.type === "stock" && a.symbol && priceMap[`st:${a.symbol}`]) {
+        lastPriceUSD = Number(priceMap[`st:${a.symbol}`].usd || lastPriceUSD);
+      }
+      // invested is stored in USD
+      const investedUSD = a.investedUSD || (a.shares * a.avgPrice);
+      const marketValueUSD = a.shares * lastPriceUSD;
+      const unrealizedUSD = marketValueUSD - investedUSD;
+      const pnlPct = investedUSD > 0 ? (unrealizedUSD / investedUSD) * 100 : 0;
+      return { ...a, lastPriceUSD, investedUSD, marketValueUSD, unrealizedUSD, pnlPct };
+    });
+    const totals = {
+      investedUSD: r.reduce((s, x) => s + (x.investedUSD || 0), 0),
+      marketValueUSD: r.reduce((s, x) => s + (x.marketValueUSD || 0), 0),
+      unrealizedUSD: r.reduce((s, x) => s + (x.unrealizedUSD || 0), 0),
+      realizedUSD: r.reduce((s, x) => s + (x.realizedUSD || 0), 0),
+    };
+    totals.totalEquityUSD = totals.marketValueUSD; // plus any cash balance if you add
+    return { rows: r, totals };
+  }, [assets, priceMap]);
+
+  /* ----------------- CRUD: add asset from suggestion ----------------- */
+  const addAssetFromSuggestion = (sug) => {
+    if (!sug) return;
+    const base = sug.type === "crypto"
+      ? { type: "crypto", coingeckoId: sug.coingeckoId, name: sug.display, shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0 }
+      : { type: "stock", symbol: sug.symbol, name: sug.display, shares: 0, avgPrice: 0, investedUSD: 0, lastPriceUSD: 0 };
+    const newAsset = ensureAsset(base);
+    setAssets(prev => [...prev, newAsset]);
+    setSelectedSuggestion(null);
+    setQuery("");
+    setSuggestions([]);
+  };
+
+  /* ----------------- Trade logic (frontend state) ----------------- */
+  const openTrade = (asset, mode = "buy") => setTradeModal({ open: true, asset, mode });
+  const closeTrade = () => setTradeModal({ open: false, asset: null, mode: "buy" });
+
+  const executeTrade = ({ assetId, mode, qty, priceInput, priceCcy }) => {
+    // priceInput is in display currency; convert to USD
+    const priceNum = toNum(priceInput);
+    const priceUSD = priceCcy === "IDR" ? priceNum / usdIdr : priceNum;
+    const qtyNum = Number(qty || 0);
+    if (qtyNum <= 0 || priceUSD <= 0) { alert("Qty & price must be > 0"); return false; }
+
+    setAssets(prev => prev.map(a => {
+      if (a.id !== assetId) return a;
+      if (mode === "buy") {
+        const newShares = a.shares + qtyNum;
+        const newInvested = a.investedUSD + qtyNum * priceUSD;
+        const newAvg = newInvested / newShares;
+        return { ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg };
+      } else {
+        // sell: reduce shares, realize PnL
+        const sellQty = Math.min(qtyNum, a.shares);
+        const proceeds = sellQty * priceUSD;
+        const costBasis = sellQty * a.avgPrice;
+        const realized = proceeds - costBasis;
+        const newShares = a.shares - sellQty;
+        const newInvested = Math.max(0, a.investedUSD - costBasis);
+        const newAvg = newShares > 0 ? newInvested / newShares : 0;
+        // push transaction record
+        setTransactions(tx => [{ id: `tx:${Date.now()}`, assetId: a.id, mode, qty: sellQty, pricePerUnitUSD: priceUSD, proceedsUSD: proceeds, realizedUSD: realized, date: Date.now(), symbol: a.symbol, name: a.name }, ...tx]);
+        // update realized on asset
+        return { ...a, shares: newShares, investedUSD: newInvested, avgPrice: newAvg, realizedUSD: (a.realizedUSD || 0) + realized };
+      }
+    }));
+    closeTrade();
+    return true;
+  };
+
+  /* ----------------- Performance chart (simple line ROI) ----------------- */
+  // compute ROI series by summing marketValue over time: we will fetch per-asset historical then combine by timestamp (for crypto via CG)
+  // For simplicity we implement realtime total ROI using current snapshots every poll and keep history in memory.
+  const [roiHistory, setRoiHistory] = useState(() => {
+    try { return (isBrowser && JSON.parse(localStorage.getItem("pf_roi_hist_v2") || "[]")) || []; } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem("pf_roi_hist_v2", JSON.stringify(roiHistory)); }, [roiHistory]);
+
+  // append a snapshot each poll (every 30s)
+  useEffect(() => {
+    const id = setInterval(() => {
+      const t = Date.now();
+      const totalMarket = rows.reduce((s, r) => s + (r.marketValueUSD || 0), 0);
+      setRoiHistory(h => {
+        const next = [...h, { t, v: totalMarket }];
+        // cap to 500 points to avoid memory bloat
+        return next.length > 500 ? next.slice(next.length - 500) : next;
+      });
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [rows]);
+
+  /* ----------------- View Performance per asset (historical fetch) ----------------- */
+  const fetchHistoricalForAsset = async (asset) => {
+    if (!asset) return null;
+    // crypto: coinGecko market_chart (USD)
+    if (asset.type === "crypto" && asset.coingeckoId) {
+      try {
+        const res = await fetch(COINGECKO_MARKETCHART(asset.coingeckoId, chartRange || 30));
+        const j = await res.json();
+        // j.prices: [[unix_ms, price], ...]
+        return (j.prices || []).map(p => ({ t: p[0], v: p[1] }));
+      } catch (e) { return []; }
+    }
+    // stock: use FINNHUB_CANDLE proxy (from/to timestamps)
+    if (asset.type === "stock" && asset.symbol) {
+      try {
+        const to = Math.floor(Date.now() / 1000);
+        const from = to - (Number(chartRange) || 30) * 24 * 3600;
+        const res = await fetch(FINNHUB_CANDLE(asset.symbol, from, to));
+        const j = await res.json(); // {c:[],t:[]}
+        if (j && j.t && j.c) {
+          return j.t.map((ts, i) => ({ t: ts * 1000, v: j.c[i] }));
         }
-        setTradingBalance(b => b - (costUSD * usdIdr));
-        setTransactions(prev => [newTx, ...prev]);
-        if(tradeModal.open) setTradeModal({open: false, asset: null});
-        return true;
-    };
-    const handleSell = (asset, qty, priceUSD) => {
-        if (qty > asset.shares) { alert("Cannot sell more than you own."); return false; }
-        const proceedsUSD = qty * priceUSD, costOfSold = qty * asset.avgPrice, realized = proceedsUSD - costOfSold;
-        const newTx = {id:`tx:${Date.now()}`, assetId:asset.id, type:"sell", qty, pricePerUnit: priceUSD, proceeds: proceedsUSD, realized, date: Date.now(), symbol: asset.symbol, name: asset.name };
-        setAssets(assets.map(a => a.id === asset.id ? {...a, shares: a.shares - qty, investedUSD: a.investedUSD - costOfSold, avgPrice: (a.shares - qty) > 0 ? (a.investedUSD - costOfSold)/(a.shares - qty) : 0} : a).filter(a => a.shares > 1e-9));
-        setTradingBalance(b => b + (proceedsUSD * usdIdr));
-        setRealizedUSD(r => r + realized);
-        setTransactions(prev => [newTx, ...prev]);
-        if(tradeModal.open) setTradeModal({open: false, asset: null});
-        return true;
-    };
-
-    const addAssetWithInitial = (qty, price, ccy) => {
-        let p = selectedSuggestion; if(!p){const t=query.split("â€”")[0].trim();if(!t){alert("Select a suggestion");return;}p={symbol:t.toUpperCase(),display:t.toUpperCase(),type:'stock'};}
-        if(qty<=0||price<=0){alert("Quantity & price must be > 0");return;}
-        const priceUSD = ccy === "IDR" ? price / usdIdr : price;
-        const newAssetStub = {id:`${p.source}:${p.symbol||p.id}:${Date.now()}`, type:p.type, symbol:p.symbol, name:p.display, coingeckoId: p.type==='crypto' ? p.id : undefined };
-        if(handleBuy(newAssetStub, qty, priceUSD)) { setAddAssetModalOpen(false); setQuery(""); setSelectedSuggestion(null); }
-    };
-    const addNonLiquidAsset = () => {
-        const name=nlName.trim(), qty=toNum(nlQty), priceIn=toNum(nlPrice); if(!name || qty<=0 || priceIn<=0){alert("Name, quantity, and price must be filled.");return;}
-        const priceUSD = nlPriceCcy === 'IDR' ? priceIn / usdIdr : priceIn;
-        const newAssetStub = {id:`nonliquid:${name.replace(/\s/g,'_')}:${Date.now()}`, type:'nonliquid', symbol:name.slice(0,8).toUpperCase(), name, purchaseDate: nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now(), nonLiquidYoy: toNum(nlYoy), description: nlDesc};
-        if(handleBuy(newAssetStub, qty, priceUSD)) { setAddAssetModalOpen(false); setNlName(''); setNlQty(''); setNlPrice(''); setNlPurchaseDate(''); setNlDesc(''); }
-    };
-    const handleAddBalance = (amount) => { setTradingBalance(b => b + amount); setBalanceModalOpen(false); };
-    const handleWithdraw = (amount) => { if(amount > tradingBalance){alert("Withdrawal amount exceeds balance."); return;} setTradingBalance(b => b - amount); setBalanceModalOpen(false); };
-    const exportCSV = () => alert("CSV Export functionality is preserved.");
-    const importCSV = (e) => { alert("CSV Import functionality is preserved."); e.target.value = ''; };
-
-    const { rows, totals, totalEquity, tradeStats, donutData } = useMemo(() => {
-        const calculatedRows = assets.map(a => { const market = a.shares*a.lastPriceUSD, pnl = market-a.investedUSD, pnlPct = a.investedUSD>0?(pnl/a.investedUSD)*100:0; return {...a, marketValueUSD:market, pnlUSD:pnl, pnlPct:pnlPct }; });
-        const t = { invested: calculatedRows.reduce((s,r)=>s+r.investedUSD,0), market: calculatedRows.reduce((s,r)=>s+r.marketValueUSD,0) }; t.pnl = t.market - t.invested; t.pnlPct = t.invested > 0 ? (t.pnl / t.invested) * 100 : 0;
-        const totalEq = (t.market * usdIdr) + tradingBalance;
-        const sells = transactions.filter(tx => tx.type === 'sell'); const wins = sells.filter(tx => tx.realized > 0); const losses = sells.filter(tx => tx.realized <= 0);
-        const tStats = { trades: sells.length, wins: wins.length, losses: losses.length, winRate: sells.length > 0 ? (wins.length / sells.length) * 100 : 0, maxProfit: Math.max(0, ...wins.map(tx => tx.realized)), maxLoss: Math.min(0, ...losses.map(tx => tx.realized)), avgProfit: wins.length > 0 ? wins.reduce((s,tx)=>s+tx.realized,0)/wins.length : 0, avgLoss: losses.length > 0 ? losses.reduce((s,tx)=>s+tx.realized,0)/losses.length : 0, totalRealizedGain: realizedUSD };
-        const dData = calculatedRows.map(r => ({ name: r.symbol, value: r.marketValueUSD })).sort((a,b) => b.value - a.value);
-        return { rows: calculatedRows, totals: t, totalEquity: totalEq, tradeStats: tStats, donutData: dData };
-    }, [assets, transactions, usdIdr, tradingBalance, realizedUSD]);
-
-    // Render specialized sub-pages
-    if (view === 'performance') {
-        return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displayCcy={displayCcy} chartRange={chartRange} setChartRange={setChartRange} donutData={donutData} />;
+      } catch (e) { return []; }
     }
-    if (view === 'trade') {
-        return <TradePage setView={setView} tradeStats={tradeStats} displayCcy={displayCcy} usdIdr={usdIdr} />;
-    }
-    if (view === 'history') {
-        return <HistoryPage setView={setView} transactions={transactions} displayCcy={displayCcy} usdIdr={usdIdr} fmt={fmt} />;
-    }
+    return [];
+  };
 
-    return (
-        <div className="bg-black text-gray-300 min-h-screen font-sans">
-            <div className="max-w-4xl mx-auto">
-                <header className="p-4 flex justify-between items-center sticky top-0 bg-black z-10">
-                    <div className="flex items-center gap-3"><UserAvatar /><h1 className="text-lg font-bold text-white">Bloomboard</h1></div>
-                    <div className="flex items-center gap-4">
-                        <div className="text-xs text-gray-400">USD/IDR: {isFxLoading ? '...' : fmt(usdIdr, 'USD', 2)}</div>
-                        <button onClick={() => setManagePortfolioOpen(true)} className="text-gray-400 hover:text-white"><MoreVerticalIcon /></button>
-                    </div>
-                </header>
-                <main>
-                    <div className="border-b border-gray-800 px-4"><nav className="flex space-x-6">
-                        <button onClick={() => setView('main')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${view === 'main' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PORTFOLIO</button>
-                        <button onClick={() => setView('performance')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${view === 'performance' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PERFORMANCE</button>
-                        <button onClick={() => setView('trade')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${view === 'trade' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>TRADE</button>
-                        <button onClick={() => setView('history')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${view === 'history' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>HISTORY</button>
-                    </nav></div>
-                    <section className="p-4">
-                        <div className="grid grid-cols-3 gap-px bg-[#0a0a0a] p-px">
-                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Trading Balance</p><p className="font-semibold text-sm text-white">{fmt(tradingBalance * (displayCcy === 'IDR' ? 1 : 1 / usdIdr), displayCcy)}</p></div>
-                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Invested</p><p className="font-semibold text-sm text-white">{fmt(totals.invested * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy)}</p></div>
-                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Total Equity</p><p className="font-semibold text-sm text-white">{fmt(totalEquity * (displayCcy === 'IDR' ? 1 : 1 / usdIdr), displayCcy)}</p></div>
-                            <div className="bg-black p-2 col-span-2"><p className="text-xs text-gray-500">Total P&L</p><p className={`font-semibold text-sm ${totals.pnl>=0?'text-emerald-400':'text-red-400'}`}>{totals.pnl>=0?'+':''}{fmt(totals.pnl * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy)}</p></div>
-                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Gain</p><p className={`font-semibold text-sm ${totals.pnl>=0?'text-emerald-400':'text-red-400'}`}>{(totals.pnlPct || 0).toFixed(4)}%</p></div>
-                        </div>
-                        <button onClick={() => setView('performance')} className="mt-4 flex justify-between items-center w-full text-left p-2 -m-2 rounded hover:bg-gray-800/50">
-                            <span className="text-sm font-medium text-white flex items-center gap-2"><GraphIcon />View Performance</span><ArrowRightIcon />
-                        </button>
-                    </section>
-                    <div className="h-2 bg-[#0a0a0a]"></div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="text-left text-gray-500 text-xs"><tr>
-                                <th className="p-3 pt-4 font-normal">Code<br/>Shares</th><th className="p-3 pt-4 font-normal text-right">Market<br/>Current Price</th><th className="p-3 pt-4 font-normal text-right">P&L<br/>Gain</th>
-                            </tr></thead>
-                            <tbody>
-                                {rows.map(r => (<tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
-                                    <td className="p-3"><div className="font-semibold text-base text-white">{r.symbol}</div><div className="text-gray-400">{r.shares.toLocaleString()} Shares</div><div className="text-xs text-gray-400 mt-1">Invested: {fmt(r.investedUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy)} â€¢ Avg: {fmt(r.avgPrice * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy, displayCcy === 'USD' ? 4 : 2)}</div></td>
-                                    <td className="p-3 text-right tabular-nums">
-                                        <div className="font-semibold text-white">{fmt(r.marketValueUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy)}</div>
-                                        <div className="text-gray-400">{fmt(r.lastPriceUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy, displayCcy === 'IDR' ? 2 : 6)}</div>
-                                    </td>
-                                    <td className="p-3 text-right tabular-nums">
-                                        <div className={`font-semibold ${r.pnlUSD>=0?'text-emerald-400':'text-red-400'}`}>{r.pnlUSD>=0?'+':''}{fmt(r.pnlUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy)}</div>
-                                        <div className={`${r.pnlUSD>=0?'text-emerald-400':'text-red-400'}`}>{r.pnlPct.toFixed(4)}%</div>
-                                    </td>
-                                </tr>))}
-                            </tbody>
-                        </table>
-                        {rows.length === 0 && <p className="text-center py-8 text-gray-500">No assets in portfolio.</p>}
-                         <div className="p-4 text-center"><button onClick={() => setAddAssetModalOpen(true)} className="text-emerald-400 font-semibold text-sm">+ Add new asset</button></div>
-                    </div>
-                </main>
-                <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)}>
-                    <AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc }} />
-                </Modal>
-                <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)}>
-                    <BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} />
-                </Modal>
-                <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({open: false, asset: null})} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} usdIdr={usdIdr} />
-                <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}>
-                    <ManagePortfolioSheet displayCcy={displayCcy} setDisplayCcy={setDisplayCcy} onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} />
-                </BottomSheet>
-            </div>
+  /* ----------------- UI: Add / Edit asset form (small) ----------------- */
+  const [newAssetType, setNewAssetType] = useState("crypto");
+  const [newSymbolOrId, setNewSymbolOrId] = useState("");
+  const [newQty, setNewQty] = useState("");
+  const [newAvgPrice, setNewAvgPrice] = useState("");
+  const addManualAsset = () => {
+    if (!newSymbolOrId) { alert("Provide symbol (for stock) or coingecko id (for crypto)."); return; }
+    let stub = null;
+    if (newAssetType === "crypto") {
+      stub = { type: "crypto", coingeckoId: newSymbolOrId, name: newSymbolOrId, shares: toNum(newQty), avgPrice: toNum(newAvgPrice), investedUSD: toNum(newQty) * toNum(newAvgPrice) };
+    } else {
+      stub = { type: "stock", symbol: newSymbolOrId.toUpperCase(), name: newSymbolOrId.toUpperCase(), shares: toNum(newQty), avgPrice: toNum(newAvgPrice), investedUSD: toNum(newQty) * toNum(newAvgPrice) };
+    }
+    setAssets(prev => [...prev, ensureAsset(stub)]);
+    setNewSymbolOrId(""); setNewQty(""); setNewAvgPrice("");
+  };
+
+  /* ----------------- Small render helpers ----------------- */
+  const currencyLabel = (valueUSD) => displayCcy === "IDR" ? fmtNum(valueUSD * usdIdr, "IDR", 0) : fmtNum(valueUSD, "USD", 0);
+  const avgPriceLabel = (priceUSD) => displayCcy === "IDR" ? fmtNum(priceUSD * usdIdr, "IDR", 2) : fmtNum(priceUSD, "USD", 2);
+
+  /* ----------------- Render ----------------- */
+  return (
+    <div className="p-4 bg-black text-gray-200 min-h-screen">
+      <header className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div style={{width:36,height:36,borderRadius:8,background:"#111"}}></div>
+          <h1 className="text-xl font-semibold">Bloomboard — Full Realtime</h1>
         </div>
-    );
+        <div className="flex items-center gap-4">
+          <div className="text-xs text-gray-400">USD/IDR: {isFxLoading ? "..." : fmtNum(usdIdr, "USD", 2)}</div>
+          <div className="bg-gray-900 p-2 rounded flex items-center gap-2">
+            <button className={`px-2 py-1 rounded ${displayCcy==="IDR"?"bg-gray-700":""}`} onClick={() => setDisplayCcy("IDR")}>IDR</button>
+            <button className={`px-2 py-1 rounded ${displayCcy==="USD"?"bg-gray-700":""}`} onClick={() => setDisplayCcy("USD")}>USD</button>
+          </div>
+        </div>
+      </header>
+
+      {/* nav */}
+      <nav className="flex gap-3 mb-4">
+        {["portfolio","performance","trade","view"].map(t => (
+          <button key={t} onClick={() => setActiveTab(t)} className={`px-3 py-2 rounded ${activeTab===t ? "bg-emerald-600 text-black" : "bg-gray-800"}`}>{t.toUpperCase()}</button>
+        ))}
+      </nav>
+
+      {/* Tab content */}
+      <main>
+        {activeTab === "portfolio" && (
+          <section>
+            <div className="mb-3 flex justify-between items-center">
+              <div className="text-sm">Portfolio summary</div>
+              <div className="flex items-center gap-2">
+                <input placeholder="Search symbol or coin id..." value={query} onChange={e=>setQuery(e.target.value)} className="bg-gray-900 px-2 py-1 rounded" />
+                <button onClick={() => { if (selectedSuggestion) addAssetFromSuggestion(selectedSuggestion); else if (suggestions[0]) addAssetFromSuggestion(suggestions[0]); }} className="px-3 py-1 bg-emerald-600 rounded">Add</button>
+              </div>
+            </div>
+
+            {/* suggestions */}
+            {suggestions.length>0 && <div className="mb-3 bg-gray-900 p-2 rounded max-h-48 overflow-auto">
+              {suggestions.map((s,i)=>(
+                <div key={i} className="flex items-center justify-between p-2 hover:bg-gray-800 rounded">
+                  <div><div className="font-semibold">{s.display}</div><div className="text-xs text-gray-400">{s.type} {s.symbol || s.coingeckoId}</div></div>
+                  <div><button onClick={()=>{ setSelectedSuggestion(s); setQuery(`${s.display}`); }} className="px-2 py-1 bg-gray-700 rounded">Select</button></div>
+                </div>
+              ))}
+            </div>}
+
+            {/* portfolio table */}
+            <div className="overflow-x-auto bg-gray-900 rounded">
+              <table className="w-full min-w-[900px]">
+                <thead className="text-xs text-gray-400">
+                  <tr>
+                    <th className="p-2 text-left">Asset</th>
+                    <th className="p-2 text-right">Invested</th>
+                    <th className="p-2 text-right">Avg Price</th>
+                    <th className="p-2 text-right">Quantity</th>
+                    <th className="p-2 text-right">Current Price</th>
+                    <th className="p-2 text-right">Unrealized PnL</th>
+                    <th className="p-2 text-right">Gain (Nominal / %)</th>
+                    <th className="p-2 text-right">Realized PnL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-850 cursor-pointer" onDoubleClick={() => openTrade(r, "buy")}>
+                      <td className="p-2">
+                        <div className="font-semibold">{r.name || r.symbol}</div>
+                        <div className="text-xs text-gray-400">{r.type.toUpperCase()} {r.symbol ? `• ${r.symbol}` : ""} {r.coingeckoId ? `• ${r.coingeckoId}` : ""}</div>
+                      </td>
+                      <td className="p-2 text-right">{currencyLabel(r.investedUSD)}</td>
+                      <td className="p-2 text-right">{avgPriceLabel(r.avgPrice)}</td>
+                      <td className="p-2 text-right">{Number(r.shares).toLocaleString()}</td>
+                      <td className="p-2 text-right">{displayCcy==="IDR" ? fmtNum(r.lastPriceUSD * usdIdr, "IDR", 0) : fmtNum(r.lastPriceUSD, "USD", 0)}</td>
+                      <td className={`p-2 text-right ${r.unrealizedUSD>=0 ? "text-emerald-400":"text-red-400"}`}>{displayCcy==="IDR" ? fmtNum(r.unrealizedUSD * usdIdr, "IDR", 0) : fmtNum(r.unrealizedUSD, "USD", 0)}</td>
+                      <td className={`p-2 text-right ${r.unrealizedUSD>=0 ? "text-emerald-400":"text-red-400"}`}>{displayCcy==="IDR" ? fmtNum(r.unrealizedUSD * usdIdr, displayCcy, 0) : fmtNum(r.unrealizedUSD, displayCcy, 0)} / {r.pnlPct.toFixed(2)}%</td>
+                      <td className={`p-2 text-right ${r.realizedUSD>=0 ? "text-emerald-400":"text-red-400"}`}>{displayCcy==="IDR" ? fmtNum(r.realizedUSD * usdIdr, "IDR", 0) : fmtNum(r.realizedUSD, "USD", 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* quick manual add */}
+            <div className="mt-4 p-3 bg-gray-900 rounded grid grid-cols-1 md:grid-cols-4 gap-2">
+              <select className="p-2 bg-gray-800" value={newAssetType} onChange={e=>setNewAssetType(e.target.value)}>
+                <option value="crypto">Crypto (coingecko id)</option>
+                <option value="stock">Stock (symbol)</option>
+              </select>
+              <input className="p-2 bg-gray-800" placeholder={newAssetType==="crypto"?"coingecko id (bitcoin)":"symbol (AAPL)"} value={newSymbolOrId} onChange={e=>setNewSymbolOrId(e.target.value)} />
+              <input className="p-2 bg-gray-800" placeholder="quantity" value={newQty} onChange={e=>setNewQty(e.target.value)} />
+              <div className="flex gap-2">
+                <input className="p-2 bg-gray-800 flex-1" placeholder="avg price (USD)" value={newAvgPrice} onChange={e=>setNewAvgPrice(e.target.value)} />
+                <button className="px-3 py-2 bg-emerald-600 rounded" onClick={addManualAsset}>Add Asset</button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "performance" && (
+          <section>
+            <div className="mb-3 flex justify-between items-center">
+              <div className="flex items-center gap-2"><Graph/> <div className="font-semibold">Performance (ROI)</div></div>
+              <div className="flex items-center gap-2">
+                <select value={chartRange} onChange={e=>setChartRange(e.target.value)} className="bg-gray-800 p-2">
+                  <option value="7">7 days</option>
+                  <option value="30">30 days</option>
+                  <option value="90">90 days</option>
+                  <option value="365">365 days</option>
+                </select>
+              </div>
+            </div>
+
+            {/* ROI simple line: use roiHistory */}
+            <div className="bg-gray-900 p-4 rounded">
+              <SimpleLineChart data={roiHistory.map(p => ({ x: p.t, y: p.v }))} usdIdr={usdIdr} displayCcy={displayCcy} />
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <div className="p-3 bg-[#121212] rounded">
+                  <div className="text-xs text-gray-400">Total Invested</div>
+                  <div className="font-semibold">{displayCcy==="IDR" ? fmtNum(totals.investedUSD * usdIdr, "IDR", 0) : fmtNum(totals.investedUSD, "USD", 0)}</div>
+                </div>
+                <div className="p-3 bg-[#121212] rounded">
+                  <div className="text-xs text-gray-400">Market Value</div>
+                  <div className="font-semibold">{displayCcy==="IDR" ? fmtNum(totals.marketValueUSD * usdIdr, "IDR", 0) : fmtNum(totals.marketValueUSD, "USD", 0)}</div>
+                </div>
+                <div className="p-3 bg-[#121212] rounded">
+                  <div className="text-xs text-gray-400">Unrealized PnL</div>
+                  <div className="font-semibold">{displayCcy==="IDR" ? fmtNum(totals.unrealizedUSD * usdIdr, "IDR", 0) : fmtNum(totals.unrealizedUSD, "USD", 0)}</div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "trade" && (
+          <section>
+            <div className="mb-3 flex justify-between items-center">
+              <div className="font-semibold">Trade (Buy / Sell) — simulated in frontend</div>
+            </div>
+            <div className="bg-gray-900 p-4 rounded grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs text-gray-400 mb-2">Select Asset</div>
+                <div className="space-y-2">
+                  {assets.map(a=>(
+                    <div key={a.id} className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                      <div>
+                        <div className="font-semibold">{a.name} {a.symbol ? `(${a.symbol})` : ""}</div>
+                        <div className="text-xs text-gray-400">Shares: {a.shares}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={()=>openTrade(a,"buy")} className="px-3 py-1 bg-emerald-600 rounded">Buy</button>
+                        <button onClick={()=>openTrade(a,"sell")} className="px-3 py-1 bg-red-600 rounded">Sell</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-400 mb-2">Quick Trade Form</div>
+                <TradeForm usdIdr={usdIdr} displayCcy={displayCcy} onExecute={executeTrade} assets={assets} />
+                <div className="mt-3 text-sm text-gray-400">Double-click any row in Portfolio to open quick buy modal for that asset.</div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "view" && (
+          <section>
+            <div className="mb-3 flex justify-between items-center">
+              <div className="font-semibold">View Performance — asset history</div>
+              <div>
+                <button className="px-3 py-1 bg-gray-800 rounded" onClick={() => { /* nothing */ }}>Refresh</button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {assets.map(a => (
+                <div key={a.id} className="bg-gray-900 p-3 rounded">
+                  <div className="flex justify-between items-center mb-2">
+                    <div>
+                      <div className="font-semibold">{a.name} {a.symbol ? `(${a.symbol})` : ""}</div>
+                      <div className="text-xs text-gray-400">Type: {a.type}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm">{displayCcy==="IDR" ? fmtNum(a.lastPriceUSD * usdIdr, "IDR", 0) : fmtNum(a.lastPriceUSD, "USD", 0)}</div>
+                      <div className="text-xs text-gray-400">Avg: {avgPriceLabel(a.avgPrice)}</div>
+                    </div>
+                  </div>
+                  <AssetHistory asset={a} days={Number(chartRange)||30} />
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </main>
+
+      {/* Trade modal */}
+      {tradeModal.open && tradeModal.asset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={closeTrade}>
+          <div className="bg-[#111] p-4 rounded w-full max-w-md" onClick={(e)=>e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-2">
+              <div className="font-semibold">{tradeModal.mode.toUpperCase()} — {tradeModal.asset.name}</div>
+              <button onClick={closeTrade}>✕</button>
+            </div>
+            <TradeModalContent asset={tradeModal.asset} mode={tradeModal.mode} usdIdr={usdIdr} displayCcy={displayCcy} onSubmit={executeTrade} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
-/* ===================== SUB-PAGES & FULLY FUNCTIONAL COMPONENTS ===================== */
-const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, displayCcy, chartRange, setChartRange, donutData }) => {
-    const [activeTab, setActiveTab] = useState('portfolio');
-    return (
-        <div className="bg-black text-gray-300 min-h-screen font-sans"><div className="max-w-4xl mx-auto">
-            <header className="p-4 flex items-center gap-4 sticky top-0 bg-black z-10"><button onClick={() => setView('main')} className="text-white"><BackArrowIcon /></button><h1 className="text-lg font-semibold text-white">Performance</h1></header>
-            <div className="border-b border-gray-800 px-4"><nav className="flex space-x-6">
-                <button onClick={() => setActiveTab('portfolio')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'portfolio' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PORTFOLIO</button>
-                <button onClick={() => setActiveTab('trade')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'trade' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>TRADE</button>
-            </nav></div>
-            {activeTab === 'portfolio' ? (
-                <div className="p-4 space-y-8">
-                    <div>
-                        <p className="text-sm text-gray-400">Total Equity</p>
-                        <p className="text-2xl font-bold text-white mb-1">{fmt(totalEquity, 'IDR')}</p>
-                        <p className={`font-semibold text-sm ${totals.pnl>=0?'text-emerald-400':'text-red-400'}`}> {totals.pnl>=0?'+':''}{fmt(totals.pnl * usdIdr, 'IDR')} ({(totals.pnlPct||0).toFixed(4)}%) All Time </p>
-                    </div>
-                    <div>
-                        <div className="mt-4"><AreaChart equityData={[{t: Date.now() - 365*24*36e5, v: totalEquity*0.8}, {t:Date.now(), v:totalEquity}]} /></div>
-                        <div className="flex items-center justify-center gap-2 mt-4">{["1W","1M","3M","YTD","1Y","All"].map(r => (<button key={r} onClick={() => setChartRange(r)} className={`px-3 py-1 text-xs rounded-full ${chartRange === r ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-400'}`}>{r}</button>))}</div>
-                    </div>
-                    <div className="h-2 bg-[#0a0a0a] -mx-4"></div>
-                    <div>
-                        <h3 className="text-base font-semibold text-white mb-4">Asset Allocation</h3>
-                        <AllocationDonut data={donutData} displayCcy={displayCcy} usdIdr={usdIdr} />
-                    </div>
-                </div>
-            ) : (<TradeStatsView stats={tradeStats} displayCcy={displayCcy} usdIdr={usdIdr} />)}
-        </div></div>
-    );
-};
-const TradeStatsView = ({ stats, displayCcy, usdIdr }) => {
-    const getVal = (val) => val * (displayCcy === 'IDR' ? usdIdr : 1);
-    return (
-        <div className="p-4 space-y-6">
-            <div className="text-center"><div className="relative inline-block">
-                <svg className="w-28 h-28 transform -rotate-90"><circle cx="56" cy="56" r="50" stroke="#374151" strokeWidth="6" fill="transparent"/><circle cx="56" cy="56" r="50" stroke="#22c55e" strokeWidth="6" fill="transparent" strokeDasharray="314.159" strokeDashoffset={314.159 * (1 - (stats.winRate / 100))} /></svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-xs text-gray-400">Win Rate</span><span className="text-2xl font-bold text-white">{stats.winRate.toFixed(0)}%</span></div>
-            </div><div className="mt-2 text-sm">{stats.wins} Wins / {stats.losses} Losses ({stats.trades} Trades)</div></div>
-            <div className="grid grid-cols-2 gap-4">
-                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Max Profit</p><p className="text-lg font-semibold text-emerald-400">+{fmt(getVal(stats.maxProfit), displayCcy)}</p></div>
-                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Max Loss</p><p className="text-lg font-semibold text-red-400">{fmt(getVal(stats.maxLoss), displayCcy)}</p></div>
-                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Profit</p><p className="text-lg font-semibold text-emerald-400">+{fmt(getVal(stats.avgProfit), displayCcy)}</p></div>
-                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Loss</p><p className="text-lg font-semibold text-red-400">{fmt(getVal(stats.avgLoss), displayCcy)}</p></div>
-            </div>
-            <div><p className="text-sm text-gray-400">Total Realized Gain</p><p className="text-2xl font-bold text-emerald-400">+{fmt(getVal(stats.totalRealizedGain), displayCcy)}</p></div>
-        </div>
-    );
-};
-const BalanceManager = ({ onConfirm }) => {
-    const [amount, setAmount] = useState('');
-    return (
-        <form onSubmit={(e) => { e.preventDefault(); onConfirm(toNum(amount)); }} className="space-y-4">
-            <div><label className="block text-sm font-medium mb-1 text-gray-400">Amount (IDR)</label><input type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-gray-900 px-3 py-2 rounded border border-gray-700 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-white" placeholder="e.g. 1000000" /></div>
-            <button type="submit" className="w-full py-2.5 rounded font-semibold bg-emerald-600 text-white hover:bg-emerald-500">Confirm</button>
-        </form>
-    );
-};
-const ManagePortfolioSheet = ({ displayCcy, setDisplayCcy, onImportClick, onExportClick, onAddBalance, onWithdraw }) => (
-    <div className="p-4 text-white text-sm"><h3 className="text-base font-semibold mb-4 px-2">Manage Portfolio</h3><div className="space-y-1">
-        <div className="flex justify-between items-center p-2 rounded hover:bg-gray-700/50"><span className="text-gray-300">Display Currency</span><div className="flex items-center bg-gray-700 rounded-full p-0.5"><button onClick={() => setDisplayCcy('IDR')} className={`px-3 py-1 text-xs rounded-full ${displayCcy === 'IDR' ? 'bg-gray-500' : ''}`}>IDR</button><button onClick={() => setDisplayCcy('USD')} className={`px-3 py-1 text-xs rounded-full ${displayCcy === 'USD' ? 'bg-gray-500' : ''}`}>USD</button></div></div>
-        <button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Add Balance</button>
-        <button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Withdraw</button>
-        <label className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300 block cursor-pointer">Import CSV<input type="file" accept=".csv" onChange={onImportClick} className="hidden"/></label>
-        <button onClick={onExportClick} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Export CSV</button>
-    </div></div>
-);
-const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc }) => {
-    const [qty, setQty] = useState('');
-    const [price, setPrice] = useState('');
-    const [total, setTotal] = useState('');
-    const [ccy, setCcy] = useState('IDR');
+/* ----------------- Components ----------------- */
 
-    const handleInputChange = (field, value) => {
-        const multiplier = searchMode === 'crypto' ? 1 : 100;
-        if (field === 'qty') {
-            const newQty = toNum(value); setQty(value);
-            const numPrice = toNum(price);
-            if (numPrice > 0) setTotal(fmt(newQty * numPrice * multiplier, ccy));
-        } else if (field === 'price') {
-            const newPrice = toNum(value); setPrice(value);
-            const numQty = toNum(qty);
-            if (numQty > 0) setTotal(fmt(numQty * multiplier * newPrice, ccy));
-        } else if (field === 'total') {
-            const newTotal = toNum(value); setTotal(value);
-            const numQty = toNum(qty);
-            const numPrice = toNum(price);
-            if (numPrice > 0 && newTotal > 0) setQty(fmt(newTotal / (numPrice * multiplier), 'IDR', 0));
-            else if (numQty > 0 && newTotal > 0) setPrice(fmt(newTotal / (numQty * multiplier), ccy, 2));
-        }
+/* SimpleLineChart: draws a basic line chart from data [{x:timestamp, y:value}] */
+function SimpleLineChart({ data = [], usdIdr = 16000, displayCcy = "IDR", height = 160 }) {
+  if (!data || data.length === 0) return <div className="text-center text-gray-400 py-8">No data</div>;
+  // normalize values
+  const w = 800, h = height, pad = 24;
+  const xs = data.map(d => d.x);
+  const ys = data.map(d => d.y);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const range = maxY - minY || 1;
+  const xScale = (t) => pad + ((t - xs[0]) / (xs[xs.length - 1] - xs[0] || 1)) * (w - pad*2);
+  const yScale = (v) => pad + (1 - (v - minY) / range) * (h - pad*2);
+  const path = data.map((p, i) => `${i===0 ? 'M' : 'L'}${xScale(p.x)},${yScale(p.y)}`).join(' ');
+  const last = data[data.length-1].y;
+  return (
+    <div className="w-full overflow-auto">
+      <svg viewBox={`0 0 ${w} ${h}`} style={{width:'100%', height}} className="rounded">
+        <defs>
+          <linearGradient id="g1" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#16a34a" stopOpacity="0.35"/><stop offset="100%" stopColor="#16a34a" stopOpacity="0"/></linearGradient>
+        </defs>
+        <path d={`${path} L ${xScale(xs[xs.length-1])},${h-pad} L ${xScale(xs[0])},${h-pad} Z`} fill="url(#g1)" stroke="none" />
+        <path d={path} fill="none" stroke="#16a34a" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+        {/* y grid */}
+        {[0,0.25,0.5,0.75,1].map((p,i)=> {
+          const y = pad + p*(h - pad*2);
+          return <line key={i} x1={pad} x2={w-pad} y1={y} y2={y} stroke="rgba(255,255,255,0.04)" />;
+        })}
+        {/* label current */}
+        <text x={w - pad} y={pad+12} fontSize="12" textAnchor="end" fill="#d1fae5">{displayCcy==="IDR" ? `${fmtNum(last * usdIdr, "IDR", 0)}` : `${fmtNum(last, "USD", 0)}`}</text>
+      </svg>
+    </div>
+  );
+}
+
+/* Trade form for non-modal quick trades */
+function TradeForm({ usdIdr, displayCcy, onExecute, assets }) {
+  const [assetId, setAssetId] = useState(assets[0]?.id || "");
+  const [mode, setMode] = useState("buy");
+  const [qty, setQty] = useState("");
+  const [price, setPrice] = useState("");
+  const [priceCcy, setPriceCcy] = useState(displayCcy);
+
+  useEffect(()=> { setAssetId(assets[0]?.id || ""); }, [assets]);
+
+  const submit = () => {
+    if (!assetId) { alert("Select asset"); return; }
+    onExecute({ assetId, mode, qty: Number(qty), priceInput: price, priceCcy });
+    setQty(""); setPrice("");
+  };
+
+  return (
+    <div className="bg-gray-800 p-3 rounded space-y-2">
+      <div className="flex gap-2">
+        <select value={assetId} onChange={e=>setAssetId(e.target.value)} className="flex-1 p-2 bg-gray-900">
+          {assets.map(a => <option key={a.id} value={a.id}>{a.name} {a.symbol ? `(${a.symbol})` : ""}</option>)}
+        </select>
+        <select value={mode} onChange={e=>setMode(e.target.value)} className="p-2 bg-gray-900">
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+        </select>
+      </div>
+      <div className="flex gap-2">
+        <input placeholder="Quantity" value={qty} onChange={e=>setQty(e.target.value)} className="p-2 bg-gray-900 flex-1" />
+        <input placeholder={`Price (${priceCcy})`} value={price} onChange={e=>setPrice(e.target.value)} className="p-2 bg-gray-900 w-40" />
+        <select value={priceCcy} onChange={e=>setPriceCcy(e.target.value)} className="p-2 bg-gray-900">
+          <option value="USD">USD</option>
+          <option value="IDR">IDR</option>
+        </select>
+      </div>
+      <div className="flex justify-end gap-2">
+        <button onClick={submit} className="px-4 py-2 bg-emerald-600 rounded">Execute</button>
+      </div>
+    </div>
+  );
+}
+
+/* Modal content for trade */
+function TradeModalContent({ asset, mode="buy", usdIdr, displayCcy, onSubmit }) {
+  const [qty, setQty] = useState("");
+  const [price, setPrice] = useState(displayCcy==="IDR" ? String(Math.round(asset.lastPriceUSD * usdIdr)) : String(asset.lastPriceUSD));
+  const [priceCcy, setPriceCcy] = useState(displayCcy);
+
+  const handle = () => {
+    onSubmit({ assetId: asset.id, mode, qty: Number(qty), priceInput: price, priceCcy });
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-gray-400">Asset</div>
+      <div className="font-semibold">{asset.name} {asset.symbol ? `(${asset.symbol})` : ""}</div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <div className="text-xs text-gray-400">Quantity</div>
+          <input value={qty} onChange={e=>setQty(e.target.value)} className="w-full p-2 bg-gray-900" />
+        </div>
+        <div>
+          <div className="text-xs text-gray-400">Price ({priceCcy})</div>
+          <input value={price} onChange={e=>setPrice(e.target.value)} className="w-full p-2 bg-gray-900" />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <select value={priceCcy} onChange={e=>setPriceCcy(e.target.value)} className="p-2 bg-gray-900">
+          <option value="USD">USD</option>
+          <option value="IDR">IDR</option>
+        </select>
+        <button onClick={handle} className="px-4 py-2 bg-emerald-600 rounded">{mode.toUpperCase()}</button>
+      </div>
+    </div>
+  );
+}
+
+/* AssetHistory: fetch and render small chart per asset */
+function AssetHistory({ asset, days = 30 }) {
+  const [hist, setHist] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchHist = async () => {
+      setLoading(true);
+      try {
+        if (asset.type === "crypto" && asset.coingeckoId) {
+          const res = await fetch(`${COINGECKO_API}/coins/${asset.coingeckoId}/market_chart?vs_currency=usd&days=${days}`);
+          const j = await res.json();
+          if (!mounted) return;
+          const arr = (j.prices || []).map(p => ({ t: p[0], v: p[1] }));
+          setHist(arr);
+        } else if (asset.type === "stock" && asset.symbol) {
+          const to = Math.floor(Date.now() / 1000);
+          const from = to - days * 24*3600;
+          const res = await fetch(FINNHUB_CANDLE(asset.symbol, from, to));
+          const j = await res.json();
+          if (!mounted) return;
+          if (j && j.t && j.c) {
+            const arr = j.t.map((ts, i) => ({ t: ts*1000, v: j.c[i] }));
+            setHist(arr);
+          } else setHist([]);
+        } else setHist([]);
+      } catch (e) {
+        setHist([]);
+      } finally { setLoading(false); }
     };
+    fetchHist();
+    // no interval to avoid rate limits
+    return () => { mounted = false; };
+  }, [asset, days]);
 
-    return (<div className="space-y-4"><div className="flex border-b border-gray-700">
-        {[{key: 'id', label: 'Stocks (ID)'}, {key: 'us', label: 'Stocks (US)'}, {key:'crypto', label:'Crypto'}, {key:'nonliquid', label:'Non-Liquid'}].map(item =>(<button key={item.key} onClick={() => { setSearchMode(item.key); setCcy(item.key === 'id' ? 'IDR' : 'USD'); }} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>))}
-    </div> { searchMode !== 'nonliquid' ? (<div className="space-y-4">
-        <div className="relative"><input value={query} onChange={e=>{setQuery(e.target.value);setSelectedSuggestion(null);}} placeholder="Search by code or name..." className="w-full rounded bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-600 text-white" />
-            {suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-[#1e1e1e] border border-gray-700 rounded max-h-56 overflow-auto">{suggestions.map((s,i)=>(<button key={i} onClick={()=>{setSelectedSuggestion(s);setQuery(`${s.symbol} â€” ${s.display}`);setSuggestions([]);}} className="w-full px-3 py-2 text-left hover:bg-gray-700"><div className="font-medium text-gray-100">{s.symbol}</div><div className="text-xs text-gray-400">{s.display}</div></button>))}</div>}
-        </div><div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div><label className="text-xs text-gray-400">Quantity {searchMode==='crypto' ? '(Units)' : '(Lot)'}</label><input value={qty} onChange={e => handleInputChange('qty', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/></div>
-            <div><label className="text-xs text-gray-400">Price ({ccy})</label><input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/></div>
-        </div>
-        <div><label className="text-xs text-gray-400">Total Value ({ccy})</label><input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/></div>
-        <div className="flex justify-end"><button onClick={() => addAssetWithInitial(toNum(qty) * (searchMode === 'crypto' ? 1 : 100), toNum(price), ccy)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div>
-    </div>) : ( <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input value={nlName} onChange={e=>setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlQty} onChange={e=>setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlPrice} onChange={e=>setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <select value={nlPriceCcy} onChange={e=>setNlPriceCcy(e.target.value)} className="rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white"><option value="IDR">IDR</option><option value="USD">USD</option></select>
-            <input type="date" value={nlPurchaseDate} onChange={e=>setNlPurchaseDate(e.target.value)} className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlYoy} onChange={e=>setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-        </div>
-        <input value={nlDesc} onChange={e=>setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-        <div className="flex justify-end"><button onClick={addNonLiquidAsset} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div>
-    </div>)}</div>);
-};
-const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, usdIdr }) => {
-    const [mode, setMode] = useState('buy');
-    const [qty, setQty] = useState('');
-    const [price, setPrice] = useState('');
-    const [total, setTotal] = useState('');
-    const isIdr = asset && asset.symbol.endsWith('.JK');
-    const ccy = isIdr ? 'IDR' : 'USD';
+  if (loading) return <div className="text-sm text-gray-400">Loading history…</div>;
+  if (!hist || hist.length === 0) return <div className="text-sm text-gray-400">No history</div>;
 
-    useEffect(() => { if (asset) { setPrice(fmt(asset.lastPriceUSD * (isIdr ? usdIdr : 1), ccy, isIdr ? 0 : 4)); setQty(''); setTotal(''); } }, [asset, isIdr, usdIdr]);
-
-    const handleInputChange = (field, value) => {
-        const multiplier = 100; // Assuming lots for stocks
-        if (field === 'qty') {
-            const newQty = toNum(value); setQty(value);
-            const numPrice = toNum(price);
-            if (numPrice > 0) setTotal(fmt(newQty * numPrice * multiplier, ccy));
-        } else if (field === 'price') {
-            const newPrice = toNum(value); setPrice(value);
-            const numQty = toNum(qty);
-            if (numQty > 0) setTotal(fmt(numQty * multiplier * newPrice, ccy));
-        } else if (field === 'total') {
-            const newTotal = toNum(value); setTotal(value);
-            const numPrice = toNum(price);
-            if (numPrice > 0 && newTotal > 0) setQty(fmt(newTotal / (numPrice * multiplier), 'IDR', 0));
-        }
-    };
-
-    if (!isOpen || !asset) return null;
-    const priceUSD = isIdr ? toNum(price) / usdIdr : toNum(price);
-    const handleSubmit = () => { mode === 'buy' ? onBuy(asset, toNum(qty) * 100, priceUSD) : onSell(asset, toNum(qty) * 100, priceUSD); };
-
-    return (<Modal isOpen={isOpen} onClose={onClose} title={asset.symbol}><div className="space-y-4">
-        <div className="flex bg-gray-800 rounded-full p-1"><button onClick={() => setMode('buy')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'buy' ? 'bg-emerald-600 text-white' : 'text-gray-300'}`}>Buy</button><button onClick={() => setMode('sell')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'sell' ? 'bg-red-600 text-white' : 'text-gray-300'}`}>Sell</button></div>
-        <div><label className="text-xs text-gray-400">Quantity (Lot)</label><input type="text" value={qty} onChange={e=>handleInputChange('qty', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" /></div>
-        <div><label className="text-xs text-gray-400">Price ({ccy})</label><input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" /></div>
-        <div><label className="text-xs text-gray-400">Total Value ({ccy})</label><input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" /></div>
-        <button onClick={handleSubmit} className={`w-full py-2.5 rounded font-semibold text-white ${mode === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}</button>
-    </div></Modal>);
-};
-const AreaChart = ({ equityData }) => {
-    const data = equityData.length > 1 ? equityData : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
-    const height=200, width=500, padding={top:10, bottom:20, left:0, right:50};
-    const minVal = Math.min(...data.map(d=>d.v)), maxVal = Math.max(...data.map(d=>d.v));
-    const range = maxVal - minVal || 1;
-    const startTime = data[0].t, endTime = data[data.length - 1].t;
-    const xScale = (t) => padding.left + ((t-startTime)/(endTime-startTime||1)) * (width-padding.left-padding.right);
-    const yScale = (v) => padding.top + (1 - (v-minVal)/range) * (height-padding.top-padding.bottom);
-    const path = data.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
-    const areaPath = `${path} L${xScale(endTime)},${height - padding.bottom} L${xScale(startTime)},${height - padding.bottom} Z`;
-    const yAxisLabels = [minVal, minVal+range*0.25, minVal+range*0.5, minVal+range*0.75, maxVal];
-    const fmtLabel = (v) => v > 1e6 ? `${(v/1e6).toFixed(1)}M` : v > 1e3 ? `${(v/1e3).toFixed(0)}K` : v.toFixed(0);
-    return (<svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-        <defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22c55e" stopOpacity={0.3} /><stop offset="100%" stopColor="#22c55e" stopOpacity={0} /></linearGradient></defs>
-        <path d={areaPath} fill="url(#areaGradient)" /><path d={path} fill="none" stroke="#22c55e" strokeWidth="2" />
-        {yAxisLabels.map(v => (<g key={v}><line x1={padding.left} x2={width-padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.05)" strokeDasharray="2,2" /><text x={width-padding.right+5} y={yScale(v)+4} fontSize="11" fill="#6B7280">{fmtLabel(v)}</text></g>))}
-    </svg>);
-};
-const AllocationDonut = ({ data, displayCcy, usdIdr }) => {
-    const [hoveredIndex, setHoveredIndex] = useState(null);
-    const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, content: '' });
-    const ref = useRef(null);
-    const totalValue = useMemo(() => data.reduce((sum, d) => sum + d.value, 0), [data]);
-    if (totalValue === 0) return <div className="text-center text-gray-500 py-8">No assets to display</div>;
-    const size = 180, innerRadius = 55, outerRadius = 80;
-    const colors = ["#22c55e", "#10b981", "#059669", "#047857", "#065f46", "#064e3b", "#3f3f46", "#52525b", "#71717a"];
-    let cumulativeAngle = -Math.PI / 2;
-    const handleMouseMove = (e) => { if(ref.current) { const rect = ref.current.getBoundingClientRect(); setTooltip(prev => ({...prev, x: e.clientX - rect.left, y: e.clientY - rect.top})); } };
-    const handleMouseOver = (index, d) => {
-        setHoveredIndex(index);
-        const percentage = (d.value / totalValue * 100).toFixed(2);
-        const value = fmt(d.value * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy);
-        setTooltip(prev => ({...prev, show: true, content: `${d.name}: ${value} (${percentage}%)`}));
-    };
-    const handleMouseOut = () => { setHoveredIndex(null); setTooltip(prev => ({...prev, show: false})); };
-    return (
-        <div className="flex flex-col md:flex-row items-center gap-6" ref={ref} onMouseMove={handleMouseMove}>
-            <div className="relative" style={{ width: size, height: size }}>
-                {tooltip.show && (<div className="absolute z-10 p-2 text-xs bg-gray-800 text-white rounded shadow-lg pointer-events-none whitespace-nowrap" style={{ left: tooltip.x + 15, top: tooltip.y }}>{tooltip.content}</div>)}
-                <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}><g transform={`translate(${size/2}, ${size/2})`}>
-                    {data.map((d, i) => {
-                        const angle = (d.value / totalValue) * 2 * Math.PI, startAngle = cumulativeAngle, endAngle = cumulativeAngle + angle; cumulativeAngle = endAngle;
-                        const isHovered = hoveredIndex === i, r_inner = innerRadius, r_outer = isHovered ? outerRadius + 5 : outerRadius;
-                        const arc = (r, sa, ea) => { const largeArcFlag = ea - sa <= Math.PI ? "0" : "1"; return `M ${r*Math.cos(sa)} ${r*Math.sin(sa)} A ${r} ${r} 0 ${largeArcFlag} 1 ${r*Math.cos(ea)} ${r*Math.sin(ea)}`; }
-                        const pathData = `${arc(r_outer, startAngle, endAngle)} L ${r_inner*Math.cos(endAngle)} ${r_inner*Math.sin(endAngle)} ${arc(r_inner, endAngle, startAngle).replace('M','L').replace(new RegExp(`A ${r_inner} ${r_inner} 0 \\d 1`), `A ${r_inner} ${r_inner} 0 ${angle > Math.PI ? 1:0} 0`)} Z`;
-                        return (<path key={d.name} d={pathData} fill={colors[i % colors.length]} onMouseOver={() => handleMouseOver(i, d)} onMouseOut={handleMouseOut} style={{ transition: 'all 0.2s ease-in-out', cursor: 'pointer' }}/>);
-                    })}
-                </g></svg>
-            </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3 w-full">
-                {data.slice(0, 8).map((d, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                        <div style={{ backgroundColor: colors[i % colors.length] }} className="w-3 h-3 rounded-sm flex-shrink-0"></div>
-                        <div><div className="font-semibold text-sm text-gray-100">{d.name}</div><div className="text-xs text-gray-400">{(d.value / totalValue * 100).toFixed(1)}%</div></div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
+  // tiny sparkline
+  const w = 600, h = 120, pad = 8;
+  const xs = hist.map(d=>d.t);
+  const ys = hist.map(d=>d.v);
+  const minY = Math.min(...ys), maxY = Math.max(...ys), range = maxY - minY || 1;
+  const xScale = (t) => pad + ((t - xs[0])/(xs[xs.length-1] - xs[0] || 1)) * (w - pad*2);
+  const yScale = (v) => pad + (1 - (v - minY)/range) * (h - pad*2);
+  const path = hist.map((p,i)=> `${i===0?'M':'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
+  const last = hist[hist.length-1].v;
+  return (
+    <div>
+      <svg viewBox={`0 0 ${w} ${h}`} style={{width:"100%", height:120}}>
+        <path d={`${path} L ${xScale(xs[xs.length-1])},${h-pad} L ${xScale(xs[0])},${h-pad} Z`} fill="rgba(16,185,129,0.12)" />
+        <path d={path} fill="none" stroke="#10b981" strokeWidth="2" />
+        <text x={w-10} y={14} fontSize="12" textAnchor="end" fill="#9ca3af">{asset.type === "crypto" ? `USD ${last.toFixed(2)}` : `USD ${last.toFixed(2)}`}</text>
+      </svg>
+    </div>
+  );
+}
