@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 /* ===================== Icons ===================== */
 const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#374151"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" fill="#9CA3AF"></path></svg>);
 const MoreVerticalIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>);
-const ArrowRightIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>);
+const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>);
 const BackArrowIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
 const GraphIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>);
 const TrashIcon = ({className}) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
@@ -20,19 +20,14 @@ const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencie
 const isBrowser = typeof window !== "undefined";
 const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/g,'')); return isNaN(n) ? 0 : n; };
 
-// Format currency per request:
-// Rp. 1.000.000   (no decimals, dot as thousand separator)
-// $ 60.00         (two decimals)
 function formatMoney(value, ccySymbol) {
   const n = Number(value || 0);
   if (ccySymbol === "$") {
     return `${ccySymbol} ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
   }
-  // Rp.
   return `Rp. ${Math.round(n).toLocaleString('id-ID')}`;
 }
 
-// Format qty: if <1 show up to 6 decimals, else integer no decimals
 function formatQty(v) {
   const n = Number(v || 0);
   if (n === 0) return "0";
@@ -55,7 +50,7 @@ function ensureNumericAsset(a) {
   };
 }
 
-/* ===================== Basic UI Bits ===================== */
+/* ===================== UI Helpers ===================== */
 const Modal = ({ children, isOpen, onClose, title }) => {
   if (!isOpen) return null;
   return (
@@ -89,14 +84,14 @@ export default function PortfolioDashboard() {
   const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_realized_v9") || 0) : 0);
   const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_transactions_v9") || "[]") : []);
   const [tradingBalance, setTradingBalance] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_balance_v9") || 5952) : 5952);
-  // displayCurrencySymbol is either "Rp." or "$"
-  const [displayCurrencySymbol, setDisplayCurrencySymbol] = useState(() => isBrowser ? (localStorage.getItem("pf_display_sym_v9") || "Rp.") : "Rp.");
+  // displaySymbol either "Rp." or "$"
+  const [displaySymbol, setDisplaySymbol] = useState(() => isBrowser ? (localStorage.getItem("pf_display_sym_v9") || "Rp.") : "Rp.");
   const [usdIdr, setUsdIdr] = useState(16400);
   const [isFxLoading, setIsFxLoading] = useState(true);
 
   const [view, setView] = useState('main');
   const [isAddAssetModalOpen, setAddAssetModalOpen] = useState(false);
-  const [searchMode, setSearchMode] = useState("id");
+  const [searchMode, setSearchMode] = useState("stock"); // combined stock (US + ID) by default
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
@@ -108,14 +103,12 @@ export default function PortfolioDashboard() {
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
 
-  // Persist
   useEffect(() => { if (isBrowser) localStorage.setItem("pf_assets_v9", JSON.stringify(assets)); }, [assets]);
   useEffect(() => { if (isBrowser) localStorage.setItem("pf_realized_v9", String(realizedUSD)); }, [realizedUSD]);
   useEffect(() => { if (isBrowser) localStorage.setItem("pf_transactions_v9", JSON.stringify(transactions)); }, [transactions]);
   useEffect(() => { if (isBrowser) localStorage.setItem("pf_balance_v9", String(tradingBalance)); }, [tradingBalance]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_display_sym_v9", displayCurrencySymbol); }, [displayCurrencySymbol]);
+  useEffect(() => { if (isBrowser) localStorage.setItem("pf_display_sym_v9", displaySymbol); }, [displaySymbol]);
 
-  // Fetch USD/IDR
   useEffect(() => {
     const fetchFx = async () => {
       setIsFxLoading(true);
@@ -131,13 +124,11 @@ export default function PortfolioDashboard() {
     return () => clearInterval(id);
   }, []);
 
-  // Poll prices (stocks + crypto)
   useEffect(() => {
     const pollPrices = async () => {
       if (assets.length === 0) return;
       const stockSymbols = [...new Set(assets.filter(a => a.type === "stock").map(a => a.symbol).filter(Boolean))];
       const cryptoIds = [...new Set(assets.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId))];
-
       const newPrices = {};
       for (const symbol of stockSymbols) {
         try {
@@ -150,7 +141,6 @@ export default function PortfolioDashboard() {
           }
         } catch (e) {}
       }
-
       if (cryptoIds.length > 0) {
         try {
           const idsParam = cryptoIds.join(',');
@@ -185,7 +175,7 @@ export default function PortfolioDashboard() {
     return () => clearInterval(id);
   }, [assets.length, usdIdr]);
 
-  // Search suggestions
+  // Search suggestions: combined stock returns all quotes (no forced ID only)
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 2) { setSuggestions([]); return; }
@@ -202,8 +192,7 @@ export default function PortfolioDashboard() {
           if (!res.ok) throw new Error('search failed');
           const payload = await res.json();
           const list = (payload.quotes || []).map(it => ({ symbol: it.symbol.toUpperCase(), display: it.shortname || it.longname || it.symbol, exchange: it.exchange, source: "yahoo", type: "stock" }));
-          if (searchMode === "id") setSuggestions(list.filter(x => x.symbol.toUpperCase().endsWith(".JK")));
-          else setSuggestions(list.filter(x => !x.symbol.toUpperCase().endsWith(".JK") && (x.exchange === 'NMS' || x.exchange === 'NYQ')));
+          setSuggestions(list.slice(0, 10));
         }
       } catch (e) { setSuggestions([]); }
     }, 350);
@@ -324,23 +313,17 @@ export default function PortfolioDashboard() {
     return { rows: calculatedRows, totals: { invested, market, pnl, pnlPct }, totalEquity: totalEq, tradeStats: tStats, donutData: dData };
   }, [assets, transactions, usdIdr, tradingBalance, realizedUSD]);
 
-  /* ===================== Equity Timeline (for AreaChart) ===================== */
-  // Reconstruct timeline from transactions:
+  /* ===================== Equity Timeline ===================== */
   const equitySeries = useMemo(() => {
-    // net buys costs and sells proceeds (USD)
     const buysCost = transactions.filter(t => t.type === 'buy').reduce((s, t) => s + (t.cost || 0), 0);
     const sellsProceeds = transactions.filter(t => t.type === 'sell' || t.type === 'delete').reduce((s, t) => s + (t.proceeds || 0), 0);
-    // initialCash in IDR approx = current tradingBalance + buys - sells (converted to IDR)
     const initialCashIdr = tradingBalance + Math.round(buysCost * usdIdr) - Math.round(sellsProceeds * usdIdr);
-    // We'll replay transactions in chronological order to compute equity points
     const sorted = [...transactions].sort((a,b) => a.date - b.date);
     let cash = initialCashIdr;
-    let holdings = {}; // symbol -> { shares, avgPriceUSD, investedUSD }
+    let holdings = {};
     const points = [];
-    // add starting point at earliest tx or 1 year ago
     const startTime = sorted.length ? sorted[0].date : Date.now() - 365*24*3600*1000;
     const addPoint = (t) => {
-      // compute market value of holdings using current lastPriceUSD when available
       const marketUSD = Object.values(holdings).reduce((s,h) => s + (h.shares * (h.lastPriceUSD || h.avgPriceUSD || 0)), 0);
       const marketIdr = Math.round(marketUSD * usdIdr);
       points.push({ t, v: cash + marketIdr });
@@ -348,16 +331,13 @@ export default function PortfolioDashboard() {
     addPoint(startTime - 1000);
     for (const tx of sorted) {
       if (tx.type === 'buy') {
-        // cash decreased by cost (IDR)
         const costIdr = Math.round((tx.cost || 0) * usdIdr);
         cash -= costIdr;
-        // update holdings
         const key = tx.symbol;
         if (!holdings[key]) holdings[key] = { shares: 0, avgPriceUSD: 0, investedUSD: 0, lastPriceUSD: 0 };
         holdings[key].shares += tx.qty;
         holdings[key].investedUSD += (tx.cost || 0);
         holdings[key].avgPriceUSD = holdings[key].investedUSD / holdings[key].shares;
-        // store lastPrice for that asset if exists in current assets
         const a = assets.find(x => x.symbol === key);
         if (a) holdings[key].lastPriceUSD = a.lastPriceUSD || holdings[key].avgPriceUSD;
       } else if (tx.type === 'sell' || tx.type === 'delete') {
@@ -372,17 +352,12 @@ export default function PortfolioDashboard() {
         const a = assets.find(x => x.symbol === key);
         if (a) holdings[key].lastPriceUSD = a.lastPriceUSD || holdings[key].avgPriceUSD;
       }
-      // use tx.date as point
       addPoint(tx.date);
     }
-    // final point: now using real current asset prices
     const now = Date.now();
     const finalMarketUSD = assets.reduce((s,a) => s + a.shares * a.lastPriceUSD, 0);
     const finalMarketIdr = Math.round(finalMarketUSD * usdIdr);
-    const finalCash = cash; // cash variable already at latest after replay
-    points.push({ t: now, v: finalCash + finalMarketIdr });
-    // Normalize into 30-ish points for smooth chart (or keep as is)
-    // We'll simplify: return points (deduplicated time)
+    points.push({ t: now, v: cash + finalMarketIdr });
     const unique = [];
     const seen = new Set();
     for (const p of points) {
@@ -391,11 +366,9 @@ export default function PortfolioDashboard() {
     return unique.length ? unique : [{ t: now - 1000, v: 0 }, { t: now, v: finalMarketIdr + tradingBalance }];
   }, [transactions, assets, tradingBalance, usdIdr]);
 
-  /* ===================== CSV Export / Import ===================== */
+  /* ===================== CSV ===================== */
   const exportCSV = () => {
-    // export two CSVs concatenated: assets.csv then blank line then transactions.csv
     const pad = s => `"${String(s||"").replace(/"/g,'""')}"`;
-    // assets
     const assetHeaders = ["id","type","symbol","name","shares","avgPriceUSD","investedUSD","lastPriceUSD"];
     const assetsCsv = [assetHeaders.join(",")].concat(assets.map(a => assetHeaders.map(h => pad(a[h])).join(","))).join("\n");
     const txHeaders = ["id","type","assetId","symbol","qty","pricePerUnit","cost","proceeds","realized","date","note"];
@@ -413,13 +386,9 @@ export default function PortfolioDashboard() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target.result;
-      // simple heuristic: look for header "symbol,shares" to detect assets, else "type,assetId,qty" to detect transactions
-      // We'll parse line-by-line and try to find CSV blocks labeled "# assets" and "# transactions"
       try {
         const parts = text.split(/\r?\n/);
-        // find start of assets block
-        let assetsBlock = [], txBlock = [];
-        let mode = null;
+        let assetsBlock = [], txBlock = [], mode = null;
         for (let line of parts) {
           line = line.trim();
           if (!line) continue;
@@ -431,14 +400,10 @@ export default function PortfolioDashboard() {
           if (mode === "tx") txBlock.push(line);
         }
         if (assetsBlock.length > 0) {
-          // first line header
           const header = assetsBlock[0].split(",").map(h => h.replace(/"/g,'').trim());
           const rows = assetsBlock.slice(1).map(r => {
-            // naive split respecting quotes
             const vals = r.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-            const obj = {};
-            header.forEach((h,i) => obj[h] = (vals[i] || "").replace(/^"|"$/g, ""));
-            return obj;
+            const obj = {}; header.forEach((h,i) => obj[h] = (vals[i] || "").replace(/^"|"$/g, "")); return obj;
           });
           const importedAssets = rows.map(r => ensureNumericAsset({
             id: r.id || `imp:${r.symbol}:${Date.now()}`,
@@ -455,9 +420,6 @@ export default function PortfolioDashboard() {
             for (const a of importedAssets) {
               const found = merged.find(x => x.symbol === a.symbol);
               if (!found) merged.push(a);
-              else {
-                // skip duplicates
-              }
             }
             return merged;
           });
@@ -466,9 +428,7 @@ export default function PortfolioDashboard() {
           const header = txBlock[0].split(",").map(h => h.replace(/"/g,'').trim());
           const rows = txBlock.slice(1).map(r => {
             const vals = r.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-            const obj = {};
-            header.forEach((h,i) => obj[h] = (vals[i] || "").replace(/^"|"$/g, ""));
-            return obj;
+            const obj = {}; header.forEach((h,i) => obj[h] = (vals[i] || "").replace(/^"|"$/g, "")); return obj;
           });
           const importedTx = rows.map(r => ({
             id: r.id || `imp:tx:${Date.now()}`,
@@ -495,9 +455,9 @@ export default function PortfolioDashboard() {
     reader.readAsText(file);
   };
 
-  /* ===================== UI Render ===================== */
+  /* ================ Render ================ */
   if (view === 'performance') {
-    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displayCurrencySymbol={displayCurrencySymbol} chartRange={chartRange} setChartRange={setChartRange} donutData={donutData} transactions={transactions} equitySeries={equitySeries} />;
+    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} chartRange={chartRange} setChartRange={setChartRange} donutData={donutData} transactions={transactions} equitySeries={equitySeries} />;
   }
 
   return (
@@ -506,20 +466,22 @@ export default function PortfolioDashboard() {
         <header className="p-4 flex justify-between items-center sticky top-0 bg-black z-10">
           <div className="flex items-center gap-3"><UserAvatar /><h1 className="text-lg font-bold text-white">Bloomboard</h1></div>
 
-          {/* Clean premium switch: symbol inside, numeric rate to right */}
           <div className="flex items-center gap-3">
-            <div
-              role="switch"
-              aria-checked={displayCurrencySymbol === "$"}
-              onClick={() => setDisplayCurrencySymbol(prev => prev === "Rp." ? "$" : "Rp.")}
-              className={`relative w-20 h-9 rounded-full p-1 cursor-pointer transition ${displayCurrencySymbol === "$" ? 'bg-emerald-600' : 'bg-gray-700'}`}
-              title="Toggle display currency"
-            >
-              <div className={`absolute top-1 left-1 w-7 h-7 rounded-full bg-white transition-transform ${displayCurrencySymbol === "$" ? 'translate-x-11' : 'translate-x-0'}`}></div>
-              <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-black">{displayCurrencySymbol === "$" ? "$" : "Rp."}</div>
+            {/* Compact IDR / USD switch (small) */}
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-gray-400">IDR</div>
+              <div
+                role="switch"
+                aria-checked={displaySymbol === "$"}
+                onClick={() => setDisplaySymbol(prev => prev === "Rp." ? "$" : "Rp.")}
+                className={`relative w-14 h-7 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-gray-700'}`}
+                title="Toggle display currency"
+              >
+                <div className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-black">{displaySymbol === "$" ? 'USD' : 'IDR'}</div>
+              </div>
+              <div className="text-xs text-gray-400">{isFxLoading ? '...' : new Intl.NumberFormat('id-ID').format(usdIdr)}</div>
             </div>
-
-            <div className="text-xs text-gray-400">{isFxLoading ? '...' : new Intl.NumberFormat('id-ID').format(usdIdr)}</div>
 
             <button onClick={() => setManagePortfolioOpen(true)} className="text-gray-400 hover:text-white"><MoreVerticalIcon /></button>
           </div>
@@ -527,7 +489,7 @@ export default function PortfolioDashboard() {
 
         <main>
           <div className="border-b border-gray-800 px-4">
-            <nav className="flex space-x-6 py-2"><button className="py-2 px-1 font-semibold text-sm text-white">PORTFOLIO</button></nav>
+            <nav className="flex space-x-6 py-2"><div className="py-2 px-1 font-semibold text-sm text-white">PORTFOLIO</div></nav>
           </div>
 
           <section className="p-4">
@@ -535,43 +497,42 @@ export default function PortfolioDashboard() {
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Trading Balance</p>
                 <p className="font-semibold text-sm text-white">
-                  {displayCurrencySymbol === "Rp." ? formatMoney(tradingBalance, "Rp.") : formatMoney(tradingBalance / usdIdr, "$")}
+                  {displaySymbol === "Rp." ? formatMoney(tradingBalance, "Rp.") : formatMoney(tradingBalance / usdIdr, "$")}
                 </p>
               </div>
 
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Invested</p>
                 <p className="font-semibold text-sm text-white">
-                  {displayCurrencySymbol === "Rp." ? formatMoney(totals.invested * usdIdr, "Rp.") : formatMoney(totals.invested, "$")}
+                  {displaySymbol === "Rp." ? formatMoney(totals.invested * usdIdr, "Rp.") : formatMoney(totals.invested, "$")}
                 </p>
               </div>
 
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Total Equity</p>
                 <p className="font-semibold text-sm text-white">
-                  {displayCurrencySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}
+                  {displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}
                 </p>
               </div>
 
               <div className="bg-black p-2 col-span-2">
                 <p className="text-xs text-gray-500">Gain P&L</p>
                 <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {totals.pnl >= 0 ? '+' : ''}{displayCurrencySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%)
+                  {totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%)
                 </p>
               </div>
 
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Realized P&L</p>
                 <p className={`font-semibold text-sm ${realizedUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {realizedUSD >= 0 ? '+' : ''}{displayCurrencySymbol === "Rp." ? formatMoney(realizedUSD * usdIdr, "Rp.") : formatMoney(realizedUSD, "$")}
+                  {realizedUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(realizedUSD * usdIdr, "Rp.") : formatMoney(realizedUSD, "$")}
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 flex justify-end">
-              <button onClick={() => setView('performance')} className="ml-auto flex items-center gap-2 text-sm font-medium text-white px-3 py-2 bg-gray-900 rounded hover:bg-gray-800">
-                <GraphIcon /> View Performance <ArrowRightIcon />
-              </button>
+            <div className="mt-4 text-right">
+              {/* simplified "View Performance >" text only */}
+              <div className="text-sm text-white cursor-pointer inline-flex items-center gap-2" onClick={() => setView('performance')}>View Performance <ArrowRightIconSimple /></div>
             </div>
           </section>
 
@@ -581,36 +542,34 @@ export default function PortfolioDashboard() {
             <table className="w-full text-sm">
               <thead className="text-left text-gray-500 text-xs">
                 <tr>
-                  <th className="p-3 pt-4">Code<br/>Qty</th>
-                  <th className="p-3 pt-4 text-right">Invested<br/>Avg Price</th>
-                  <th className="p-3 pt-4 text-right">Market<br/>Current Price</th>
+                  <th className="p-3 pt-4">Code</th>
+                  <th className="p-3 pt-4 text-right">Invested<br/><span className="sr-only">Avg Price</span></th>
+                  <th className="p-3 pt-4 text-right">Market<br/><span className="sr-only">Current Price</span></th>
                   <th className="p-3 pt-4 text-right">Gain P&L</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => {
-                  const factor = displayCurrencySymbol === "Rp." ? usdIdr : 1;
-                  const sym = displayCurrencySymbol === "Rp." ? "Rp." : "$";
                   return (
                     <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
                       <td className="p-3">
                         <div className="font-semibold text-base text-white">{r.symbol}</div>
-                        <div className="text-gray-400">{formatQty(r.shares)} Qty</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className="font-semibold text-white">{displayCurrencySymbol === "Rp." ? formatMoney(r.investedUSD * usdIdr, "Rp.") : formatMoney(r.investedUSD, "$")}</div>
-                        <div className="text-gray-400">{displayCurrencySymbol === "Rp." ? formatMoney(r.avgPrice * usdIdr, "Rp.") : formatMoney(r.avgPrice, "$")}</div>
+                        <div className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(r.investedUSD * usdIdr, "Rp.") : formatMoney(r.investedUSD, "$")}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.avgPrice * usdIdr, "Rp.") : formatMoney(r.avgPrice, "$")}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className="font-semibold text-white">{displayCurrencySymbol === "Rp." ? formatMoney(r.marketValueUSD * usdIdr, "Rp.") : formatMoney(r.marketValueUSD, "$")}</div>
-                        <div className="text-gray-400">{displayCurrencySymbol === "Rp." ? formatMoney(r.lastPriceUSD * usdIdr, "Rp.") : formatMoney(r.lastPriceUSD, "$")}</div>
+                        <div className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(r.marketValueUSD * usdIdr, "Rp.") : formatMoney(r.marketValueUSD, "$")}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.lastPriceUSD * usdIdr, "Rp.") : formatMoney(r.lastPriceUSD, "$")}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className={`font-semibold ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displayCurrencySymbol === "Rp." ? formatMoney(r.pnlUSD * usdIdr, "Rp.") : formatMoney(r.pnlUSD, "$")}</div>
-                        <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{Math.round(r.pnlPct)}%</div>
+                        <div className={`font-semibold ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(r.pnlUSD * usdIdr, "Rp.") : formatMoney(r.pnlUSD, "$")}</div>
+                        <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{Math.round(r.pnlPct)}%</div>
                       </td>
                     </tr>
                   );
@@ -634,7 +593,7 @@ export default function PortfolioDashboard() {
           <BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} />
         </Modal>
 
-        <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({ open: false, asset: null })} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displayCurrencySymbol={displayCurrencySymbol} />
+        <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({ open: false, asset: null })} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
 
         <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}>
           <ManagePortfolioSheet onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data?")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); } }} usdIdr={usdIdr} />
@@ -646,7 +605,7 @@ export default function PortfolioDashboard() {
 
 /* ===================== Performance & Subcomponents ===================== */
 
-const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, displayCurrencySymbol, chartRange, setChartRange, donutData, transactions, equitySeries }) => {
+const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, displaySymbol, chartRange, setChartRange, donutData, transactions, equitySeries }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
   return (
     <div className="bg-black text-gray-300 min-h-screen font-sans">
@@ -668,21 +627,21 @@ const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, dis
           <div className="p-4">
             <div>
               <p className="text-sm text-gray-400">Total Equity</p>
-              <p className="text-2xl font-bold text-white mb-1">{displayCurrencySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}</p>
-              <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{displayCurrencySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%) All Time</p>
+              <p className="text-2xl font-bold text-white mb-1">{displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}</p>
+              <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%) All Time</p>
             </div>
 
-            <div className="mt-6"><AreaChart equityData={equitySeries} displayCurrencySymbol={displayCurrencySymbol} usdIdr={usdIdr} /></div>
+            <div className="mt-6"><AreaChart equityData={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} /></div>
 
             <div className="mt-6">
               <h3 className="text-base font-semibold text-white mb-4">Asset Allocation</h3>
-              <AllocationDonut data={donutData} displayCcySymbol={displayCurrencySymbol} usdIdr={usdIdr} />
+              <AllocationDonut data={donutData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
             </div>
           </div>
         ) : activeTab === 'trade' ? (
-          <TradeStatsView stats={tradeStats} displayCcySymbol={displayCurrencySymbol} usdIdr={usdIdr} />
+          <TradeStatsView stats={tradeStats} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
         ) : (
-          <HistoryView transactions={transactions} usdIdr={usdIdr} displayCcySymbol={displayCurrencySymbol} />
+          <HistoryView transactions={transactions} usdIdr={usdIdr} displayCcySymbol={displaySymbol} />
         )}
       </div>
     </div>
@@ -714,8 +673,6 @@ const TradeStatsView = ({ stats, displayCcySymbol, usdIdr }) => {
 };
 
 const HistoryView = ({ transactions, usdIdr, displayCcySymbol }) => {
-  const factor = displayCcySymbol === "Rp." ? usdIdr : 1;
-  const currencySym = displayCcySymbol === "Rp." ? "Rp." : "$";
   return (
     <div className="p-4">
       <div className="overflow-x-auto">
@@ -784,6 +741,8 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
   const [total, setTotal] = useState('');
   const [ccy, setCcy] = useState('IDR');
 
+  useEffect(() => { setSearchMode('stock'); }, []); // ensure stock tab selected by default
+
   const handleInputChange = (field, value) => {
     if (field === 'shares') {
       setShares(value);
@@ -791,8 +750,8 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
       setTotal(num ? `${Math.round(num)} ${ccy}` : '');
     } else if (field === 'price') {
       setPrice(value);
-      const num = toNum(price) * toNum(shares);
-      setTotal(num ? `${Math.round(toNum(value) * toNum(shares))} ${ccy}` : '');
+      const num = toNum(value) * toNum(shares);
+      setTotal(num ? `${Math.round(num)} ${ccy}` : '');
     } else if (field === 'total') {
       setTotal(value);
       const nTotal = toNum(value), nShares = toNum(shares);
@@ -803,8 +762,8 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
   return (
     <div className="space-y-4">
       <div className="flex border-b border-gray-700">
-        {[{ key: 'id', label: 'Stocks (ID)' }, { key: 'us', label: 'Stocks (US)' }, { key: 'crypto', label: 'Crypto' }, { key: 'nonliquid', label: 'Non-Liquid' }].map(item => (
-          <button key={item.key} onClick={() => { setSearchMode(item.key); setCcy(item.key === 'id' ? 'IDR' : 'USD'); }} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>
+        {[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (
+          <button key={item.key} onClick={() => { setSearchMode(item.key); setCcy(item.key === 'stock' ? 'IDR' : (item.key === 'crypto' ? 'USD' : 'IDR')); }} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>
         ))}
       </div>
 
@@ -865,23 +824,23 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
   );
 };
 
-const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, displayCurrencySymbol }) => {
+const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, displaySymbol }) => {
   const [mode, setMode] = useState('buy');
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [total, setTotal] = useState('');
-  const [ccy, setCcy] = useState(displayCurrencySymbol === "Rp." ? 'IDR' : 'USD');
+  const [ccy, setCcy] = useState(displaySymbol === "Rp." ? 'IDR' : 'USD');
 
   useEffect(() => {
     if (asset) {
       const isIdr = asset.symbol && asset.symbol.endsWith('.JK');
       const priceVal = asset.lastPriceUSD * (isIdr ? usdIdr : 1);
-      setPrice(String(isFinite(priceVal) ? (displayCurrencySymbol === "$" ? priceVal.toFixed(2) : Math.round(priceVal)) : ''));
+      setPrice(String(isFinite(priceVal) ? (displaySymbol === "$" ? priceVal.toFixed(2) : Math.round(priceVal)) : ''));
       setShares('');
       setTotal('');
-      setCcy(displayCurrencySymbol === "Rp." ? 'IDR' : 'USD');
+      setCcy(displaySymbol === "Rp." ? 'IDR' : 'USD');
     }
-  }, [asset, usdIdr, displayCurrencySymbol]);
+  }, [asset, usdIdr, displaySymbol]);
 
   if (!isOpen || !asset) return null;
 
@@ -951,7 +910,7 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 };
 
 /* ===================== Charts ===================== */
-const AreaChart = ({ equityData, displayCurrencySymbol, usdIdr }) => {
+const AreaChart = ({ equityData, displaySymbol, usdIdr }) => {
   const data = equityData.length > 1 ? equityData : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
   const height = 220, width = 700, padding = { top: 10, bottom: 20, left: 30, right: 40 };
   const minVal = Math.min(...data.map(d => d.v)), maxVal = Math.max(...data.map(d => d.v));
@@ -962,7 +921,7 @@ const AreaChart = ({ equityData, displayCurrencySymbol, usdIdr }) => {
   const path = data.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
   const areaPath = `${path} L${xScale(endTime)},${height - padding.bottom} L${xScale(startTime)},${height - padding.bottom} Z`;
   const yAxisLabels = [minVal, minVal + range * 0.25, minVal + range * 0.5, minVal + range * 0.75, maxVal];
-  const fmtLabel = (v) => displayCurrencySymbol === "Rp." ? `Rp. ${Math.round(v).toLocaleString('id-ID')}` : `$ ${Math.round(v / usdIdr).toLocaleString()}`;
+  const fmtLabel = (v) => displaySymbol === "Rp." ? `Rp. ${Math.round(v).toLocaleString('id-ID')}` : `$ ${Math.round(v / usdIdr).toLocaleString()}`;
 
   return (
     <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded">
