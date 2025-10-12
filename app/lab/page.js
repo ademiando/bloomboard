@@ -3,12 +3,13 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-/* ===================== SVG ICONS (unchanged) ===================== */
+/* ===================== SVG ICONS ===================== */
 const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#374151"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" fill="#9CA3AF"></path></svg>);
 const MoreVerticalIcon = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>);
 const ArrowRightIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>);
 const BackArrowIcon = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
 const GraphIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>);
+const TrashIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>);
 
 /* ===================== CONFIG & HELPERS ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
@@ -38,8 +39,21 @@ function ensureNumericAsset(a) {
     };
 }
 
-/* ===================== UI COMPONENTS (unchanged) ===================== */
-const Modal = ({ children, isOpen, onClose, title }) => { if (!isOpen) return null; return (<div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}><div className="bg-[#181818] rounded-lg w-full max-w-lg border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}><div className="flex justify-between items-center p-4 border-b border-gray-700"><h2 className="text-lg font-semibold text-white">{title}</h2><button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button></div><div className="p-4">{children}</div></div></div>); };
+/* ===================== UI COMPONENTS ===================== */
+const Modal = ({ children, isOpen, onClose, title }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
+            <div className="bg-[#181818] rounded-lg w-full max-w-lg border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center p-4 border-b border-gray-700">
+                    <h2 className="text-lg font-semibold text-white">{title}</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div className="p-4">{children}</div>
+            </div>
+        </div>
+    );
+};
 const BottomSheet = ({ isOpen, onClose, children }) => { if (!isOpen) return null; return (<div className="fixed inset-0 bg-black/60 z-40" onClick={onClose}><div className={`fixed bottom-0 left-0 right-0 bg-[#1e1e1e] rounded-t-2xl shadow-lg transition-transform duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}><div className="w-10 h-1 bg-gray-600 rounded-full mx-auto my-3"></div>{children}</div></div>); };
 
 /* ===================== MAIN DASHBOARD COMPONENT ===================== */
@@ -63,16 +77,15 @@ export default function PortfolioDashboard() {
     const [tradeModal, setTradeModal] = useState({ open: false, asset: null });
     const [chartRange, setChartRange] = useState("YTD");
 
-    // Non-liquid form state
+    // non-liquid
     const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
 
-    // equity history for AreaChart
+    // equity history for chart and history tab
     const [equityHistory, setEquityHistory] = useState(() => {
         if (!isBrowser) return [];
         try { return JSON.parse(localStorage.getItem("pf_equity_hist_v1") || "[]"); } catch { return []; }
     });
 
-    // persist key states
     useEffect(() => { if(isBrowser) localStorage.setItem("pf_assets_v9", JSON.stringify(assets)); }, [assets]);
     useEffect(() => { if(isBrowser) localStorage.setItem("pf_realized_v9", String(realizedUSD)); }, [realizedUSD]);
     useEffect(() => { if(isBrowser) localStorage.setItem("pf_transactions_v9", JSON.stringify(transactions)); }, [transactions]);
@@ -80,7 +93,7 @@ export default function PortfolioDashboard() {
     useEffect(() => { if(isBrowser) localStorage.setItem("pf_display_ccy_v9", displayCcy); }, [displayCcy]);
     useEffect(() => { if(isBrowser) localStorage.setItem("pf_equity_hist_v1", JSON.stringify(equityHistory)); }, [equityHistory]);
 
-    /* =========== FX Polling (CoinGecko tether -> IDR) =========== */
+    /* ========== FX polling ========== */
     useEffect(() => {
         const fetchFx = async () => {
             setIsFxLoading(true);
@@ -96,9 +109,9 @@ export default function PortfolioDashboard() {
         return () => clearInterval(id);
     }, []);
 
-    /* =========== Stock prices polling (Finnhub) - existing logic preserved but made safer =========== */
+    /* ========== Stocks price polling (Finnhub) ========== */
     useEffect(() => {
-        const pollStockPrices = async () => {
+        const pollPrices = async () => {
             if (assets.length === 0) return;
             const stockSymbols = [...new Set(assets.filter(a => a.type === "stock" && a.symbol).map(a => a.symbol))];
             if (stockSymbols.length === 0) return;
@@ -112,9 +125,7 @@ export default function PortfolioDashboard() {
                         const isIdr = symbol.toUpperCase().endsWith('.JK');
                         priceMap[symbol] = { [isIdr ? 'idr' : 'usd']: price };
                     }
-                } catch (e) {
-                    // ignore failures for specific symbols
-                }
+                } catch (e) { /* ignore symbol error */ }
             }
             if (Object.keys(priceMap).length > 0) {
                 setAssets(prev => prev.map(a => {
@@ -130,14 +141,14 @@ export default function PortfolioDashboard() {
                 }));
             }
         };
-        pollStockPrices();
-        const id = setInterval(pollStockPrices, 30000);
+        pollPrices();
+        const id = setInterval(pollPrices, 30000);
         return () => clearInterval(id);
     }, [assets.length, usdIdr]);
 
-    /* =========== Crypto prices polling (CoinGecko) =========== */
+    /* ========== Crypto polling (CoinGecko) ========== */
     useEffect(() => {
-        const pollCryptoPrices = async () => {
+        const pollCrypto = async () => {
             const cryptoIds = [...new Set(assets.filter(a => a.type === 'crypto' && a.coingeckoId).map(a => a.coingeckoId))];
             if (cryptoIds.length === 0) return;
             try {
@@ -150,29 +161,26 @@ export default function PortfolioDashboard() {
                     }
                     return a;
                 }));
-            } catch (e) {
-                // ignore
-            }
+            } catch (e) { /* ignore */ }
         };
-        pollCryptoPrices();
-        const id = setInterval(pollCryptoPrices, 30000);
+        pollCrypto();
+        const id = setInterval(pollCrypto, 30000);
         return () => clearInterval(id);
     }, [assets.length, usdIdr]);
 
-    /* =========== Keep an equity history for the AreaChart (push on relevant changes) =========== */
+    /* ========== Equity history push (debounced-ish) ========== */
     useEffect(() => {
         const tMarket = assets.reduce((s, a) => s + (a.lastPriceUSD * a.shares), 0);
         const totalEq = (tMarket * usdIdr) + tradingBalance;
         setEquityHistory(prev => {
             const last = prev.length ? prev[prev.length - 1] : null;
-            // Avoid too-frequent duplicates: only push if different value or >30s elapsed
             if (last && Math.abs(last.v - totalEq) < 1 && (Date.now() - last.t) < 30000) return prev;
             const next = [...prev, { t: Date.now(), v: totalEq }].slice(-500);
             return next;
         });
     }, [assets, usdIdr, tradingBalance]);
 
-    /* =========== Search suggestions (unchanged behavior) =========== */
+    /* ========== Search suggestions ========== */
     const searchTimeoutRef = useRef(null);
     useEffect(() => {
         if (!query || query.trim().length < 2) { setSuggestions([]); return; }
@@ -197,7 +205,7 @@ export default function PortfolioDashboard() {
         return () => clearTimeout(searchTimeoutRef.current);
     }, [query, searchMode]);
 
-    /* =========== Trading logic (handleBuy/handleSell) - ensure lastPriceUSD set on buy =========== */
+    /* ========== Trading: Buy/Sell (now in shares, no lot multiplier) ========== */
     const handleBuy = (assetStub, qty, priceUSD) => {
         const costUSD = qty * priceUSD;
         if (costUSD * usdIdr > tradingBalance) { alert("Insufficient trading balance."); return false; }
@@ -210,7 +218,7 @@ export default function PortfolioDashboard() {
                 shares: a.shares + qty,
                 investedUSD: a.investedUSD + costUSD,
                 avgPrice: (a.investedUSD + costUSD) / (a.shares + qty),
-                lastPriceUSD: priceUSD // update last price to buy price
+                lastPriceUSD: priceUSD
             } : a));
         } else {
             const newAsset = ensureNumericAsset({ ...assetStub, shares: qty, avgPrice: priceUSD, investedUSD: costUSD, lastPriceUSD: priceUSD });
@@ -224,8 +232,10 @@ export default function PortfolioDashboard() {
     };
     const handleSell = (asset, qty, priceUSD) => {
         if (qty > asset.shares) { alert("Cannot sell more than you own."); return false; }
-        const proceedsUSD = qty * priceUSD, costOfSold = qty * asset.avgPrice, realized = proceedsUSD - costOfSold;
-        const newTx = {id:`tx:${Date.now()}`, assetId:asset.id, type:"sell", qty, pricePerUnit: priceUSD, proceeds: proceedsUSD, realized, date: Date.now(), symbol: asset.symbol, name: asset.name };
+        const proceedsUSD = qty * priceUSD;
+        const costOfSold = qty * asset.avgPrice;
+        const realized = proceedsUSD - costOfSold;
+        const newTx = { id:`tx:${Date.now()}`, assetId:asset.id, type:"sell", qty, pricePerUnit: priceUSD, proceeds: proceedsUSD, realized, date: Date.now(), symbol: asset.symbol, name: asset.name };
         setAssets(prev => prev.map(a => a.id === asset.id ? {
             ...a,
             shares: a.shares - qty,
@@ -239,8 +249,8 @@ export default function PortfolioDashboard() {
         return true;
     };
 
-    /* =========== Add asset helpers (unchanged except lastPriceUSD set on creation) =========== */
-    const addAssetWithInitial = (qty, price, ccy) => {
+    /* ========== Add / Non-liquid helpers (price currency option) ========== */
+    const addAssetWithInitial = (qty, price, priceCcy) => {
         let p = selectedSuggestion;
         if (!p) {
             const t = query.split("—")[0].trim();
@@ -248,25 +258,39 @@ export default function PortfolioDashboard() {
             p = { symbol: t.toUpperCase(), display: t.toUpperCase(), type: 'stock' };
         }
         if (qty <= 0 || price <= 0) { alert("Quantity & price must be > 0"); return; }
-        const priceUSD = ccy === "IDR" ? price / usdIdr : price;
-        const newAssetStub = { id: `${p.source}:${p.symbol || p.id}:${Date.now()}`, type: p.type, symbol: p.symbol, name: p.display, coingeckoId: p.type === 'crypto' ? p.id : undefined, lastPriceUSD: priceUSD };
+        const priceUSD = priceCcy === "IDR" ? price / usdIdr : price;
+        const newAssetStub = {
+            id: `${p.source}:${p.symbol || p.id}:${Date.now()}`,
+            type: p.type,
+            symbol: p.symbol,
+            name: p.display,
+            coingeckoId: p.type === 'crypto' ? p.id : undefined,
+            lastPriceUSD: priceUSD
+        };
         if (handleBuy(newAssetStub, qty, priceUSD)) { setAddAssetModalOpen(false); setQuery(""); setSelectedSuggestion(null); }
     };
     const addNonLiquidAsset = () => {
         const name = nlName.trim(), qty = toNum(nlQty), priceIn = toNum(nlPrice);
         if (!name || qty <= 0 || priceIn <= 0) { alert("Name, quantity, and price must be filled."); return; }
         const priceUSD = nlPriceCcy === 'IDR' ? priceIn / usdIdr : priceIn;
-        const newAssetStub = { id: `nonliquid:${name.replace(/\s/g,'_')}:${Date.now()}`, type: 'nonliquid', symbol: name.slice(0,8).toUpperCase(), name, purchaseDate: nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now(), nonLiquidYoy: toNum(nlYoy), description: nlDesc, lastPriceUSD: priceUSD };
+        const newAssetStub = { id:`nonliquid:${name.replace(/\s/g,'_')}:${Date.now()}`, type:'nonliquid', symbol:name.slice(0,8).toUpperCase(), name, purchaseDate: nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now(), nonLiquidYoy: toNum(nlYoy), description: nlDesc, lastPriceUSD: priceUSD };
         if (handleBuy(newAssetStub, qty, priceUSD)) { setAddAssetModalOpen(false); setNlName(''); setNlQty(''); setNlPrice(''); setNlPurchaseDate(''); setNlDesc(''); }
     };
 
-    /* =========== Balance helpers (unchanged) =========== */
+    /* ========== Balance helpers ========== */
     const handleAddBalance = (amount) => { setTradingBalance(b => b + amount); setBalanceModalOpen(false); };
     const handleWithdraw = (amount) => { if (amount > tradingBalance) { alert("Withdrawal amount exceeds balance."); return; } setTradingBalance(b => b - amount); setBalanceModalOpen(false); };
     const exportCSV = () => alert("CSV Export functionality is preserved.");
     const importCSV = (e) => { alert("CSV Import functionality is preserved."); e.target.value = ''; };
 
-    /* =========== Derived data (row calculations & totals) =========== */
+    /* ========== Delete asset (new) ========== */
+    const deleteAsset = (assetId) => {
+        if (!confirm("Delete this asset? This will remove it from your portfolio (transactions remain).")) return;
+        setAssets(prev => prev.filter(a => a.id !== assetId));
+        // Optionally remove transactions referencing it (user didn't ask to remove txs); keep txs for history
+    };
+
+    /* ========== Derived calculations ========== */
     const { rows, totals, totalEquity, tradeStats, donutData } = useMemo(() => {
         const calculatedRows = assets.map(a => {
             const market = a.shares * a.lastPriceUSD;
@@ -296,58 +320,107 @@ export default function PortfolioDashboard() {
         return { rows: calculatedRows, totals: t, totalEquity: totalEq, tradeStats: tStats, donutData: dData };
     }, [assets, transactions, usdIdr, tradingBalance, realizedUSD]);
 
-    /* =========== Render Performance subpage if requested =========== */
+    /* ========== Header display currency switch (shows rate and toggles displayCcy) ========== */
+    const toggleDisplay = () => setDisplayCcy(prev => prev === 'IDR' ? 'USD' : 'IDR');
+
+    /* ========== Show Performance subpage ========== */
     if (view === 'performance') {
-        return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displayCcy={displayCcy} chartRange={chartRange} setChartRange={setChartRange} donutData={donutData} equityHistory={equityHistory} />;
+        return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displayCcy={displayCcy} chartRange={chartRange} setChartRange={setChartRange} donutData={donutData} equityHistory={equityHistory} transactions={transactions} />;
     }
 
-    /* ===================== MAIN UI (kept layout exactly as original) ===================== */
+    /* ===================== MAIN LAYOUT ===================== */
     return (
         <div className="bg-black text-gray-300 min-h-screen font-sans">
             <div className="max-w-4xl mx-auto">
                 <header className="p-4 flex justify-between items-center sticky top-0 bg-black z-10">
                     <div className="flex items-center gap-3"><UserAvatar /><h1 className="text-lg font-bold text-white">Bloomboard</h1></div>
                     <div className="flex items-center gap-4">
-                        <div className="text-xs text-gray-400">USD/IDR: {isFxLoading ? '...' : fmt(usdIdr)}</div>
+                        <div className="flex items-center gap-3">
+                            <div className="text-xs text-gray-400 select-none">USD/IDR</div>
+                            <div className="text-xs text-gray-200 font-semibold">{isFxLoading ? '...' : fmt(usdIdr, 'IDR')}</div>
+                            <div onClick={toggleDisplay} title="Toggle display currency" className={`ml-2 relative inline-flex items-center cursor-pointer select-none`} >
+                                <div className={`w-12 h-6 rounded-full transition-colors ${displayCcy === 'IDR' ? 'bg-gray-700' : 'bg-emerald-600'}`}></div>
+                                <div className={`absolute left-0 w-6 h-6 transform ${displayCcy === 'IDR' ? 'translate-x-0' : 'translate-x-6'} top-0 transition-transform`}>
+                                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs text-white">{displayCcy}</div>
+                                </div>
+                            </div>
+                        </div>
                         <button onClick={() => setManagePortfolioOpen(true)} className="text-gray-400 hover:text-white"><MoreVerticalIcon /></button>
                     </div>
                 </header>
+
                 <main>
-                    <div className="border-b border-gray-800 px-4"><nav className="flex space-x-6"><button className="py-2 px-1 border-b-2 font-semibold text-sm border-emerald-400 text-white">PORTFOLIO</button></nav></div>
+                    <div className="border-b border-gray-800 px-4">
+                        <nav className="flex space-x-6">
+                            <button className="py-2 px-1 border-b-2 font-semibold text-sm border-emerald-400 text-white">PORTFOLIO</button>
+                        </nav>
+                    </div>
+
                     <section className="p-4">
                         <div className="grid grid-cols-3 gap-px bg-[#0a0a0a] p-px">
-                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Trading Balance</p><p className="font-semibold text-sm text-white">{fmt(tradingBalance, 'IDR')}</p></div>
-                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Invested</p><p className="font-semibold text-sm text-white">{fmt(totals.invested * usdIdr, 'IDR')}</p></div>
-                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Total Equity</p><p className="font-semibold text-sm text-white">{fmt(totalEquity, 'IDR')}</p></div>
-                            <div className="bg-black p-2 col-span-2"><p className="text-xs text-gray-500">Total P&L</p><p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{fmt(totals.pnl * usdIdr, 'IDR')}</p></div>
-                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Gain</p><p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(totals.pnlPct || 0).toFixed(4)}%</p></div>
+                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Trading Balance</p><p className="font-semibold text-sm text-white">{fmt(tradingBalance, displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
+                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Invested</p><p className="font-semibold text-sm text-white">{fmt(totals.invested * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
+                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Total Equity</p><p className="font-semibold text-sm text-white">{fmt(totalEquity, displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
+
+                            <div className="bg-black p-2 col-span-2"><p className="text-xs text-gray-500">Gain P&L</p><p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{fmt(totals.pnl * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
+
+                            <div className="bg-black p-2"><p className="text-xs text-gray-500">Realized P&L</p><p className="font-semibold text-sm text-emerald-400">+{fmt(realizedUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
                         </div>
+
                         <button onClick={() => setView('performance')} className="mt-4 flex justify-between items-center w-full text-left p-2 -m-2 rounded hover:bg-gray-800/50">
                             <span className="text-sm font-medium text-white flex items-center gap-2"><GraphIcon />View Performance</span><ArrowRightIcon />
                         </button>
                     </section>
+
                     <div className="h-2 bg-[#0a0a0a]"></div>
+
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead className="text-left text-gray-500 text-xs"><tr>
-                                <th className="p-3 pt-4 font-normal">Code<br/>Shares</th><th className="p-3 pt-4 font-normal text-right">Market<br/>Current Price</th><th className="p-3 pt-4 font-normal text-right">P&L<br/>Gain</th>
+                                <th className="p-3 pt-4 font-normal">Code<br/>Shares</th>
+                                <th className="p-3 pt-4 font-normal text-right">Invested<br/>Avg Price</th>
+                                <th className="p-3 pt-4 font-normal text-right">Market<br/>Current Price</th>
+                                <th className="p-3 pt-4 font-normal text-right">P&L<br/>Gain</th>
+                                <th className="p-3 pt-4 font-normal text-right"> </th>
                             </tr></thead>
                             <tbody>
-                                {rows.map(r => (<tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
-                                    <td className="p-3"><div className="font-semibold text-base text-white">{r.symbol}</div><div className="text-gray-400">{r.shares.toLocaleString()} Shares</div></td>
-                                    <td className="p-3 text-right tabular-nums">
-                                        <div className="font-semibold text-white">{fmt(r.marketValueUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy)}</div>
-                                        <div className="text-gray-400">{fmt(r.lastPriceUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy, displayCcy === 'IDR' ? 0 : 4)}</div>
-                                    </td>
-                                    <td className="p-3 text-right tabular-nums">
-                                        <div className={`font-semibold ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{fmt(r.pnlUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy)}</div>
-                                        <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlPct.toFixed(4)}%</div>
-                                    </td>
-                                </tr>))}
+                                {rows.map(r => (
+                                    <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50">
+                                        <td className="p-3 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
+                                            <div className="font-semibold text-base text-white flex items-center justify-between">
+                                                <span>{r.symbol}</span>
+                                            </div>
+                                            <div className="text-gray-400">{r.shares.toLocaleString()} Shares</div>
+                                        </td>
+
+                                        <td className="p-3 text-right tabular-nums">
+                                            <div className="font-semibold text-white">{fmt(r.investedUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</div>
+                                            <div className="text-gray-400">{(r.avgPrice>0? (displayCcy === 'IDR' ? fmt(r.avgPrice*usdIdr, 'IDR') : fmt(r.avgPrice, 'USD')) : '-')}</div>
+                                        </td>
+
+                                        <td className="p-3 text-right tabular-nums">
+                                            <div className="font-semibold text-white">{fmt(r.marketValueUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</div>
+                                            <div className="text-gray-400">{fmt(r.lastPriceUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD', displayCcy === 'IDR' ? 0 : 4)}</div>
+                                        </td>
+
+                                        <td className="p-3 text-right tabular-nums">
+                                            <div className={`font-semibold ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{fmt(r.pnlUSD * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</div>
+                                            <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlPct.toFixed(4)}%</div>
+                                        </td>
+
+                                        <td className="p-3 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button onClick={() => setTradeModal({ open: true, asset: r })} className="text-xs text-gray-300 px-2 py-1 rounded bg-gray-800/50">Trade</button>
+                                                <button onClick={() => deleteAsset(r.id)} className="text-xs text-red-400 px-2 py-1 rounded bg-transparent hover:bg-red-900/10 flex items-center gap-1"><TrashIcon /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
+
                         {rows.length === 0 && <p className="text-center py-8 text-gray-500">No assets in portfolio.</p>}
-                         <div className="p-4 text-center"><button onClick={() => setAddAssetModalOpen(true)} className="text-emerald-400 font-semibold text-sm">+ Add new asset</button></div>
+                        <div className="p-4 text-center"><button onClick={() => setAddAssetModalOpen(true)} className="text-emerald-400 font-semibold text-sm">+ Add new asset</button></div>
                     </div>
                 </main>
 
@@ -364,14 +437,16 @@ export default function PortfolioDashboard() {
                 <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}>
                     <ManagePortfolioSheet displayCcy={displayCcy} setDisplayCcy={setDisplayCcy} onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} />
                 </BottomSheet>
+
             </div>
         </div>
     );
 }
 
-/* ===================== SUB-PAGES & FULLY FUNCTIONAL COMPONENTS ===================== */
-/* PerformancePage now consumes equityHistory for AreaChart */
-const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, displayCcy, chartRange, setChartRange, donutData, equityHistory }) => {
+/* ===================== SUB-PAGES & COMPONENTS ===================== */
+
+/* Performance page with extra History tab */
+const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, displayCcy, chartRange, setChartRange, donutData, equityHistory, transactions }) => {
     const [activeTab, setActiveTab] = useState('portfolio');
     return (
         <div className="bg-black text-gray-300 min-h-screen font-sans"><div className="max-w-4xl mx-auto">
@@ -379,26 +454,63 @@ const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, dis
             <div className="border-b border-gray-800 px-4"><nav className="flex space-x-6">
                 <button onClick={() => setActiveTab('portfolio')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'portfolio' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PORTFOLIO</button>
                 <button onClick={() => setActiveTab('trade')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'trade' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>TRADE</button>
+                <button onClick={() => setActiveTab('history')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'history' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>HISTORY</button>
             </nav></div>
+
             {activeTab === 'portfolio' ? (
                 <div className="p-4 space-y-8">
                     <div>
                         <p className="text-sm text-gray-400">Total Equity</p>
-                        <p className="text-2xl font-bold text-white mb-1">{fmt(totalEquity, 'IDR')}</p>
-                        <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}> {totals.pnl >= 0 ? '+' : ''}{fmt(totals.pnl * usdIdr, 'IDR')} ({(totals.pnlPct || 0).toFixed(4)}%) All Time </p>
+                        <p className="text-2xl font-bold text-white mb-1">{fmt(totalEquity, displayCcy === 'IDR' ? 'IDR' : 'USD')}</p>
+                        <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}> {totals.pnl >= 0 ? '+' : ''}{fmt(totals.pnl * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')} ({(totals.pnlPct || 0).toFixed(4)}%) All Time </p>
                     </div>
+
                     <div>
-                        <div className="mt-4"><AreaChart equityData={equityHistory.length ? equityHistory : [{ t: Date.now() - 365 * 24 * 36e5, v: totalEquity * 0.8 }, { t: Date.now(), v: totalEquity }]} /></div>
+                        <div className="mt-4"><AreaChart equityData={equityHistory.length ? equityHistory : [{t: Date.now() - 365*24*36e5, v: totalEquity*0.8}, {t:Date.now(), v:totalEquity}]} /></div>
                         <div className="flex items-center justify-center gap-2 mt-4">{["1W","1M","3M","YTD","1Y","All"].map(r => (<button key={r} onClick={() => setChartRange(r)} className={`px-3 py-1 text-xs rounded-full ${chartRange === r ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-400'}`}>{r}</button>))}</div>
                     </div>
+
                     <div className="h-2 bg-[#0a0a0a] -mx-4"></div>
+
                     <div>
-                         <h3 className="text-base font-semibold text-white mb-4">Asset Allocation</h3>
+                        <h3 className="text-base font-semibold text-white mb-4">Asset Allocation</h3>
                         <AllocationDonut data={donutData} displayCcy={displayCcy} usdIdr={usdIdr} />
                     </div>
                 </div>
-            ) : (<TradeStatsView stats={tradeStats} displayCcy={displayCcy} usdIdr={usdIdr} />)}
+            ) : activeTab === 'trade' ? (
+                <TradeStatsView stats={tradeStats} displayCcy={displayCcy} usdIdr={usdIdr} />
+            ) : (
+                <HistoryView transactions={transactions} equityHistory={equityHistory} usdIdr={usdIdr} displayCcy={displayCcy} />
+            )}
         </div></div>
+    );
+};
+
+const HistoryView = ({ transactions, equityHistory, usdIdr, displayCcy }) => {
+    return (
+        <div className="p-4 space-y-6">
+            <div>
+                <h3 className="text-white font-semibold mb-2">Equity History (recent)</h3>
+                <div className="bg-[#0f0f0f] p-3 rounded">
+                    <AreaChart equityData={equityHistory.length ? equityHistory.slice(-120) : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}]} />
+                </div>
+            </div>
+            <div>
+                <h3 className="text-white font-semibold mb-2">Transactions</h3>
+                <div className="bg-[#0f0f0f] rounded divide-y divide-gray-800">
+                    {transactions.length === 0 && <div className="p-4 text-gray-400">No transactions yet.</div>}
+                    {transactions.map(tx => (
+                        <div key={tx.id} className="p-3 flex justify-between items-center">
+                            <div>
+                                <div className="font-medium text-white">{tx.type.toUpperCase()} {tx.symbol}</div>
+                                <div className="text-xs text-gray-400">{new Date(tx.date).toLocaleString()} • Qty: {tx.qty} • Price: {fmt(tx.pricePerUnit * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</div>
+                            </div>
+                            <div className={`font-semibold ${tx.type === 'sell' ? (tx.realized>=0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-100'}`}>{tx.type === 'sell' ? (tx.realized>=0?'+':'') + fmt(tx.realized * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD') : fmt(tx.cost * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -411,19 +523,19 @@ const TradeStatsView = ({ stats, displayCcy, usdIdr }) => {
                 <div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-xs text-gray-400">Win Rate</span><span className="text-2xl font-bold text-white">{stats.winRate.toFixed(0)}%</span></div>
             </div><div className="mt-2 text-sm">{stats.wins} Wins / {stats.losses} Losses ({stats.trades} Trades)</div></div>
             <div className="grid grid-cols-2 gap-4">
-                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Max Profit</p><p className="text-lg font-semibold text-emerald-400">+{fmt(getVal(stats.maxProfit), displayCcy)}</p></div>
-                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Max Loss</p><p className="text-lg font-semibold text-red-400">{fmt(getVal(stats.maxLoss), displayCcy)}</p></div>
-                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Profit</p><p className="text-lg font-semibold text-emerald-400">+{fmt(getVal(stats.avgProfit), displayCcy)}</p></div>
-                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Loss</p><p className="text-lg font-semibold text-red-400">{fmt(getVal(stats.avgLoss), displayCcy)}</p></div>
+                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Max Profit</p><p className="text-lg font-semibold text-emerald-400">+{fmt(getVal(stats.maxProfit), displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
+                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Max Loss</p><p className="text-lg font-semibold text-red-400">{fmt(getVal(stats.maxLoss), displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
+                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Profit</p><p className="text-lg font-semibold text-emerald-400">+{fmt(getVal(stats.avgProfit), displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
+                <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Loss</p><p className="text-lg font-semibold text-red-400">{fmt(getVal(stats.avgLoss), displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
             </div>
-            <div><p className="text-sm text-gray-400">Total Realized Gain</p><p className="text-2xl font-bold text-emerald-400">+{fmt(getVal(stats.totalRealizedGain), displayCcy)}</p></div>
+            <div><p className="text-sm text-gray-400">Total Realized Gain</p><p className="text-2xl font-bold text-emerald-400">+{fmt(getVal(stats.totalRealizedGain), displayCcy === 'IDR' ? 'IDR' : 'USD')}</p></div>
         </div>
     );
 };
 
-/* Balance Manager, ManagePortfolioSheet, AddAssetForm, TradeModal,
-   AreaChart, AllocationDonut components are unchanged except where they rely on new props.
-   I kept them identical to your original file to preserve UI & UX. */
+/* Balance Manager, ManagePortfolioSheet, AddAssetForm, TradeModal, AreaChart, AllocationDonut follow.
+   AddAssetForm: removed 'lot', changed to Shares + added price currency select.
+   TradeModal: uses shares (no *100). */
 
 const BalanceManager = ({ onConfirm }) => {
     const [amount, setAmount] = useState('');
@@ -434,6 +546,7 @@ const BalanceManager = ({ onConfirm }) => {
         </form>
     );
 };
+
 const ManagePortfolioSheet = ({ displayCcy, setDisplayCcy, onImportClick, onExportClick, onAddBalance, onWithdraw }) => (
     <div className="p-4 text-white text-sm"><h3 className="text-base font-semibold mb-4 px-2">Manage Portfolio</h3><div className="space-y-1">
         <div className="flex justify-between items-center p-2 rounded hover:bg-gray-700/50"><span className="text-gray-300">Display Currency</span><div className="flex items-center bg-gray-700 rounded-full p-0.5"><button onClick={() => setDisplayCcy('IDR')} className={`px-3 py-1 text-xs rounded-full ${displayCcy === 'IDR' ? 'bg-gray-500' : ''}`}>IDR</button><button onClick={() => setDisplayCcy('USD')} className={`px-3 py-1 text-xs rounded-full ${displayCcy === 'USD' ? 'bg-gray-500' : ''}`}>USD</button></div></div>
@@ -443,90 +556,118 @@ const ManagePortfolioSheet = ({ displayCcy, setDisplayCcy, onImportClick, onExpo
         <button onClick={onExportClick} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Export CSV</button>
     </div></div>
 );
+
 const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc }) => {
-    const [qty, setQty] = useState('');
+    const [shares, setShares] = useState('');
     const [price, setPrice] = useState('');
     const [total, setTotal] = useState('');
-    const [ccy, setCcy] = useState('IDR');
+    const [priceCcy, setPriceCcy] = useState('IDR'); // user option
 
     const handleInputChange = (field, value) => {
-        const multiplier = searchMode === 'crypto' ? 1 : 100;
-        if (field === 'qty') {
-            const newQty = toNum(value); setQty(value);
+        const multiplier = 1; // shares, no lots
+        if (field === 'shares') {
+            const newQty = toNum(value); setShares(value);
             const numPrice = toNum(price);
-            if (numPrice > 0) setTotal(fmt(newQty * numPrice * multiplier, ccy));
+            if (numPrice > 0) setTotal(fmt(newQty * numPrice * multiplier, priceCcy));
         } else if (field === 'price') {
             const newPrice = toNum(value); setPrice(value);
-            const numQty = toNum(qty);
-            if (numQty > 0) setTotal(fmt(numQty * multiplier * newPrice, ccy));
+            const numQty = toNum(shares);
+            if (numQty > 0) setTotal(fmt(numQty * multiplier * newPrice, priceCcy));
         } else if (field === 'total') {
             const newTotal = toNum(value); setTotal(value);
-            const numQty = toNum(qty);
+            const numQty = toNum(shares);
             const numPrice = toNum(price);
-            if (numPrice > 0 && newTotal > 0) setQty(fmt(newTotal / (numPrice * multiplier), 'IDR', 0));
-            else if (numQty > 0 && newTotal > 0) setPrice(fmt(newTotal / (numQty * multiplier), ccy, 2));
+            if (numPrice > 0 && newTotal > 0) setShares(fmt(newTotal / (numPrice * multiplier), 'IDR', 0));
+            else if (numQty > 0 && newTotal > 0) setPrice(fmt(newTotal / (numQty * multiplier), priceCcy, 2));
         }
     };
-    
-    return (<div className="space-y-4"><div className="flex border-b border-gray-700">
-        {[{key: 'id', label: 'Stocks (ID)'}, {key: 'us', label: 'Stocks (US)'}, {key:'crypto', label:'Crypto'}, {key:'nonliquid', label:'Non-Liquid'}].map(item =>(<button key={item.key} onClick={() => { setSearchMode(item.key); setCcy(item.key === 'id' ? 'IDR' : 'USD'); }} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>))}
-    </div> { searchMode !== 'nonliquid' ? (<div className="space-y-4">
-        <div className="relative"><input value={query} onChange={e=>{setQuery(e.target.value);setSelectedSuggestion(null);}} placeholder="Search by code or name..." className="w-full rounded bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-600 text-white" />
-            {suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-[#1e1e1e] border border-gray-700 rounded max-h-56 overflow-auto">{suggestions.map((s,i)=>(<button key={i} onClick={()=>{setSelectedSuggestion(s);setQuery(`${s.symbol} — ${s.display}`);setSuggestions([]);}} className="w-full px-3 py-2 text-left hover:bg-gray-700"><div className="font-medium text-gray-100">{s.symbol}</div><div className="text-xs text-gray-400">{s.display}</div></button>))}</div>}
-        </div><div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div><label className="text-xs text-gray-400">Quantity {searchMode==='crypto' ? '(Units)' : '(Lot)'}</label><input value={qty} onChange={e => handleInputChange('qty', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/></div>
-            <div><label className="text-xs text-gray-400">Price ({ccy})</label><input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/></div>
+
+    return (<div className="space-y-4">
+        <div className="flex border-b border-gray-700">
+            {[{key: 'id', label: 'Stocks (ID)'}, {key: 'us', label: 'Stocks (US)'}, {key:'crypto', label:'Crypto'}, {key:'nonliquid', label:'Non-Liquid'}].map(item =>(
+                <button key={item.key} onClick={() => { setSearchMode(item.key); }} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>
+            ))}
         </div>
-        <div><label className="text-xs text-gray-400">Total Value ({ccy})</label><input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/></div>
-        <div className="flex justify-end"><button onClick={() => addAssetWithInitial(toNum(qty) * (searchMode === 'crypto' ? 1 : 100), toNum(price), ccy)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div>
-    </div>) : ( <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input value={nlName} onChange={e=>setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlQty} onChange={e=>setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlPrice} onChange={e=>setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <select value={nlPriceCcy} onChange={e=>setNlPriceCcy(e.target.value)} className="rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white"><option value="IDR">IDR</option><option value="USD">USD</option></select>
-            <input type="date" value={nlPurchaseDate} onChange={e=>setNlPurchaseDate(e.target.value)} className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlYoy} onChange={e=>setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-        </div>
-        <input value={nlDesc} onChange={e=>setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-        <div className="flex justify-end"><button onClick={addNonLiquidAsset} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div>
-    </div>)}</div>);
+
+        { searchMode !== 'nonliquid' ? (<div className="space-y-4">
+            <div className="relative">
+                <input value={query} onChange={e=>{setQuery(e.target.value);setSelectedSuggestion(null);}} placeholder="Search by code or name..." className="w-full rounded bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-600 text-white" />
+                {suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-[#1e1e1e] border border-gray-700 rounded max-h-56 overflow-auto">{suggestions.map((s,i)=>(<button key={i} onClick={()=>{setSelectedSuggestion(s);setQuery(`${s.symbol} — ${s.display}`);setSuggestions([]);}} className="w-full px-3 py-2 text-left hover:bg-gray-700"><div className="font-medium text-gray-100">{s.symbol}</div><div className="text-xs text-gray-400">{s.display}</div></button>))}</div>}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                    <label className="text-xs text-gray-400">Shares</label>
+                    <input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/>
+                </div>
+
+                <div>
+                    <label className="text-xs text-gray-400">Price</label>
+                    <div className="flex gap-2">
+                        <input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/>
+                        <select value={priceCcy} onChange={e => setPriceCcy(e.target.value)} className="mt-1 rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white">
+                            <option value="IDR">IDR</option>
+                            <option value="USD">USD</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label className="text-xs text-gray-400">Total Value</label>
+                    <input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text"/>
+                </div>
+            </div>
+
+            <div className="flex justify-end"><button onClick={() => addAssetWithInitial(toNum(shares), toNum(price), priceCcy)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div>
+        </div>) : ( <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input value={nlName} onChange={e=>setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+                <input value={nlQty} onChange={e=>setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+                <input value={nlPrice} onChange={e=>setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+                <select value={nlPriceCcy} onChange={e=>setNlPriceCcy(e.target.value)} className="rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white"><option value="IDR">IDR</option><option value="USD">USD</option></select>
+                <input type="date" value={nlPurchaseDate} onChange={e=>setNlPurchaseDate(e.target.value)} className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+                <input value={nlYoy} onChange={e=>setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+            </div>
+            <input value={nlDesc} onChange={e=>setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+            <div className="flex justify-end"><button onClick={addNonLiquidAsset} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div>
+        </div>)}
+    </div>);
 };
 
 const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, usdIdr }) => {
     const [mode, setMode] = useState('buy');
-    const [qty, setQty] = useState('');
+    const [shares, setShares] = useState('');
     const [price, setPrice] = useState('');
     const [total, setTotal] = useState('');
     const isIdr = asset && asset.symbol && asset.symbol.endsWith('.JK');
     const ccy = isIdr ? 'IDR' : 'USD';
 
-    useEffect(() => { if (asset) { setPrice(fmt(asset.lastPriceUSD * (isIdr ? usdIdr : 1), ccy, isIdr ? 0 : 4)); setQty(''); setTotal(''); } }, [asset, isIdr, usdIdr]);
-    
+    useEffect(() => { if (asset) { setPrice(fmt(asset.lastPriceUSD * (isIdr ? usdIdr : 1), ccy, isIdr ? 0 : 4)); setShares(''); setTotal(''); } }, [asset, isIdr, usdIdr]);
+
     const handleInputChange = (field, value) => {
-        const multiplier = 100; // Assuming lots for stocks
-        if (field === 'qty') {
-            const newQty = toNum(value); setQty(value);
+        const multiplier = 1; // shares
+        if (field === 'shares') {
+            const newQty = toNum(value); setShares(value);
             const numPrice = toNum(price);
             if (numPrice > 0) setTotal(fmt(newQty * numPrice * multiplier, ccy));
         } else if (field === 'price') {
             const newPrice = toNum(value); setPrice(value);
-            const numQty = toNum(qty);
+            const numQty = toNum(shares);
             if (numQty > 0) setTotal(fmt(numQty * multiplier * newPrice, ccy));
         } else if (field === 'total') {
             const newTotal = toNum(value); setTotal(value);
             const numPrice = toNum(price);
-            if (numPrice > 0 && newTotal > 0) setQty(fmt(newTotal / (numPrice * multiplier), 'IDR', 0));
+            if (numPrice > 0 && newTotal > 0) setShares(fmt(newTotal / (numPrice * multiplier), 'IDR', 0));
         }
     };
-    
+
     if (!isOpen || !asset) return null;
-    const priceUSD = isIdr ? toNum(price) / usdIdr : toNum(price);
-    const handleSubmit = () => { mode === 'buy' ? onBuy(asset, toNum(qty) * 100, priceUSD) : onSell(asset, toNum(qty) * 100, priceUSD); };
+    const priceUSD = (isIdr ? toNum(price) / usdIdr : toNum(price));
+    const handleSubmit = () => { mode === 'buy' ? onBuy(asset, toNum(shares), priceUSD) : onSell(asset, toNum(shares), priceUSD); };
 
     return (<Modal isOpen={isOpen} onClose={onClose} title={asset.symbol}><div className="space-y-4">
         <div className="flex bg-gray-800 rounded-full p-1"><button onClick={() => setMode('buy')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'buy' ? 'bg-emerald-600 text-white' : 'text-gray-300'}`}>Buy</button><button onClick={() => setMode('sell')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'sell' ? 'bg-red-600 text-white' : 'text-gray-300'}`}>Sell</button></div>
-        <div><label className="text-xs text-gray-400">Quantity (Lot)</label><input type="text" value={qty} onChange={e=>handleInputChange('qty', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" /></div>
+        <div><label className="text-xs text-gray-400">Shares</label><input type="text" value={shares} onChange={e=>handleInputChange('shares', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" /></div>
         <div><label className="text-xs text-gray-400">Price ({ccy})</label><input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" /></div>
         <div><label className="text-xs text-gray-400">Total Value ({ccy})</label><input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" /></div>
         <button onClick={handleSubmit} className={`w-full py-2.5 rounded font-semibold text-white ${mode === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}</button>
@@ -565,7 +706,7 @@ const AllocationDonut = ({ data, displayCcy, usdIdr }) => {
     const handleMouseOver = (index, d) => {
         setHoveredIndex(index);
         const percentage = (d.value / totalValue * 100).toFixed(2);
-        const value = fmt(d.value * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy);
+        const value = fmt(d.value * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD');
         setTooltip(prev => ({...prev, show: true, content: `${d.name}: ${value} (${percentage}%)`}));
     };
     const handleMouseOut = () => { setHoveredIndex(null); setTooltip(prev => ({...prev, show: false})); };
@@ -576,18 +717,24 @@ const AllocationDonut = ({ data, displayCcy, usdIdr }) => {
                 <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}><g transform={`translate(${size/2}, ${size/2})`}>
                     {data.map((d, i) => {
                         const angle = (d.value / totalValue) * 2 * Math.PI, startAngle = cumulativeAngle, endAngle = cumulativeAngle + angle; cumulativeAngle = endAngle;
-                        const isHovered = hoveredIndex === i, r_inner = innerRadius, r_outer = isHovered ? outerRadius + 5 : outerRadius;
+                        const isHovered = hoveredIndex === i, r_inner = innerRadius, r_outer = isHovered ? outerRadius + 6 : outerRadius;
                         const arc = (r, sa, ea) => { const largeArcFlag = ea - sa <= Math.PI ? "0" : "1"; return `M ${r*Math.cos(sa)} ${r*Math.sin(sa)} A ${r} ${r} 0 ${largeArcFlag} 1 ${r*Math.cos(ea)} ${r*Math.sin(ea)}`; }
                         const pathData = `${arc(r_outer, startAngle, endAngle)} L ${r_inner*Math.cos(endAngle)} ${r_inner*Math.sin(endAngle)} ${arc(r_inner, endAngle, startAngle).replace('M','L').replace(new RegExp(`A ${r_inner} ${r_inner} 0 \\d 1`), `A ${r_inner} ${r_inner} 0 ${angle > Math.PI ? 1:0} 0`)} Z`;
-                        return (<path key={d.name} d={pathData} fill={colors[i % colors.length]} onMouseOver={() => handleMouseOver(i, d)} onMouseOut={handleMouseOut} style={{ transition: 'all 0.2s ease-in-out', cursor: 'pointer' }}/>);
+                        return (<path key={d.name} d={pathData} fill={colors[i % colors.length]} stroke="#0b0b0b" strokeWidth={isHovered?2:1} onMouseOver={() => handleMouseOver(i, d)} onMouseOut={handleMouseOut} style={{ transition: 'all 0.15s ease-in-out', cursor: 'pointer' }}/>);
                     })}
                 </g></svg>
             </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3 w-full">
-                {data.slice(0, 8).map((d, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                        <div style={{ backgroundColor: colors[i % colors.length] }} className="w-3 h-3 rounded-sm flex-shrink-0"></div>
-                        <div><div className="font-semibold text-sm text-gray-100">{d.name}</div><div className="text-xs text-gray-400">{(d.value / totalValue * 100).toFixed(1)}%</div></div>
+
+            <div className="grid grid-cols-1 gap-y-3 w-full max-w-md">
+                {data.map((d, i) => (
+                    <div key={d.name} className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-gray-900/40">
+                        <div className="flex items-center gap-3">
+                            <div style={{ backgroundColor: colors[i % colors.length] }} className="w-4 h-4 rounded-sm flex-shrink-0 border border-black"></div>
+                            <div>
+                                <div className="font-semibold text-sm text-gray-100">{d.name}</div>
+                                <div className="text-xs text-gray-400">{((d.value/totalValue)*100).toFixed(2)}% • {fmt(d.value * (displayCcy === 'IDR' ? usdIdr : 1), displayCcy === 'IDR' ? 'IDR' : 'USD')}</div>
+                            </div>
+                        </div>
                     </div>
                 ))}
             </div>
