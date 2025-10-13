@@ -311,7 +311,7 @@ export default function PortfolioDashboard() {
   };
 
   /* ===================== Derived Data ===================== */
-  const { rows, totals, totalEquity, tradeStats, donutData } = useMemo(() => {
+  const { rows, totals, totalEquity, tradeStats } = useMemo(() => {
     const calculatedRows = assets.map(a => {
       const effectiveLastPriceUSD = a.lastPriceUSD > 0 ? a.lastPriceUSD : a.avgPrice;
       const market = a.shares * effectiveLastPriceUSD;
@@ -344,8 +344,7 @@ export default function PortfolioDashboard() {
       avgLoss: losses.length ? losses.reduce((s, tx) => s + tx.realized, 0) / losses.length : 0,
       totalRealizedGain: realizedUSD
     };
-    const dData = calculatedRows.map(r => ({ name: r.symbol, value: r.marketValueUSD })).sort((a,b)=>b.value-a.value);
-    return { rows: calculatedRows, totals: { invested, market, pnl, pnlPct }, totalEquity: totalEq, tradeStats: tStats, donutData: dData };
+    return { rows: calculatedRows, totals: { invested, market, pnl, pnlPct }, totalEquity: totalEq, tradeStats: tStats };
   }, [assets, transactions, usdIdr, tradingBalance, realizedUSD]);
 
   /* ===================== Equity Timeline ===================== */
@@ -492,7 +491,7 @@ export default function PortfolioDashboard() {
 
   /* ================ Render ================ */
   if (view === 'performance') {
-    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} donutData={donutData} transactions={transactions} equitySeries={equitySeries} />;
+    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} portfolioData={rows} transactions={transactions} equitySeries={equitySeries} />;
   }
 
   return (
@@ -674,7 +673,7 @@ export default function PortfolioDashboard() {
 
 /* ===================== Performance & Subcomponents ===================== */
 
-const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, donutData, transactions, equitySeries }) => {
+const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
   const [chartRange, setChartRange] = useState("YTD");
   const [returnPeriod, setReturnPeriod] = useState('Monthly');
@@ -795,7 +794,7 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
             </div>
             
             <div className="mt-8">
-              <PortfolioAllocation data={donutData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
+              <PortfolioAllocation data={portfolioData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
             </div>
 
           </div>
@@ -1132,16 +1131,44 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
   );
 };
 
-const PortfolioAllocation = ({ data, displayCcySymbol, usdIdr }) => {
-  const [activeTab, setActiveTab] = useState('Stocks');
+const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) => {
+  const [activeTab, setActiveTab] = useState('Equity');
+  const [hoveredSegment, setHoveredSegment] = useState(null);
+
+  const equityData = useMemo(() => fullAssetData.map(d => ({ name: d.symbol, value: d.marketValueUSD })).sort((a,b)=>b.value-a.value), [fullAssetData]);
   
+  const sectorData = useMemo(() => {
+    const sectors = {
+        'Saham': { value: 0, color: '#10B981', count: 0 },
+        'Crypto': { value: 0, color: '#3B82F6', count: 0 },
+        'Non-Liquid': { value: 0, color: '#F97316', count: 0 }
+    };
+    fullAssetData.forEach(asset => {
+        if (asset.type === 'stock') {
+            sectors['Saham'].value += asset.marketValueUSD;
+            sectors['Saham'].count++;
+        } else if (asset.type === 'crypto') {
+            sectors['Crypto'].value += asset.marketValueUSD;
+            sectors['Crypto'].count++;
+        } else if (asset.type === 'nonliquid') {
+            sectors['Non-Liquid'].value += asset.marketValueUSD;
+            sectors['Non-Liquid'].count++;
+        }
+    });
+    return Object.entries(sectors)
+        .map(([name, data]) => ({ name, ...data }))
+        .filter(d => d.value > 0);
+  }, [fullAssetData]);
+
+  const data = activeTab === 'Equity' ? equityData : sectorData;
   const totalValueUSD = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
+  
   if (!totalValueUSD) return null;
 
   const totalValueDisplay = displayCcySymbol === "Rp." ? totalValueUSD * usdIdr : totalValueUSD;
   const assetCount = data.length;
 
-  const size = 200, strokeWidth = 15, innerRadius = (size / 2) - strokeWidth;
+  const size = 200, strokeWidth = 15, innerRadius = (size / 2) - strokeWidth, gap = 0.03;
   const circumference = 2 * Math.PI * innerRadius;
   const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"];
 
@@ -1151,7 +1178,7 @@ const PortfolioAllocation = ({ data, displayCcySymbol, usdIdr }) => {
     <div className="mt-8">
       <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3>
       <div className="flex gap-2 mb-4">
-        <button onClick={() => setActiveTab('Stocks')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Stocks' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Stocks</button>
+        <button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Equity</button>
         <button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Sub-Sector</button>
       </div>
 
@@ -1159,36 +1186,56 @@ const PortfolioAllocation = ({ data, displayCcySymbol, usdIdr }) => {
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           {data.map((d, i) => {
             const percentage = d.value / totalValueUSD;
-            const strokeDasharray = `${percentage * circumference} ${circumference}`;
-            const strokeDashoffset = -accumulatedOffset;
-            accumulatedOffset += percentage * circumference;
+            const angle = percentage * 2 * Math.PI;
+            const startAngle = accumulatedOffset;
+            const endAngle = startAngle + angle;
+            const isHovered = hoveredSegment === d.name;
+            const r = innerRadius + (isHovered ? 3 : 0);
+
+            const largeArcFlag = angle - gap > Math.PI ? 1 : 0;
+            const startX = size/2 + r * Math.cos(startAngle + gap / 2);
+            const startY = size/2 + r * Math.sin(startAngle + gap / 2);
+            const endX = size/2 + r * Math.cos(endAngle - gap / 2);
+            const endY = size/2 + r * Math.sin(endAngle - gap / 2);
+
+            accumulatedOffset += angle;
+
+            const pathData = `M ${startX} ${startY} A ${r} ${r} 0 ${largeArcFlag} 1 ${endX} ${endY}`;
+            
             return (
-              <circle
+              <path
                 key={i}
-                cx={size/2} cy={size/2} r={innerRadius}
+                d={pathData}
                 fill="transparent"
-                stroke={colors[i % colors.length]}
+                stroke={d.color || colors[i % colors.length]}
                 strokeWidth={strokeWidth}
-                strokeDasharray={strokeDasharray}
-                strokeDashoffset={strokeDashoffset}
+                className="transition-all duration-300"
+                onMouseOver={() => setHoveredSegment(d.name)}
+                onMouseOut={() => setHoveredSegment(null)}
               />
             );
           })}
         </svg>
         <div className="absolute flex flex-col items-center justify-center">
-          <div className="text-xl font-bold text-white">{displayCcySymbol === 'Rp.' ? `Rp${(totalValueDisplay/1e6).toFixed(2)} M` : formatMoney(totalValueDisplay, '$')}</div>
-          <div className="text-sm text-gray-400">{assetCount} Stocks</div>
+          <div className="text-xl font-bold text-white">{formatMoney(totalValueDisplay, displayCcySymbol)}</div>
+          <div className="text-sm text-gray-400">{assetCount} {activeTab === 'Equity' ? 'Stocks' : 'Sectors'}</div>
         </div>
       </div>
       
-      <div className="space-y-4">
+      <div className="space-y-2">
         {data.map((d, i) => {
           const percentage = (d.value / totalValueUSD) * 100;
           const valueDisplay = d.value * (displayCcySymbol === "Rp." ? usdIdr : 1);
+          const isHovered = hoveredSegment === d.name;
           return (
-            <div key={i}>
+            <div 
+              key={i}
+              className={`p-2 rounded-lg transition-colors duration-300 ${isHovered ? 'bg-gray-800' : ''}`}
+              onMouseOver={() => setHoveredSegment(d.name)}
+              onMouseOut={() => setHoveredSegment(null)}
+            >
               <div className="flex justify-between items-center text-sm mb-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center font-bold text-white">{d.name.charAt(0)}</div>
                   <div>
                     <div className="font-semibold text-white">{d.name}</div>
@@ -1197,8 +1244,8 @@ const PortfolioAllocation = ({ data, displayCcySymbol, usdIdr }) => {
                 </div>
                 <div className="text-white font-semibold">{percentage.toFixed(2)}%</div>
               </div>
-              <div className="w-full bg-gray-700 rounded-full h-1.5">
-                <div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: colors[i % colors.length] }}></div>
+              <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
+                <div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div>
               </div>
             </div>
           );
