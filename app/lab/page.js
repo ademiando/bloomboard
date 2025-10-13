@@ -542,7 +542,7 @@ export default function PortfolioDashboard() {
           <section className="p-4">
             <div className="grid grid-cols-3 gap-px bg-[#0a0a0a] p-px">
               <div className="bg-black p-2">
-                <p className="text-xs text-gray-500">Trading Balance</p>
+                <p className="text-xs text-gray-500">Cash</p>
                 <p className="font-semibold text-xs text-white">
                   {displaySymbol === "Rp." ? formatMoney(tradingBalance, "Rp.") : formatMoney(tradingBalance / usdIdr, "$")}
                 </p>
@@ -593,12 +593,24 @@ export default function PortfolioDashboard() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-gray-500 text-xs">
+              <thead className="text-left text-gray-500 text-xs font-semibold">
                 <tr>
-                  <th className="p-3 pt-4">Code</th>
-                  <th className="p-3 pt-4 text-right">Invested<br/><span className="sr-only">Avg Price</span></th>
-                  <th className="p-3 pt-4 text-right">Market<br/><span className="sr-only">Current Price</span></th>
-                  <th className="p-3 pt-4 text-right">Gain P&L</th>
+                  <th className="p-3 pt-4">
+                    <div>Code</div>
+                    <div className="font-normal text-gray-600">Qty</div>
+                  </th>
+                  <th className="p-3 pt-4 text-right">
+                    <div>Invested</div>
+                    <div className="font-normal text-gray-600">Avg Price</div>
+                  </th>
+                  <th className="p-3 pt-4 text-right">
+                    <div>Market</div>
+                    <div className="font-normal text-gray-600">Current Price</div>
+                  </th>
+                  <th className="p-3 pt-4 text-right">
+                    <div>Gain P&L</div>
+                    <div className="font-normal text-gray-600">%</div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
