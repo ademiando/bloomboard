@@ -25,7 +25,7 @@ const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/
 function formatMoney(value, ccySymbol) {
   const n = Number(value || 0);
   if (ccySymbol === "$") {
-    return `${ccySymbol} ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+    return `${ccySymbol} ${n.toFixed(3).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
   }
   return `Rp. ${Math.round(n).toLocaleString('id-ID')}`;
 }
@@ -536,49 +536,49 @@ export default function PortfolioDashboard() {
 
         <main>
           <div className="border-b border-gray-800 px-4">
-            <nav className="flex space-x-6 py-2"><div className="py-2 px-1 font-semibold text-sm text-white">PORTFOLIO</div></nav>
+            <nav className="flex space-x-6 py-2"></nav>
           </div>
 
           <section className="p-4">
             <div className="grid grid-cols-3 gap-px bg-[#0a0a0a] p-px">
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Trading Balance</p>
-                <p className="font-semibold text-sm text-white">
+                <p className="font-semibold text-xs text-white">
                   {displaySymbol === "Rp." ? formatMoney(tradingBalance, "Rp.") : formatMoney(tradingBalance / usdIdr, "$")}
                 </p>
               </div>
 
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Invested</p>
-                <p className="font-semibold text-sm text-white">
+                <p className="font-semibold text-xs text-white">
                   {displaySymbol === "Rp." ? formatMoney(totals.invested * usdIdr, "Rp.") : formatMoney(totals.invested, "$")}
                 </p>
               </div>
 
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Total Equity</p>
-                <p className="font-semibold text-sm text-white">
+                <p className="font-semibold text-xs text-white">
                   {displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}
                 </p>
               </div>
 
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Gain P&L</p>
-                <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                <p className={`font-semibold text-xs ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%)
                 </p>
               </div>
               
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Deposit</p>
-                <p className="font-semibold text-sm text-white">
+                <p className="font-semibold text-xs text-white">
                   {displaySymbol === "Rp." ? formatMoney(totalDeposits, "Rp.") : formatMoney(totalDeposits / usdIdr, "$")}
                 </p>
               </div>
 
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Realized P&L</p>
-                <p className={`font-semibold text-sm ${realizedUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                <p className={`font-semibold text-xs ${realizedUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {realizedUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(realizedUSD * usdIdr, "Rp.") : formatMoney(realizedUSD, "$")}
                 </p>
               </div>
@@ -606,22 +606,22 @@ export default function PortfolioDashboard() {
                   return (
                     <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
                       <td className="p-3">
-                        <div className="font-semibold text-base text-white">{r.symbol}</div>
+                        <div className="font-semibold text-sm text-white">{r.symbol}</div>
                         <div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(r.investedUSD * usdIdr, "Rp.") : formatMoney(r.investedUSD, "$")}</div>
+                        <div className="font-semibold text-xs text-white">{displaySymbol === "Rp." ? formatMoney(r.investedUSD * usdIdr, "Rp.") : formatMoney(r.investedUSD, "$")}</div>
                         <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.avgPrice * usdIdr, "Rp.") : formatMoney(r.avgPrice, "$")}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(r.marketValueUSD * usdIdr, "Rp.") : formatMoney(r.marketValueUSD, "$")}</div>
+                        <div className="font-semibold text-xs text-white">{displaySymbol === "Rp." ? formatMoney(r.marketValueUSD * usdIdr, "Rp.") : formatMoney(r.marketValueUSD, "$")}</div>
                         <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.lastPriceUSD * usdIdr, "Rp.") : formatMoney(r.lastPriceUSD, "$")}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className={`font-semibold ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(r.pnlUSD * usdIdr, "Rp.") : formatMoney(r.pnlUSD, "$")}</div>
+                        <div className={`font-semibold text-xs ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(r.pnlUSD * usdIdr, "Rp.") : formatMoney(r.pnlUSD, "$")}</div>
                         <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{Math.round(r.pnlPct)}%</div>
                       </td>
                     </tr>
@@ -876,7 +876,7 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
   useEffect(() => {
     if (asset) {
       const priceVal = displaySymbol === "Rp." ? asset.lastPriceUSD * usdIdr : asset.lastPriceUSD;
-      setPrice(String(isFinite(priceVal) ? (displaySymbol === "$" ? priceVal.toFixed(2) : Math.round(priceVal)) : ''));
+      setPrice(String(isFinite(priceVal) ? (displaySymbol === "$" ? priceVal.toFixed(3) : Math.round(priceVal)) : ''));
       setShares('');
       setTotal('');
     }
