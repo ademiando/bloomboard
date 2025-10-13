@@ -102,7 +102,6 @@ export default function PortfolioDashboard() {
   const [isBalanceModalOpen, setBalanceModalOpen] = useState(false);
   const [balanceModalMode, setBalanceModalMode] = useState('Add');
   const [tradeModal, setTradeModal] = useState({ open: false, asset: null });
-  const [chartRange, setChartRange] = useState("YTD");
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
 
@@ -391,9 +390,9 @@ export default function PortfolioDashboard() {
       addPoint(tx.date);
     }
     const now = Date.now();
-    const finalMarketUSD = assets.reduce((s,a) => s + a.shares * a.lastPriceUSD, 0);
+    const finalMarketUSD = assets.reduce((s,a) => s + a.shares * (a.lastPriceUSD > 0 ? a.lastPriceUSD : a.avgPrice), 0);
     const finalMarketIdr = Math.round(finalMarketUSD * usdIdr);
-    points.push({ t: now, v: cash + finalMarketIdr });
+    points.push({ t: now, v: tradingBalance + finalMarketIdr });
     const unique = [];
     const seen = new Set();
     for (const p of points) {
@@ -493,7 +492,7 @@ export default function PortfolioDashboard() {
 
   /* ================ Render ================ */
   if (view === 'performance') {
-    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} chartRange={chartRange} setChartRange={setChartRange} donutData={donutData} transactions={transactions} equitySeries={equitySeries} />;
+    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} donutData={donutData} transactions={transactions} equitySeries={equitySeries} />;
   }
 
   return (
@@ -675,8 +674,68 @@ export default function PortfolioDashboard() {
 
 /* ===================== Performance & Subcomponents ===================== */
 
-const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, displaySymbol, chartRange, setChartRange, donutData, transactions, equitySeries }) => {
+const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, donutData, transactions, equitySeries }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
+  const [chartRange, setChartRange] = useState("YTD");
+  const [returnPeriod, setReturnPeriod] = useState('Monthly');
+
+  const { equityReturnData } = useMemo(() => {
+    const data = equitySeries;
+    if (data.length < 2) return { equityReturnData: [] };
+
+    let periodData = {};
+
+    for (let i = 1; i < data.length; i++) {
+        const currentDate = new Date(data[i].t);
+        let key;
+        if(returnPeriod === 'Daily'){
+          key = currentDate.toISOString().split('T')[0];
+        } else if(returnPeriod === 'Monthly'){
+          key = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+        } else { // Yearly
+          key = `${currentDate.getFullYear()}`;
+        }
+        
+        if (!periodData[key]) {
+            periodData[key] = {
+                startDate: new Date(data[i-1].t),
+                startEquity: data[i-1].v,
+                endDate: currentDate,
+                endEquity: data[i].v,
+            };
+        } else {
+            periodData[key].endDate = currentDate;
+            periodData[key].endEquity = data[i].v;
+        }
+    }
+
+    const equityReturnData = Object.keys(periodData).map(key => {
+        const item = periodData[key];
+        const pnl = item.endEquity - item.startEquity;
+        const pnlPct = item.startEquity > 0 ? (pnl / item.startEquity) * 100 : 0;
+        
+        let dateLabel = key;
+        if(returnPeriod === 'Monthly'){
+          const date = new Date(item.endDate);
+          dateLabel = date.toLocaleString('default', { month: 'short' }) + ' ' + String(date.getDate()).padStart(2, '0');
+        } else if(returnPeriod === 'Daily') {
+          const date = new Date(item.endDate);
+          dateLabel = date.toLocaleString('default', { month: 'short' }) + ' ' + String(date.getDate()).padStart(2, '0');
+        }
+
+        return {
+            date: dateLabel,
+            equity: item.endEquity,
+            pnl: pnl,
+            pnlPct: pnlPct,
+            rawDate: item.endDate
+        }
+    }).sort((a,b) => b.rawDate - a.rawDate);
+    
+    return { equityReturnData };
+}, [equitySeries, returnPeriod]);
+
+
   return (
     <div className="bg-black text-gray-300 min-h-screen font-sans">
       <div className="max-w-4xl mx-auto">
@@ -697,16 +756,48 @@ const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, dis
           <div className="p-4">
             <div>
               <p className="text-sm text-gray-400">Total Equity</p>
-              <p className="text-2xl font-bold text-white mb-1">{displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}</p>
-              <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({(totals.pnlPct||0).toFixed(2)}%) All Time</p>
+              <p className="text-3xl font-bold text-white mb-1">{displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}</p>
             </div>
-
-            <div className="mt-6"><AreaChart equityData={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} /></div>
 
             <div className="mt-6">
-              <h3 className="text-base font-semibold text-white mb-4">Asset Allocation</h3>
-              <AllocationDonut data={donutData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
+              <AreaChart equityData={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} range={chartRange} setRange={setChartRange} />
             </div>
+
+            <div className="mt-8">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-base font-semibold text-white">Total Equity Return</h3>
+                <div className="flex items-center gap-2 text-sm">
+                  {['Daily', 'Monthly', 'Yearly'].map(p => (
+                    <button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full ${returnPeriod === p ? 'bg-gray-700 text-white' : 'text-gray-400'}`}>{p}</button>
+                  ))}
+                </div>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="text-left text-gray-500 text-xs">
+                  <tr>
+                    <th className="p-2 font-normal">Date</th>
+                    <th className="p-2 font-normal text-right">Equity</th>
+                    <th className="p-2 font-normal text-right">P&L</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {equityReturnData.map((item, index) => (
+                    <tr key={index} className="border-t border-gray-800">
+                      <td className="p-2 text-white">{item.date}</td>
+                      <td className="p-2 text-white text-right">{displaySymbol === "Rp." ? formatMoney(item.equity, "Rp.") : formatMoney(item.equity / usdIdr, "$")}</td>
+                      <td className={`p-2 text-right ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {item.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(item.pnl, "Rp.") : formatMoney(item.pnl / usdIdr, "$")} ({item.pnlPct.toFixed(2)}%)
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="mt-8">
+              <PortfolioAllocation data={donutData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
+            </div>
+
           </div>
         ) : activeTab === 'trade' ? (
           <TradeStatsView stats={tradeStats} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
@@ -717,6 +808,7 @@ const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, dis
     </div>
   );
 };
+
 
 const TradeStatsView = ({ stats, displayCcySymbol, usdIdr }) => {
   const getVal = (val) => displayCcySymbol === "Rp." ? val * usdIdr : val;
@@ -961,78 +1053,156 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 };
 
 /* ===================== Charts ===================== */
-const AreaChart = ({ equityData, displaySymbol, usdIdr }) => {
-  const data = equityData.length > 1 ? equityData : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
-  const height = 220, width = 700, padding = { top: 10, bottom: 20, left: 30, right: 40 };
-  const minVal = Math.min(...data.map(d => d.v)), maxVal = Math.max(...data.map(d => d.v));
-  const range = maxVal - minVal || 1;
-  const startTime = data[0].t, endTime = data[data.length - 1].t;
-  const xScale = (t) => padding.left + ((t - startTime) / (endTime - startTime || 1)) * (width - padding.left - padding.right);
-  const yScale = (v) => padding.top + (1 - (v - minVal) / range) * (height - padding.top - padding.bottom);
+const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
+  
+  const now = new Date();
+  let startTime;
+  switch (range) {
+    case '1W': startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+    case '1M': startTime = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()); break;
+    case '3M': startTime = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()); break;
+    case '1Y': startTime = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); break;
+    case 'All': startTime = new Date(0); break;
+    case 'YTD':
+    default: startTime = new Date(now.getFullYear(), 0, 1); break;
+  }
+  
+  const filteredData = equityData.filter(d => d.t >= startTime.getTime());
+  const data = filteredData.length > 1 ? [{t: startTime.getTime(), v: filteredData[0].v}, ...filteredData] : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
+
+  const height = 220, width = 700, padding = { top: 10, bottom: 40, left: 0, right: 80 };
+  const minVal = Math.min(...data.map(d => d.v));
+  const maxVal = Math.max(...data.map(d => d.v));
+  const valRange = maxVal - minVal || 1;
+  const timeStart = data[0].t;
+  const timeEnd = data[data.length - 1].t;
+  
+  const xScale = (t) => padding.left + ((t - timeStart) / (timeEnd - timeStart || 1)) * (width - padding.left - padding.right);
+  const yScale = (v) => padding.top + (1 - (v - minVal) / valRange) * (height - padding.top - padding.bottom);
+  
   const path = data.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
-  const areaPath = `${path} L${xScale(endTime)},${height - padding.bottom} L${xScale(startTime)},${height - padding.bottom} Z`;
-  const yAxisLabels = [minVal, minVal + range * 0.25, minVal + range * 0.5, minVal + range * 0.75, maxVal];
-  const fmtLabel = (v) => displaySymbol === "Rp." ? `Rp. ${Math.round(v).toLocaleString('id-ID')}` : `$ ${Math.round(v / usdIdr).toLocaleString()}`;
+  const areaPath = `${path} L${xScale(timeEnd)},${height - padding.bottom} L${xScale(timeStart)},${height - padding.bottom} Z`;
+  
+  const yAxisLabels = [minVal, minVal + valRange * 0.25, minVal + valRange * 0.5, minVal + valRange * 0.75, maxVal];
+  
+  const formatValue = (v) => {
+    if (v >= 1e6) return `${(v / 1e6).toFixed(2)} M`;
+    if (v >= 1e3) return `${(v / 1e3).toFixed(1)} K`;
+    return Math.round(v);
+  }
+  const fmtYLabel = (v) => displaySymbol === "Rp." ? formatValue(v) : `$ ${formatValue(v / usdIdr)}`;
+
+  const xAxisLabels = () => {
+    const labels = [];
+    const count = 5;
+    for (let i = 0; i < count; i++) {
+        const t = timeStart + (i / (count - 1)) * (timeEnd - timeStart);
+        labels.push({t: t, label: new Date(t).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})});
+    }
+    return labels;
+  }
 
   return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded">
-      <defs>
-        <linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#22c55e" stopOpacity={0.24} />
-          <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill="url(#areaGradient2)" />
-      <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      {yAxisLabels.map((v, idx) => (
-        <g key={idx}>
-          <line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.04)" strokeDasharray="2,2" />
-          <text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtLabel(v)}</text>
-        </g>
-      ))}
-    </svg>
+    <div>
+        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded">
+        <defs>
+            <linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#22c55e" stopOpacity={0.24} />
+            <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
+            </linearGradient>
+        </defs>
+        <path d={areaPath} fill="url(#areaGradient2)" />
+        <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {yAxisLabels.map((v, idx) => (
+            <g key={idx}>
+            <line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" />
+            <text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text>
+            </g>
+        ))}
+         {xAxisLabels().map((item, idx) => (
+            <text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>
+        ))}
+        </svg>
+        <div className="flex justify-center gap-2 mt-2">
+            {['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (
+                <button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-gray-700 text-white' : 'text-gray-400'}`}>{r}</button>
+            ))}
+        </div>
+    </div>
   );
 };
 
-const AllocationDonut = ({ data, displayCcySymbol, usdIdr }) => {
-  const [hover, setHover] = useState(null);
-  const [tooltip, setTooltip] = useState({ show:false, x:0, y:0, content: '' });
-  const ref = useRef(null);
-  const total = useMemo(() => data.reduce((s,d) => s + d.value, 0), [data]);
-  if (!total) return <div className="text-center text-gray-500 py-8">No assets to display</div>;
-  const size = 220, innerRadius = 60, outerRadius = 90;
-  const colors = ["#22c55e","#10b981","#059669","#047857","#065f46","#064e3b","#3f3f46","#52525b","#71717a"];
-  let cum = -Math.PI/2;
-  const handleMove = (e) => { if(ref.current){ const r=ref.current.getBoundingClientRect(); setTooltip(t=>({...t,x:e.clientX-r.left,y:e.clientY-r.top})); } };
-  const handleOver = (i,d) => { const pct = (d.value / total * 100).toFixed(2); const val = Math.round(d.value * (displayCcySymbol === "Rp." ? usdIdr : 1)); setTooltip(t => ({...t, show:true, content:`${d.name}: ${displayCcySymbol === "Rp." ? 'Rp.' : '$'} ${new Intl.NumberFormat(displayCcySymbol === "Rp." ? 'id-ID' : 'en-US').format(val)} (${pct}%)`})); };
-  const handleOut = () => { setHover(null); setTooltip(t => ({...t, show:false})); };
+const PortfolioAllocation = ({ data, displayCcySymbol, usdIdr }) => {
+  const [activeTab, setActiveTab] = useState('Stocks');
+  
+  const totalValueUSD = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
+  if (!totalValueUSD) return null;
+
+  const totalValueDisplay = displayCcySymbol === "Rp." ? totalValueUSD * usdIdr : totalValueUSD;
+  const assetCount = data.length;
+
+  const size = 200, strokeWidth = 15, innerRadius = (size / 2) - strokeWidth;
+  const circumference = 2 * Math.PI * innerRadius;
+  const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"];
+
+  let accumulatedOffset = 0;
 
   return (
-    <div className="flex flex-col md:flex-row items-center gap-6" ref={ref} onMouseMove={handleMove}>
-      <div className="relative" style={{ width: size, height: size }}>
-        {tooltip.show && (<div className="absolute z-10 p-2 text-xs bg-gray-800 text-white rounded shadow-lg pointer-events-none" style={{ left: tooltip.x + 15, top: tooltip.y }}>{tooltip.content}</div>)}
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}><g transform={`translate(${size/2}, ${size/2})`}>
-          {data.map((d,i) => {
-            const angle = (d.value/total) * 2 * Math.PI;
-            const start = cum;
-            const end = cum + angle;
-            cum = end;
-            const isH = hover === i;
-            const rOut = isH ? outerRadius + 6 : outerRadius;
-            const arc = (r, sa, ea) => { const large = ea - sa <= Math.PI ? "0" : "1"; return `M ${r*Math.cos(sa)} ${r*Math.sin(sa)} A ${r} ${r} 0 ${large} 1 ${r*Math.cos(ea)} ${r*Math.sin(ea)}`; };
-            const path = `${arc(rOut,start,end)} L ${innerRadius*Math.cos(end)} ${innerRadius*Math.sin(end)} ${arc(innerRadius,end,start).replace('M','L').replace(new RegExp(`A ${innerRadius} ${innerRadius} 0 \\d 1`), `A ${innerRadius} ${innerRadius} 0 ${angle>Math.PI?1:0} 0`)} Z`;
-            return (<path key={d.name} d={path} fill={colors[i % colors.length]} onMouseOver={() => handleOver(i,d)} onMouseOut={handleOut} style={{ transition: 'all .18s', cursor: 'pointer' }} />);
-          })}
-        </g></svg>
+    <div className="mt-8">
+      <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3>
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => setActiveTab('Stocks')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Stocks' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Stocks</button>
+        <button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Sub-Sector</button>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-6 gap-y-3 w-full">
-        {data.slice(0,8).map((d,i) => (
-          <div key={i} className="flex items-center gap-2">
-            <div style={{ backgroundColor: colors[i % colors.length] }} className="w-3 h-3 rounded-sm flex-shrink-0"></div>
-            <div><div className="font-semibold text-sm text-gray-100">{d.name}</div><div className="text-xs text-gray-400">{(d.value / total * 100).toFixed(2)}%</div></div>
-          </div>
-        ))}
+      <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
+          {data.map((d, i) => {
+            const percentage = d.value / totalValueUSD;
+            const strokeDasharray = `${percentage * circumference} ${circumference}`;
+            const strokeDashoffset = -accumulatedOffset;
+            accumulatedOffset += percentage * circumference;
+            return (
+              <circle
+                key={i}
+                cx={size/2} cy={size/2} r={innerRadius}
+                fill="transparent"
+                stroke={colors[i % colors.length]}
+                strokeWidth={strokeWidth}
+                strokeDasharray={strokeDasharray}
+                strokeDashoffset={strokeDashoffset}
+              />
+            );
+          })}
+        </svg>
+        <div className="absolute flex flex-col items-center justify-center">
+          <div className="text-xl font-bold text-white">{displayCcySymbol === 'Rp.' ? `Rp${(totalValueDisplay/1e6).toFixed(2)} M` : formatMoney(totalValueDisplay, '$')}</div>
+          <div className="text-sm text-gray-400">{assetCount} Stocks</div>
+        </div>
+      </div>
+      
+      <div className="space-y-4">
+        {data.map((d, i) => {
+          const percentage = (d.value / totalValueUSD) * 100;
+          const valueDisplay = d.value * (displayCcySymbol === "Rp." ? usdIdr : 1);
+          return (
+            <div key={i}>
+              <div className="flex justify-between items-center text-sm mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center font-bold text-white">{d.name.charAt(0)}</div>
+                  <div>
+                    <div className="font-semibold text-white">{d.name}</div>
+                    <div className="text-xs text-gray-400">{formatMoney(valueDisplay, displayCcySymbol)}</div>
+                  </div>
+                </div>
+                <div className="text-white font-semibold">{percentage.toFixed(2)}%</div>
+              </div>
+              <div className="w-full bg-gray-700 rounded-full h-1.5">
+                <div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: colors[i % colors.length] }}></div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
