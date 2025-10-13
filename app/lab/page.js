@@ -14,7 +14,6 @@ const ArrowUpIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill
 const ArrowDownIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
 const InfoIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
 
-
 /* ===================== Config & Helpers ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
@@ -136,10 +135,10 @@ export default function PortfolioDashboard() {
           setUsdIdrChange24h(newChange);
         }
       } catch (e) {
-        console.error("Gagal mengambil data FX", e);
+        console.error("Failed to fetch FX data", e);
       } finally {
         setIsFxLoading(false);
-        setTimeout(() => setPriceDirection('neutral'), 1500); // Reset warna setelah 1.5 detik
+        setTimeout(() => setPriceDirection('neutral'), 1500); // Reset color after 1.5 seconds
       }
     };
     fetchFx();
@@ -803,7 +802,7 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
 
           </div>
         ) : activeTab === 'trade' ? (
-          <TradeStatsView stats={tradeStats} transactions={transactions} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
+          <TradeStatsView stats={tradeStats} transactions={transactions} assets={portfolioData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
         ) : (
           <HistoryView transactions={transactions} usdIdr={usdIdr} displayCcySymbol={displaySymbol} />
         )}
@@ -813,8 +812,9 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
 };
 
 
-const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
+const TradeStatsView = ({ stats, transactions, assets, displayCcySymbol, usdIdr }) => {
   const getVal = (val) => displayCcySymbol === "Rp." ? val * usdIdr : val;
+  
   const realizedGainSeries = useMemo(() => {
     const sorted = [...transactions.filter(t => t.type === 'sell' || t.type === 'delete')].sort((a,b) => a.date - b.date);
     let cumulativeGain = 0;
@@ -822,19 +822,47 @@ const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
       cumulativeGain += tx.realized || 0;
       return {t: tx.date, v: cumulativeGain};
     });
+     if (points.length > 0) {
+      points.unshift({t: points[0].t - 86400000, v: 0}); // Add a point at the beginning
+    }
     return points.length ? points : [{t: Date.now(), v:0}];
   }, [transactions]);
   
+  const sells = useMemo(() => transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete'), [transactions]);
+  const realizedGainOnly = useMemo(() => sells.filter(tx => tx.realized > 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
+  const realizedLossOnly = useMemo(() => sells.filter(tx => tx.realized < 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
+
+  const {maxProfitPct, maxLossPct} = useMemo(() => {
+      const maxProfitTx = transactions.find(tx => tx.realized === stats.maxProfit);
+      let maxProfitCost = 0;
+      if(maxProfitTx) {
+          const asset = assets.find(a => a.id === maxProfitTx.assetId);
+          maxProfitCost = maxProfitTx.qty * (asset ? asset.avgPrice : maxProfitTx.pricePerUnit);
+      }
+      const maxProfitPercentage = maxProfitCost > 0 ? (stats.maxProfit / maxProfitCost) * 100 : 0;
+
+      const maxLossTx = transactions.find(tx => tx.realized === stats.maxLoss);
+      let maxLossCost = 0;
+      if(maxLossTx){
+         const asset = assets.find(a => a.id === maxLossTx.assetId);
+         maxLossCost = maxLossTx.qty * (asset ? asset.avgPrice : maxLossTx.pricePerUnit);
+      }
+      const maxLossPercentage = maxLossCost > 0 ? (stats.maxLoss / maxLossCost) * 100 : 0;
+      
+      return {maxProfitPct: maxProfitPercentage, maxLossPct: maxLossPercentage};
+  }, [transactions, assets, stats.maxProfit, stats.maxLoss]);
+
+  
   const topGainers = useMemo(() => {
-    const sells = transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete');
     const gainers = {};
     sells.forEach(tx => {
       if(!gainers[tx.symbol]){
         gainers[tx.symbol] = {trades:0, pnl: 0, cost: 0, proceeds: 0};
       }
+      const asset = assets.find(a => a.id === tx.assetId);
       gainers[tx.symbol].trades++;
       gainers[tx.symbol].pnl += tx.realized;
-      gainers[tx.symbol].cost += tx.qty * (assets.find(a => a.id === tx.assetId)?.avgPrice || tx.pricePerUnit);
+      gainers[tx.symbol].cost += tx.qty * (asset?.avgPrice || tx.pricePerUnit);
       gainers[tx.symbol].proceeds += tx.proceeds;
     });
     return Object.entries(gainers)
@@ -843,7 +871,7 @@ const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
         pnlPct: data.cost > 0 ? (data.pnl/data.cost)*100 : 0
       }))
       .sort((a,b) => b.pnl - a.pnl).slice(0,5);
-  }, [transactions]);
+  }, [transactions, assets]);
 
   return (
     <div className="p-4 space-y-6">
@@ -852,7 +880,7 @@ const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
         <div className="flex items-center justify-between">
           <span className="text-3xl font-bold text-white">{stats.winRate.toFixed(2)}%</span>
           <div className="relative w-24 h-24">
-            <svg className="w-full h-full transform -rotate-90"><circle cx="50%" cy="50%" r="45%" stroke="#374151" strokeWidth="8" fill="transparent"/><circle cx="50%" cy="50%" r="45%" stroke="#22c55e" strokeWidth="8" fill="transparent" strokeDasharray={`${Math.PI * 90 * (stats.winRate/100)}, ${Math.PI * 90}`} /></svg>
+            <svg className="w-full h-full transform -rotate-90"><circle cx="50%" cy="50%" r="45%" stroke="#374151" strokeWidth="8" fill="transparent"/><circle cx="50%" cy="50%" r="45%" stroke="#22c55e" strokeWidth="8" fill="transparent" strokeDasharray={`${Math.PI * 45 * 2 * (stats.winRate/100)}, ${Math.PI * 45 * 2}`} /></svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-xs">
               <div>{stats.trades} Trades</div>
               <div className="text-emerald-400">{stats.wins} Wins</div>
@@ -863,8 +891,8 @@ const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
       </div>
       
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxProfit), "Rp.") : formatMoney(getVal(stats.maxProfit), "$")}</p></div>
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxLoss), "Rp.") : formatMoney(getVal(stats.maxLoss), "$")}</p></div>
+        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxProfit), "Rp.") : formatMoney(getVal(stats.maxProfit), "$")}</p><p className="text-sm text-emerald-400">{maxProfitPct.toFixed(2)}%</p></div>
+        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxLoss), "Rp.") : formatMoney(getVal(stats.maxLoss), "$")}</p><p className="text-sm text-red-400">{maxLossPct.toFixed(2)}%</p></div>
         <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgProfit), "Rp.") : formatMoney(getVal(stats.avgProfit), "$")}</p></div>
         <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgLoss), "Rp.") : formatMoney(getVal(stats.avgLoss), "$")}</p></div>
       </div>
@@ -873,12 +901,17 @@ const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
         <h3 className="font-semibold text-white flex items-center gap-1">Total Realized Gain <InfoIcon className="text-gray-400" /></h3>
         <p className={`text-2xl font-bold mt-1 ${stats.totalRealizedGain >=0 ? 'text-emerald-400' : 'text-red-400'}`}>{stats.totalRealizedGain >=0 ? '+' : ''}{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.totalRealizedGain), "Rp.") : formatMoney(getVal(stats.totalRealizedGain), "$")}</p>
         <div className="h-40 mt-2">
-            <AreaChart equityData={realizedGainSeries} displaySymbol={displaySymbol} usdIdr={usdIdr} range="All" setRange={()=>{}} />
+            <AreaChart equityData={realizedGainSeries.map(p => ({...p, v: getVal(p.v)}))} displaySymbol={displayCcySymbol} usdIdr={usdIdr} range="All" setRange={()=>{}} />
+        </div>
+        <div className="mt-2 text-xs text-gray-400 border-t border-gray-700 pt-2">
+            <div className="flex justify-between"><span>Total Equity Realized Gain</span> <span className="text-white">{formatMoney(getVal(stats.totalRealizedGain), displayCcySymbol)}</span></div>
+            <div className="flex justify-between"><span>Realized Gain</span> <span className="text-emerald-400">{formatMoney(getVal(realizedGainOnly), displayCcySymbol)}</span></div>
+            <div className="flex justify-between"><span>Realized Loss</span> <span className="text-red-400">{formatMoney(getVal(realizedLossOnly), displayCcySymbol)}</span></div>
         </div>
       </div>
       
       <div className="bg-gray-900 p-4 rounded-lg">
-        <h3 className="font-semibold text-white mb-2">Top Gainer ({displaySymbol})</h3>
+        <h3 className="font-semibold text-white mb-2">Top Gainer ({displayCcySymbol === 'Rp.' ? 'Rp' : '$'})</h3>
         <table className="w-full text-sm">
           <thead className="text-gray-400 text-xs">
             <tr><th className="text-left font-normal py-1">Code</th><th className="text-center font-normal py-1">Trades</th><th className="text-right font-normal py-1">P&L</th></tr>
@@ -1198,37 +1231,40 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
 
   return (
     <div>
-        <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
-          <defs>
-              <linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#22c55e" stopOpacity={0.24} />
-              <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
-              </linearGradient>
-          </defs>
-          <path d={areaPath} fill="url(#areaGradient2)" />
-          <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-          {yAxisLabels.map((v, idx) => (
-              <g key={idx}>
-              <line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" />
-              <text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text>
-              </g>
-          ))}
-          {xAxisLabels().map((item, idx) => (
-              <text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>
-          ))}
-          {hoverData && (
-              <g>
-                  <line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" />
-                  <circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#22c55e" stroke="white" strokeWidth="2" />
-                  <g transform={`translate(${hoverData.x > width / 2 ? hoverData.x - 130 : hoverData.x + 15}, ${padding.top - 10})`}>
-                      <rect width="120" height="40" fill="rgba(40, 40, 40, 0.9)" rx="4" />
-                      <text x="10" y="18" fill="#A1A1AA" fontSize="11">{new Date(hoverData.point.t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</text>
-                      <text x="10" y="34" fill="white" fontSize="12" fontWeight="bold">{displaySymbol === 'Rp.' ? formatMoney(hoverData.point.v, 'Rp.') : formatMoney(hoverData.point.v / usdIdr, '$')}</text>
-                  </g>
-              </g>
-          )}
-          <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
-        </svg>
+        <div className="relative">
+            <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
+            <defs>
+                <linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#22c55e" stopOpacity={0.24} />
+                <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
+                </linearGradient>
+            </defs>
+            <path d={areaPath} fill="url(#areaGradient2)" />
+            <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            {yAxisLabels.map((v, idx) => (
+                <g key={idx}>
+                <line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" />
+                <text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text>
+                </g>
+            ))}
+            {xAxisLabels().map((item, idx) => (
+                <text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>
+            ))}
+            {hoverData && (
+                <g>
+                    <line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" />
+                    <circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#22c55e" stroke="white" strokeWidth="2" />
+                </g>
+            )}
+            <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
+            </svg>
+            {hoverData && (
+                 <div className="absolute p-2 rounded-lg bg-gray-800 text-white text-xs pointer-events-none" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}>
+                    <div>{new Date(hoverData.point.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                    <div className="font-bold">{displaySymbol === 'Rp.' ? formatMoney(hoverData.point.v, 'Rp.') : formatMoney(hoverData.point.v / usdIdr, '$')}</div>
+                </div>
+            )}
+        </div>
         <div className="flex justify-center gap-2 mt-2">
             {['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (
                 <button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-gray-700 text-white' : 'text-gray-400'}`}>{r}</button>
