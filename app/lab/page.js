@@ -9,22 +9,21 @@ const MoreVerticalIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" 
 const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>);
 const BackArrowIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
 const GraphIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>);
-const TrashIcon = ({ className }) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
+const TrashIcon = ({className}) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
 
-/* ===================== CONFIG & HELPERS ===================== */
+/* ===================== Config & Helpers ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
 const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`;
 const COINGECKO_PRICE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd,idr`;
 const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
-
 const isBrowser = typeof window !== "undefined";
-const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/g, '')); return isNaN(n) ? 0 : n; };
+const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/g,'')); return isNaN(n) ? 0 : n; };
 
 function formatMoney(value, ccySymbol) {
   const n = Number(value || 0);
   if (ccySymbol === "$") {
-    return `${ccySymbol}${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+    return `${ccySymbol} ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
   }
   return `Rp. ${Math.round(n).toLocaleString('id-ID')}`;
 }
@@ -79,21 +78,20 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
   );
 };
 
-/* ===================== MAIN DASHBOARD COMPONENT ===================== */
+/* ===================== Main Component ===================== */
 export default function PortfolioDashboard() {
   const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_assets_v9") || "[]").map(ensureNumericAsset) : []);
   const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_realized_v9") || 0) : 0);
   const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_transactions_v9") || "[]") : []);
   const [tradingBalance, setTradingBalance] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_balance_v9") || 5952) : 5952);
-
-  // displaySymbol is "Rp." or "$"
+  // displaySymbol either "Rp." or "$"
   const [displaySymbol, setDisplaySymbol] = useState(() => isBrowser ? (localStorage.getItem("pf_display_sym_v9") || "Rp.") : "Rp.");
   const [usdIdr, setUsdIdr] = useState(16400);
   const [isFxLoading, setIsFxLoading] = useState(true);
 
   const [view, setView] = useState('main');
   const [isAddAssetModalOpen, setAddAssetModalOpen] = useState(false);
-  const [searchMode, setSearchMode] = useState("stock");
+  const [searchMode, setSearchMode] = useState("stock"); // combined stock (US + ID) by default
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
@@ -101,7 +99,7 @@ export default function PortfolioDashboard() {
   const [isBalanceModalOpen, setBalanceModalOpen] = useState(false);
   const [balanceModalMode, setBalanceModalMode] = useState('Add');
   const [tradeModal, setTradeModal] = useState({ open: false, asset: null });
-  const [chartRange, setChartRange] = useState("1Y");
+  const [chartRange, setChartRange] = useState("YTD");
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
 
@@ -114,7 +112,11 @@ export default function PortfolioDashboard() {
   useEffect(() => {
     const fetchFx = async () => {
       setIsFxLoading(true);
-      try { const res = await fetch(COINGECKO_USD_IDR); const j = await res.json(); if (j?.tether?.idr) setUsdIdr(Math.round(j.tether.idr)); } catch (e) {}
+      try {
+        const res = await fetch(COINGECKO_USD_IDR);
+        const j = await res.json();
+        if (j?.tether?.idr) setUsdIdr(Math.round(j.tether.idr));
+      } catch (e) {}
       finally { setIsFxLoading(false); }
     };
     fetchFx();
@@ -173,7 +175,7 @@ export default function PortfolioDashboard() {
     return () => clearInterval(id);
   }, [assets.length, usdIdr]);
 
-  // suggestions
+  // Search suggestions: combined stock returns all quotes (no forced ID only)
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 2) { setSuggestions([]); return; }
@@ -187,7 +189,7 @@ export default function PortfolioDashboard() {
           setSuggestions((j.coins || []).slice(0, 10).map(c => ({ symbol: c.symbol.toUpperCase(), display: c.name, id: c.id, source: "coingecko", type: "crypto" })));
         } else {
           const res = await fetch(YAHOO_SEARCH(q));
-          if (!res.ok) throw new Error('API fetch failed');
+          if (!res.ok) throw new Error('search failed');
           const payload = await res.json();
           const list = (payload.quotes || []).map(it => ({ symbol: it.symbol.toUpperCase(), display: it.shortname || it.longname || it.symbol, exchange: it.exchange, source: "yahoo", type: "stock" }));
           setSuggestions(list.slice(0, 10));
@@ -277,27 +279,99 @@ export default function PortfolioDashboard() {
     }
   };
 
-  // now record deposits & withdrawals as transactions for total deposit calculation
-  const handleAddBalance = (amountIDR) => {
-    if (amountIDR <= 0) { alert("Amount must be > 0"); return; }
-    const tx = { id: `tx:${Date.now()}`, type: 'deposit', amountIDR: amountIDR, date: Date.now(), note: 'deposit' };
-    setTradingBalance(b => b + amountIDR);
-    setTransactions(prev => [tx, ...prev]);
-    setBalanceModalOpen(false);
-  };
-  const handleWithdraw = (amountIDR) => {
-    if (amountIDR > tradingBalance) { alert("Withdrawal amount exceeds balance."); return; }
-    const tx = { id: `tx:${Date.now()}`, type: 'withdraw', amountIDR: amountIDR, date: Date.now(), note: 'withdraw' };
-    setTradingBalance(b => b - amountIDR);
-    setTransactions(prev => [tx, ...prev]);
-    setBalanceModalOpen(false);
-  };
+  const handleAddBalance = (amount) => { setTradingBalance(b => b + amount); setBalanceModalOpen(false); };
+  const handleWithdraw = (amount) => { if (amount > tradingBalance) { alert("Withdrawal amount exceeds balance."); return; } setTradingBalance(b => b - amount); setBalanceModalOpen(false); };
 
+  /* ===================== Derived Data ===================== */
+  const { rows, totals, totalEquity, tradeStats, donutData } = useMemo(() => {
+    const calculatedRows = assets.map(a => {
+      const market = a.shares * a.lastPriceUSD;
+      const pnl = market - a.investedUSD;
+      const pnlPct = a.investedUSD > 0 ? (pnl / a.investedUSD) * 100 : 0;
+      return { ...a, marketValueUSD: market, pnlUSD: pnl, pnlPct };
+    });
+    const invested = calculatedRows.reduce((s, r) => s + r.investedUSD, 0);
+    const market = calculatedRows.reduce((s, r) => s + r.marketValueUSD, 0);
+    const pnl = market - invested;
+    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+    const totalEq = (market * usdIdr) + tradingBalance;
+    const sells = transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete');
+    const wins = sells.filter(tx => tx.realized > 0);
+    const losses = sells.filter(tx => tx.realized <= 0);
+    const tStats = {
+      trades: sells.length,
+      wins: wins.length,
+      losses: losses.length,
+      winRate: sells.length > 0 ? (wins.length / sells.length) * 100 : 0,
+      maxProfit: wins.length ? Math.max(...wins.map(tx => tx.realized)) : 0,
+      maxLoss: losses.length ? Math.min(...losses.map(tx => tx.realized)) : 0,
+      avgProfit: wins.length ? wins.reduce((s, tx) => s + tx.realized, 0) / wins.length : 0,
+      avgLoss: losses.length ? losses.reduce((s, tx) => s + tx.realized, 0) / losses.length : 0,
+      totalRealizedGain: realizedUSD
+    };
+    const dData = calculatedRows.map(r => ({ name: r.symbol, value: r.marketValueUSD })).sort((a,b)=>b.value-a.value);
+    return { rows: calculatedRows, totals: { invested, market, pnl, pnlPct }, totalEquity: totalEq, tradeStats: tStats, donutData: dData };
+  }, [assets, transactions, usdIdr, tradingBalance, realizedUSD]);
+
+  /* ===================== Equity Timeline ===================== */
+  const equitySeries = useMemo(() => {
+    const buysCost = transactions.filter(t => t.type === 'buy').reduce((s, t) => s + (t.cost || 0), 0);
+    const sellsProceeds = transactions.filter(t => t.type === 'sell' || t.type === 'delete').reduce((s, t) => s + (t.proceeds || 0), 0);
+    const initialCashIdr = tradingBalance + Math.round(buysCost * usdIdr) - Math.round(sellsProceeds * usdIdr);
+    const sorted = [...transactions].sort((a,b) => a.date - b.date);
+    let cash = initialCashIdr;
+    let holdings = {};
+    const points = [];
+    const startTime = sorted.length ? sorted[0].date : Date.now() - 365*24*3600*1000;
+    const addPoint = (t) => {
+      const marketUSD = Object.values(holdings).reduce((s,h) => s + (h.shares * (h.lastPriceUSD || h.avgPriceUSD || 0)), 0);
+      const marketIdr = Math.round(marketUSD * usdIdr);
+      points.push({ t, v: cash + marketIdr });
+    };
+    addPoint(startTime - 1000);
+    for (const tx of sorted) {
+      if (tx.type === 'buy') {
+        const costIdr = Math.round((tx.cost || 0) * usdIdr);
+        cash -= costIdr;
+        const key = tx.symbol;
+        if (!holdings[key]) holdings[key] = { shares: 0, avgPriceUSD: 0, investedUSD: 0, lastPriceUSD: 0 };
+        holdings[key].shares += tx.qty;
+        holdings[key].investedUSD += (tx.cost || 0);
+        holdings[key].avgPriceUSD = holdings[key].investedUSD / holdings[key].shares;
+        const a = assets.find(x => x.symbol === key);
+        if (a) holdings[key].lastPriceUSD = a.lastPriceUSD || holdings[key].avgPriceUSD;
+      } else if (tx.type === 'sell' || tx.type === 'delete') {
+        const proceedsIdr = Math.round((tx.proceeds || 0) * usdIdr);
+        cash += proceedsIdr;
+        const key = tx.symbol;
+        if (!holdings[key]) holdings[key] = { shares:0, avgPriceUSD:0, investedUSD:0, lastPriceUSD:0 };
+        holdings[key].shares -= tx.qty;
+        holdings[key].investedUSD -= (tx.qty * (tx.pricePerUnit || 0));
+        if (holdings[key].shares <= 0) delete holdings[key];
+        else holdings[key].avgPriceUSD = holdings[key].investedUSD / holdings[key].shares;
+        const a = assets.find(x => x.symbol === key);
+        if (a) holdings[key].lastPriceUSD = a.lastPriceUSD || holdings[key].avgPriceUSD;
+      }
+      addPoint(tx.date);
+    }
+    const now = Date.now();
+    const finalMarketUSD = assets.reduce((s,a) => s + a.shares * a.lastPriceUSD, 0);
+    const finalMarketIdr = Math.round(finalMarketUSD * usdIdr);
+    points.push({ t: now, v: cash + finalMarketIdr });
+    const unique = [];
+    const seen = new Set();
+    for (const p of points) {
+      if (!seen.has(p.t)) { unique.push(p); seen.add(p.t); }
+    }
+    return unique.length ? unique : [{ t: now - 1000, v: 0 }, { t: now, v: finalMarketIdr + tradingBalance }];
+  }, [transactions, assets, tradingBalance, usdIdr]);
+
+  /* ===================== CSV ===================== */
   const exportCSV = () => {
-    const pad = s => `"${String(s || "").replace(/"/g, '""')}"`;
-    const assetHeaders = ["id", "type", "symbol", "name", "shares", "avgPriceUSD", "investedUSD", "lastPriceUSD"];
+    const pad = s => `"${String(s||"").replace(/"/g,'""')}"`;
+    const assetHeaders = ["id","type","symbol","name","shares","avgPriceUSD","investedUSD","lastPriceUSD"];
     const assetsCsv = [assetHeaders.join(",")].concat(assets.map(a => assetHeaders.map(h => pad(a[h])).join(","))).join("\n");
-    const txHeaders = ["id", "type", "assetId", "symbol", "qty", "pricePerUnit", "cost", "proceeds", "realized", "date", "note", "amountIDR"];
+    const txHeaders = ["id","type","assetId","symbol","qty","pricePerUnit","cost","proceeds","realized","date","note"];
     const txCsv = [txHeaders.join(",")].concat(transactions.map(t => txHeaders.map(h => pad(t[h])).join(","))).join("\n");
     const blob = new Blob([`# assets\n${assetsCsv}\n\n# transactions\n${txCsv}`], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -326,7 +400,7 @@ export default function PortfolioDashboard() {
           if (mode === "tx") txBlock.push(line);
         }
         if (assetsBlock.length > 0) {
-          const header = assetsBlock[0].split(",").map(h => h.replace(/"/g, '').trim());
+          const header = assetsBlock[0].split(",").map(h => h.replace(/"/g,'').trim());
           const rows = assetsBlock.slice(1).map(r => {
             const vals = r.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
             const obj = {}; header.forEach((h,i) => obj[h] = (vals[i] || "").replace(/^"|"$/g, "")); return obj;
@@ -351,7 +425,7 @@ export default function PortfolioDashboard() {
           });
         }
         if (txBlock.length > 0) {
-          const header = txBlock[0].split(",").map(h => h.replace(/"/g, '').trim());
+          const header = txBlock[0].split(",").map(h => h.replace(/"/g,'').trim());
           const rows = txBlock.slice(1).map(r => {
             const vals = r.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
             const obj = {}; header.forEach((h,i) => obj[h] = (vals[i] || "").replace(/^"|"$/g, "")); return obj;
@@ -367,8 +441,7 @@ export default function PortfolioDashboard() {
             proceeds: toNum(r.proceeds),
             realized: toNum(r.realized),
             date: toNum(r.date) || Date.now(),
-            note: r.note,
-            amountIDR: toNum(r.amountIDR)
+            note: r.note
           }));
           setTransactions(prev => [...importedTx, ...prev]);
         }
@@ -382,116 +455,9 @@ export default function PortfolioDashboard() {
     reader.readAsText(file);
   };
 
-  /* ===================== Derived Data ===================== */
-  const { rows, totals, totalEquity, tradeStats, donutData, totalDeposited } = useMemo(() => {
-    const calculatedRows = assets.map(a => {
-      const market = a.shares * a.lastPriceUSD;
-      const pnl = market - a.investedUSD;
-      const pnlPct = a.investedUSD > 0 ? (pnl / a.investedUSD) * 100 : 0;
-      return { ...a, marketValueUSD: market, pnlUSD: pnl, pnlPct };
-    });
-    const invested = calculatedRows.reduce((s, r) => s + r.investedUSD, 0);
-    const market = calculatedRows.reduce((s, r) => s + r.marketValueUSD, 0);
-    const pnl = market - invested;
-    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
-    const totalEq = (market * usdIdr) + tradingBalance;
-    const sells = transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete');
-    const wins = sells.filter(tx => tx.realized > 0);
-    const losses = sells.filter(tx => tx.realized <= 0);
-    const tStats = {
-      trades: sells.length,
-      wins: wins.length,
-      losses: losses.length,
-      winRate: sells.length > 0 ? (wins.length / sells.length) * 100 : 0,
-      maxProfit: wins.length ? Math.max(...wins.map(tx => tx.realized)) : 0,
-      maxLoss: losses.length ? Math.min(...losses.map(tx => tx.realized)) : 0,
-      avgProfit: wins.length ? wins.reduce((s, tx) => s + tx.realized, 0) / wins.length : 0,
-      avgLoss: losses.length ? losses.reduce((s, tx) => s + tx.realized, 0) / losses.length : 0,
-      totalRealizedGain: realizedUSD
-    };
-    const dData = calculatedRows.map(r => ({ name: r.symbol, value: r.marketValueUSD })).sort((a,b)=>b.value-a.value);
-    const totalDeposited = transactions.filter(t => t.type === 'deposit').reduce((s, t) => s + (t.amountIDR || 0), 0);
-    return { rows: calculatedRows, totals: { invested, market, pnl, pnlPct }, totalEquity: totalEq, tradeStats: tStats, donutData: dData, totalDeposited };
-  }, [assets, transactions, usdIdr, tradingBalance, realizedUSD]);
-
-  /* ===================== Equity timeline for chart & PnL periods ===================== */
-  const equitySeries = useMemo(() => {
-    // Build timeline from transactions + current holdings
-    const sorted = [...transactions].sort((a,b) => a.date - b.date);
-    let cash = 0;
-    // start with current cash = tradingBalance but we want historical series; we'll back-calculate final + previous points from tx
-    // Simpler approach: start at 0, walk through tx and buys/sells to compute resulting cash+holdings value at each tx.
-    // We'll produce points at each tx and final now.
-    let holdings = {};
-    const points = [];
-    const addPoint = (t) => {
-      const marketUSD = Object.values(holdings).reduce((s,h) => s + (h.shares * (h.lastPriceUSD || h.avgPriceUSD || 0)), 0);
-      const marketIdr = Math.round(marketUSD * usdIdr);
-      points.push({ t, v: cash + marketIdr });
-    };
-    // We'll assume initial cash is tradingBalance and then apply transactions backwards to create a rough series:
-    // To be pragmatic: create points by capturing value after each transaction using current asset prices as approximation.
-    let nowCash = tradingBalance;
-    const currentHoldings = {};
-    for (const a of assets) {
-      currentHoldings[a.symbol] = { shares: a.shares, lastPriceUSD: a.lastPriceUSD, avgPriceUSD: a.avgPrice || 0 };
-    }
-    // Start from earliest tx, simulate forward from 0 starting cash = 0
-    cash = 0;
-    holdings = {};
-    addPoint((sorted.length ? sorted[0].date : Date.now()) - 1000);
-    for (const tx of sorted) {
-      if (tx.type === 'deposit') {
-        cash += tx.amountIDR;
-      } else if (tx.type === 'withdraw') {
-        cash -= tx.amountIDR;
-      } else if (tx.type === 'buy') {
-        // reduce cash by cost (in IDR)
-        cash -= Math.round((tx.cost || 0) * usdIdr);
-        holdings[tx.symbol] = holdings[tx.symbol] || { shares: 0, avgPriceUSD: 0, investedUSD: 0, lastPriceUSD: 0 };
-        holdings[tx.symbol].shares += tx.qty;
-        holdings[tx.symbol].investedUSD += (tx.cost || 0);
-        holdings[tx.symbol].avgPriceUSD = holdings[tx.symbol].investedUSD / holdings[tx.symbol].shares;
-        const a = assets.find(x => x.symbol === tx.symbol);
-        if (a) holdings[tx.symbol].lastPriceUSD = a.lastPriceUSD || holdings[tx.symbol].avgPriceUSD;
-      } else if (tx.type === 'sell' || tx.type === 'delete') {
-        cash += Math.round((tx.proceeds || 0) * usdIdr);
-        holdings[tx.symbol] = holdings[tx.symbol] || { shares: 0, avgPriceUSD: 0, investedUSD: 0, lastPriceUSD: 0 };
-        holdings[tx.symbol].shares -= tx.qty;
-        holdings[tx.symbol].investedUSD -= (tx.qty * (tx.pricePerUnit || 0));
-        if (holdings[tx.symbol].shares <= 0) delete holdings[tx.symbol];
-      }
-      addPoint(tx.date);
-    }
-    // final point = current cash + market value (use current assets)
-    const finalMarketUSD = assets.reduce((s,a) => s + a.shares * a.lastPriceUSD, 0);
-    const finalMarketIdr = Math.round(finalMarketUSD * usdIdr);
-    points.push({ t: Date.now(), v: Math.round(tradingBalance) + finalMarketIdr });
-    // dedupe by timestamp
-    const unique = [];
-    const seen = new Set();
-    for (const p of points) {
-      if (!seen.has(p.t)) { unique.push(p); seen.add(p.t); }
-    }
-    return unique.length ? unique : [{ t: Date.now() - 1000, v: 0 }, { t: Date.now(), v: Math.round(tradingBalance) }];
-  }, [transactions, assets, tradingBalance, usdIdr]);
-
-  /* helper: get value at given timestamp (closest earlier) */
-  const pointAt = (series, ts) => {
-    if (!series.length) return series[0] || { t: Date.now(), v: 0 };
-    let prev = series[0];
-    for (const p of series) {
-      if (p.t >= ts) return prev;
-      prev = p;
-    }
-    return series[series.length - 1];
-  };
-
-  /* ===================== CSV / export/import already implemented above ===================== */
-
   /* ================ Render ================ */
   if (view === 'performance') {
-    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} chartRange={chartRange} setChartRange={setChartRange} donutData={donutData} transactions={transactions} equitySeries={equitySeries} pointAt={pointAt} />;
+    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} chartRange={chartRange} setChartRange={setChartRange} donutData={donutData} transactions={transactions} equitySeries={equitySeries} />;
   }
 
   return (
@@ -501,20 +467,21 @@ export default function PortfolioDashboard() {
           <div className="flex items-center gap-3"><UserAvatar /><h1 className="text-lg font-bold text-white">Bloomboard</h1></div>
 
           <div className="flex items-center gap-3">
-            {/* Compact switch: active text inside the bubble */}
-            <div
-              role="switch"
-              aria-checked={displaySymbol === "$"}
-              onClick={() => setDisplaySymbol(prev => prev === "Rp." ? "$" : "Rp.")}
-              className={`relative w-14 h-7 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-gray-700'}`}
-              title="Toggle display currency"
-            >
-              <div className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div>
-              <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-black">{displaySymbol === "$" ? 'USD' : 'IDR'}</div>
+            {/* Compact IDR / USD switch (small) */}
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-gray-400">IDR</div>
+              <div
+                role="switch"
+                aria-checked={displaySymbol === "$"}
+                onClick={() => setDisplaySymbol(prev => prev === "Rp." ? "$" : "Rp.")}
+                className={`relative w-14 h-7 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-gray-700'}`}
+                title="Toggle display currency"
+              >
+                <div className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-black">{displaySymbol === "$" ? 'USD' : 'IDR'}</div>
+              </div>
+              <div className="text-xs text-gray-400">{isFxLoading ? '...' : new Intl.NumberFormat('id-ID').format(usdIdr)}</div>
             </div>
-
-            {/* FX rate to the right */}
-            <div className="text-xs text-gray-400">{isFxLoading ? '...' : new Intl.NumberFormat('id-ID').format(usdIdr)}</div>
 
             <button onClick={() => setManagePortfolioOpen(true)} className="text-gray-400 hover:text-white"><MoreVerticalIcon /></button>
           </div>
@@ -526,55 +493,45 @@ export default function PortfolioDashboard() {
           </div>
 
           <section className="p-4">
-            {/* 3x3 summary grid (3 rows for neat layout) */}
             <div className="grid grid-cols-3 gap-px bg-[#0a0a0a] p-px">
-              <div className="bg-black p-3">
+              <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Trading Balance</p>
-                <p className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(tradingBalance, "Rp.") : formatMoney(tradingBalance / usdIdr, "$")}</p>
+                <p className="font-semibold text-sm text-white">
+                  {displaySymbol === "Rp." ? formatMoney(tradingBalance, "Rp.") : formatMoney(tradingBalance / usdIdr, "$")}
+                </p>
               </div>
 
-              <div className="bg-black p-3">
+              <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Invested</p>
-                <p className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(totals.invested * usdIdr, "Rp.") : formatMoney(totals.invested, "$")}</p>
+                <p className="font-semibold text-sm text-white">
+                  {displaySymbol === "Rp." ? formatMoney(totals.invested * usdIdr, "Rp.") : formatMoney(totals.invested, "$")}
+                </p>
               </div>
 
-              <div className="bg-black p-3">
+              <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Total Equity</p>
-                <p className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}</p>
+                <p className="font-semibold text-sm text-white">
+                  {displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}
+                </p>
               </div>
 
-              <div className="bg-black p-3">
+              <div className="bg-black p-2 col-span-2">
                 <p className="text-xs text-gray-500">Gain P&L</p>
-                <p className={`font-semibold ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")}</p>
+                <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%)
+                </p>
               </div>
 
-              <div className="bg-black p-3">
+              <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Realized P&L</p>
-                <p className={`font-semibold ${realizedUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{realizedUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(realizedUSD * usdIdr, "Rp.") : formatMoney(realizedUSD, "$")}</p>
-              </div>
-
-              <div className="bg-black p-3">
-                <p className="text-xs text-gray-500">Total Deposit</p>
-                <p className="font-semibold text-white">{formatMoney(totalDeposited, "Rp.")}</p>
-              </div>
-
-              <div className="bg-black p-3">
-                <p className="text-xs text-gray-500">Number of Assets</p>
-                <p className="font-semibold text-white">{assets.length}</p>
-              </div>
-
-              <div className="bg-black p-3">
-                <p className="text-xs text-gray-500">Total Trades</p>
-                <p className="font-semibold text-white">{transactions.length}</p>
-              </div>
-
-              <div className="bg-black p-3">
-                <p className="text-xs text-gray-500">Cash</p>
-                <p className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(tradingBalance, "Rp.") : formatMoney(tradingBalance / usdIdr, "$")}</p>
+                <p className={`font-semibold text-sm ${realizedUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {realizedUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(realizedUSD * usdIdr, "Rp.") : formatMoney(realizedUSD, "$")}
+                </p>
               </div>
             </div>
 
             <div className="mt-4 text-right">
+              {/* simplified "View Performance >" text only */}
               <div className="text-sm text-white cursor-pointer inline-flex items-center gap-2" onClick={() => setView('performance')}>View Performance <ArrowRightIconSimple /></div>
             </div>
           </section>
@@ -585,36 +542,38 @@ export default function PortfolioDashboard() {
             <table className="w-full text-sm">
               <thead className="text-left text-gray-500 text-xs">
                 <tr>
-                  <th className="p-3 pt-4">Asset<br/><span className="text-xs mt-1 text-gray-400">Qty</span></th>
-                  <th className="p-3 pt-4 text-right">Invested<br/><span className="text-xs mt-1 text-gray-400">Avg Price</span></th>
-                  <th className="p-3 pt-4 text-right">Market<br/><span className="text-xs mt-1 text-gray-400">Price</span></th>
+                  <th className="p-3 pt-4">Code</th>
+                  <th className="p-3 pt-4 text-right">Invested<br/><span className="sr-only">Avg Price</span></th>
+                  <th className="p-3 pt-4 text-right">Market<br/><span className="sr-only">Current Price</span></th>
                   <th className="p-3 pt-4 text-right">Gain P&L</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (
-                  <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
-                    <td className="p-3">
-                      <div className="font-semibold text-base text-white">{r.symbol}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div>
-                    </td>
+                {rows.map(r => {
+                  return (
+                    <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
+                      <td className="p-3">
+                        <div className="font-semibold text-base text-white">{r.symbol}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div>
+                      </td>
 
-                    <td className="p-3 text-right tabular-nums">
-                      <div className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(r.investedUSD * usdIdr, "Rp.") : formatMoney(r.investedUSD, "$")}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.avgPrice * usdIdr, "Rp.") : formatMoney(r.avgPrice, "$")}</div>
-                    </td>
+                      <td className="p-3 text-right tabular-nums">
+                        <div className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(r.investedUSD * usdIdr, "Rp.") : formatMoney(r.investedUSD, "$")}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.avgPrice * usdIdr, "Rp.") : formatMoney(r.avgPrice, "$")}</div>
+                      </td>
 
-                    <td className="p-3 text-right tabular-nums">
-                      <div className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(r.marketValueUSD * usdIdr, "Rp.") : formatMoney(r.marketValueUSD, "$")}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.lastPriceUSD * usdIdr, "Rp.") : formatMoney(r.lastPriceUSD, "$")}</div>
-                    </td>
+                      <td className="p-3 text-right tabular-nums">
+                        <div className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(r.marketValueUSD * usdIdr, "Rp.") : formatMoney(r.marketValueUSD, "$")}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.lastPriceUSD * usdIdr, "Rp.") : formatMoney(r.lastPriceUSD, "$")}</div>
+                      </td>
 
-                    <td className="p-3 text-right tabular-nums">
-                      <div className={`font-semibold ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(r.pnlUSD * usdIdr, "Rp.") : formatMoney(r.pnlUSD, "$")}</div>
-                      <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{Math.round(r.pnlPct)}%</div>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="p-3 text-right tabular-nums">
+                        <div className={`font-semibold ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(r.pnlUSD * usdIdr, "Rp.") : formatMoney(r.pnlUSD, "$")}</div>
+                        <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{Math.round(r.pnlPct)}%</div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
@@ -637,49 +596,17 @@ export default function PortfolioDashboard() {
         <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({ open: false, asset: null })} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
 
         <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}>
-          <ManagePortfolioSheet onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if (confirm("Erase all portfolio data?")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); } }} usdIdr={usdIdr} />
+          <ManagePortfolioSheet onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data?")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); } }} usdIdr={usdIdr} />
         </BottomSheet>
       </div>
     </div>
   );
 }
 
-/* ===================== PERFORMANCE & SUBCOMPONENTS ===================== */
+/* ===================== Performance & Subcomponents ===================== */
 
-const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, displaySymbol, chartRange, setChartRange, donutData, transactions, equitySeries, pointAt }) => {
+const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, displaySymbol, chartRange, setChartRange, donutData, transactions, equitySeries }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
-  const [range, setRange] = useState('1M'); // 1D,7D,1M,1Y,All
-  const [pnlMode, setPnlMode] = useState('daily'); // daily/monthly/yearly/all
-
-  const now = Date.now();
-  const ranges = {
-    '1D': 24 * 3600 * 1000,
-    '7D': 7 * 24 * 3600 * 1000,
-    '1M': 30 * 24 * 3600 * 1000,
-    '1Y': 365 * 24 * 3600 * 1000,
-    'All': now * 2
-  };
-
-  const filteredSeries = useMemo(() => {
-    if (range === 'All') return equitySeries;
-    const minTs = Date.now() - ranges[range];
-    return equitySeries.filter(p => p.t >= minTs);
-  }, [equitySeries, range]);
-
-  const computePnlForPeriod = (periodMs) => {
-    const end = Date.now();
-    const start = end - periodMs;
-    const startPoint = pointAt(equitySeries, start);
-    const endPoint = equitySeries[equitySeries.length - 1];
-    if (!startPoint || !endPoint) return 0;
-    return (endPoint.v - startPoint.v) / usdIdr; // return USD equivalent (approx)
-  };
-
-  const pnlDaily = computePnlForPeriod(24 * 3600 * 1000);
-  const pnlMonthly = computePnlForPeriod(30 * 24 * 3600 * 1000);
-  const pnlYearly = computePnlForPeriod(365 * 24 * 3600 * 1000);
-  const pnlAll = (equitySeries.length ? (equitySeries[equitySeries.length - 1].v - equitySeries[0].v) / usdIdr : 0);
-
   return (
     <div className="bg-black text-gray-300 min-h-screen font-sans">
       <div className="max-w-4xl mx-auto">
@@ -704,24 +631,7 @@ const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, dis
               <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%) All Time</p>
             </div>
 
-            <div className="mt-4 flex items-center gap-3">
-              {["1D","7D","1M","1Y","All"].map(r => (<button key={r} onClick={() => { setRange(r); setChartRange(r); }} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-400'}`}>{r}</button>))}
-            </div>
-
-            <div className="mt-6"><AreaChart equityData={filteredSeries} displaySymbol={displaySymbol} usdIdr={usdIdr} /></div>
-
-            <div className="mt-4">
-              <div className="flex items-center gap-3">
-                {['daily','monthly','yearly','all'].map(m => (<button key={m} onClick={() => setPnlMode(m)} className={`px-3 py-1 text-xs rounded-full ${pnlMode === m ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-400'}`}>{m.charAt(0).toUpperCase() + m.slice(1)}</button>))}
-              </div>
-
-              <div className="mt-4 grid grid-cols-4 gap-4">
-                <div className="bg-[#111111] p-3 rounded"><p className="text-xs text-gray-400">Daily PnL</p><p className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(pnlDaily * usdIdr, "Rp.") : formatMoney(pnlDaily, "$")}</p></div>
-                <div className="bg-[#111111] p-3 rounded"><p className="text-xs text-gray-400">Monthly PnL</p><p className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(pnlMonthly * usdIdr, "Rp.") : formatMoney(pnlMonthly, "$")}</p></div>
-                <div className="bg-[#111111] p-3 rounded"><p className="text-xs text-gray-400">Yearly PnL</p><p className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(pnlYearly * usdIdr, "Rp.") : formatMoney(pnlYearly, "$")}</p></div>
-                <div className="bg-[#111111] p-3 rounded"><p className="text-xs text-gray-400">All PnL</p><p className="font-semibold text-white">{displaySymbol === "Rp." ? formatMoney(pnlAll * usdIdr, "Rp.") : formatMoney(pnlAll, "$")}</p></div>
-              </div>
-            </div>
+            <div className="mt-6"><AreaChart equityData={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} /></div>
 
             <div className="mt-6">
               <h3 className="text-base font-semibold text-white mb-4">Asset Allocation</h3>
@@ -782,10 +692,10 @@ const HistoryView = ({ transactions, usdIdr, displayCcySymbol }) => {
               <tr key={tx.id} className="border-t border-gray-800">
                 <td className="p-3 text-gray-400">{new Date(tx.date).toLocaleString()}</td>
                 <td className="p-3">{tx.type}</td>
-                <td className="p-3 font-semibold">{tx.symbol || tx.note}</td>
+                <td className="p-3 font-semibold">{tx.symbol}</td>
                 <td className="p-3 text-right">{formatQty(tx.qty)}</td>
                 <td className="p-3 text-right text-gray-400">{displayCcySymbol === "Rp." ? formatMoney((tx.pricePerUnit || tx.price || 0) * usdIdr, "Rp.") : formatMoney((tx.pricePerUnit || tx.price || 0), "$")}</td>
-                <td className="p-3 text-right">{tx.type === 'deposit' || tx.type === 'withdraw' ? formatMoney(tx.amountIDR, "Rp.") : displayCcySymbol === "Rp." ? formatMoney((tx.cost || tx.proceeds || 0) * usdIdr, "Rp.") : formatMoney((tx.cost || tx.proceeds || 0), "$")}</td>
+                <td className="p-3 text-right">{displayCcySymbol === "Rp." ? formatMoney((tx.cost || tx.proceeds || 0) * usdIdr, "Rp.") : formatMoney((tx.cost || tx.proceeds || 0), "$")}</td>
               </tr>
             ))}
             {transactions.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-gray-500">No history</td></tr>}
@@ -831,7 +741,7 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
   const [total, setTotal] = useState('');
   const [ccy, setCcy] = useState('IDR');
 
-  useEffect(() => { setSearchMode('stock'); }, []);
+  useEffect(() => { setSearchMode('stock'); }, []); // ensure stock tab selected by default
 
   const handleInputChange = (field, value) => {
     if (field === 'shares') {
@@ -852,7 +762,7 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
   return (
     <div className="space-y-4">
       <div className="flex border-b border-gray-700">
-        {[{ key: 'stock', label: 'Stock' }, { key: 'crypto', label: 'Crypto' }, { key: 'nonliquid', label: 'Non-Liquid' }].map(item => (
+        {[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (
           <button key={item.key} onClick={() => { setSearchMode(item.key); setCcy(item.key === 'stock' ? 'IDR' : (item.key === 'crypto' ? 'USD' : 'IDR')); }} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>
         ))}
       </div>
@@ -969,14 +879,14 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 
         <div>
           <label className="text-xs text-gray-400">Qty</label>
-          <input type="text" value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
+          <input type="text" value={shares} onChange={e=>handleInputChange('shares', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
         </div>
 
         <div>
           <label className="text-xs text-gray-400">Price ({ccy})</label>
           <div className="flex gap-2">
-            <input type="text" value={price} onChange={e => handleInputChange('price', e.target.value)} className="flex-1 mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
-            <select value={ccy} onChange={e => setCcy(e.target.value)} className="mt-1 rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white">
+            <input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="flex-1 mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
+            <select value={ccy} onChange={e=>setCcy(e.target.value)} className="mt-1 rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white">
               <option value="IDR">IDR</option>
               <option value="USD">USD</option>
             </select>
@@ -985,13 +895,13 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 
         <div>
           <label className="text-xs text-gray-400">Total ({ccy})</label>
-          <input type="text" value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
+          <input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
         </div>
 
         <div className="flex gap-2">
           <button onClick={doSubmit} className={`flex-1 py-2.5 rounded font-semibold text-white ${mode === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}</button>
           <button onClick={() => onDelete(asset)} title="Delete (liquidate)" className="py-2.5 px-3 rounded bg-gray-700 hover:bg-gray-600 text-white flex items-center gap-2">
-            <TrashIcon className="text-red-400" />
+            <TrashIcon className="text-white" />
           </button>
         </div>
       </div>
@@ -1000,9 +910,8 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 };
 
 /* ===================== Charts ===================== */
-
 const AreaChart = ({ equityData, displaySymbol, usdIdr }) => {
-  const data = equityData.length > 1 ? equityData : [{ t: Date.now() - 1000, v: 0 }, { t: Date.now(), v: 0 }];
+  const data = equityData.length > 1 ? equityData : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
   const height = 220, width = 700, padding = { top: 10, bottom: 20, left: 30, right: 40 };
   const minVal = Math.min(...data.map(d => d.v)), maxVal = Math.max(...data.map(d => d.v));
   const range = maxVal - minVal || 1;
@@ -1036,38 +945,38 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr }) => {
 
 const AllocationDonut = ({ data, displayCcySymbol, usdIdr }) => {
   const [hover, setHover] = useState(null);
-  const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, content: '' });
+  const [tooltip, setTooltip] = useState({ show:false, x:0, y:0, content: '' });
   const ref = useRef(null);
-  const total = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
+  const total = useMemo(() => data.reduce((s,d) => s + d.value, 0), [data]);
   if (!total) return <div className="text-center text-gray-500 py-8">No assets to display</div>;
   const size = 220, innerRadius = 60, outerRadius = 90;
-  const colors = ["#22c55e", "#10b981", "#059669", "#047857", "#065f46", "#064e3b", "#3f3f46", "#52525b", "#71717a"];
-  let cum = -Math.PI / 2;
-  const handleMove = (e) => { if (ref.current) { const r = ref.current.getBoundingClientRect(); setTooltip(t => ({ ...t, x: e.clientX - r.left, y: e.clientY - r.top })); } };
-  const handleOver = (i, d) => { setHover(i); const pct = Math.round(d.value / total * 100); const val = Math.round(d.value * (displayCcySymbol === "Rp." ? usdIdr : 1)); setTooltip(t => ({ ...t, show: true, content: `${d.name}: ${displayCcySymbol === "Rp." ? 'Rp.' : '$'} ${new Intl.NumberFormat(displayCcySymbol === "Rp." ? 'id-ID' : 'en-US').format(val)} (${pct}%)` })); };
-  const handleOut = () => { setHover(null); setTooltip(t => ({ ...t, show: false })); };
+  const colors = ["#22c55e","#10b981","#059669","#047857","#065f46","#064e3b","#3f3f46","#52525b","#71717a"];
+  let cum = -Math.PI/2;
+  const handleMove = (e) => { if(ref.current){ const r=ref.current.getBoundingClientRect(); setTooltip(t=>({...t,x:e.clientX-r.left,y:e.clientY-r.top})); } };
+  const handleOver = (i,d) => { setHover(i); const pct = Math.round(d.value / total * 100); const val = Math.round(d.value * (displayCcySymbol === "Rp." ? usdIdr : 1)); setTooltip(t => ({...t, show:true, content:`${d.name}: ${displayCcySymbol === "Rp." ? 'Rp.' : '$'} ${new Intl.NumberFormat(displayCcySymbol === "Rp." ? 'id-ID' : 'en-US').format(val)} (${pct}%)`})); };
+  const handleOut = () => { setHover(null); setTooltip(t => ({...t, show:false})); };
 
   return (
     <div className="flex flex-col md:flex-row items-center gap-6" ref={ref} onMouseMove={handleMove}>
       <div className="relative" style={{ width: size, height: size }}>
         {tooltip.show && (<div className="absolute z-10 p-2 text-xs bg-gray-800 text-white rounded shadow-lg pointer-events-none" style={{ left: tooltip.x + 15, top: tooltip.y }}>{tooltip.content}</div>)}
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}><g transform={`translate(${size/2}, ${size/2})`}>
-          {data.map((d, i) => {
-            const angle = (d.value / total) * 2 * Math.PI;
+          {data.map((d,i) => {
+            const angle = (d.value/total) * 2 * Math.PI;
             const start = cum;
             const end = cum + angle;
             cum = end;
             const isH = hover === i;
             const rOut = isH ? outerRadius + 6 : outerRadius;
             const arc = (r, sa, ea) => { const large = ea - sa <= Math.PI ? "0" : "1"; return `M ${r*Math.cos(sa)} ${r*Math.sin(sa)} A ${r} ${r} 0 ${large} 1 ${r*Math.cos(ea)} ${r*Math.sin(ea)}`; };
-            const path = `${arc(rOut, start, end)} L ${innerRadius*Math.cos(end)} ${innerRadius*Math.sin(end)} ${arc(innerRadius, end, start).replace('M','L').replace(new RegExp(`A ${innerRadius} ${innerRadius} 0 \\d 1`), `A ${innerRadius} ${innerRadius} 0 ${angle>Math.PI?1:0} 0`)} Z`;
-            return (<path key={d.name} d={path} fill={colors[i % colors.length]} onMouseOver={() => handleOver(i, d)} onMouseOut={handleOut} style={{ transition: 'all .18s', cursor: 'pointer' }} />);
+            const path = `${arc(rOut,start,end)} L ${innerRadius*Math.cos(end)} ${innerRadius*Math.sin(end)} ${arc(innerRadius,end,start).replace('M','L').replace(new RegExp(`A ${innerRadius} ${innerRadius} 0 \\d 1`), `A ${innerRadius} ${innerRadius} 0 ${angle>Math.PI?1:0} 0`)} Z`;
+            return (<path key={d.name} d={path} fill={colors[i % colors.length]} onMouseOver={() => handleOver(i,d)} onMouseOut={handleOut} style={{ transition: 'all .18s', cursor: 'pointer' }} />);
           })}
         </g></svg>
       </div>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 w-full">
-        {data.slice(0, 8).map((d, i) => (
+        {data.slice(0,8).map((d,i) => (
           <div key={i} className="flex items-center gap-2">
             <div style={{ backgroundColor: colors[i % colors.length] }} className="w-3 h-3 rounded-sm flex-shrink-0"></div>
             <div><div className="font-semibold text-sm text-gray-100">{d.name}</div><div className="text-xs text-gray-400">{Math.round(d.value / total * 100)}%</div></div>
