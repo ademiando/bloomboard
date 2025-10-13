@@ -16,7 +16,7 @@ const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
 const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`;
 const COINGECKO_PRICE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd,idr`;
-const COINGECKO_USD_IDR = `${COINGECKO_API}/simple/price?ids=tether&vs_currencies=idr`;
+const COINGECKO_TETHER_IDR_MARKET = `${COINGECKO_API}/coins/markets?vs_currency=idr&ids=tether`;
 const isBrowser = typeof window !== "undefined";
 const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/g,'')); return isNaN(n) ? 0 : n; };
 
@@ -84,14 +84,17 @@ export default function PortfolioDashboard() {
   const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_realized_v9") || 0) : 0);
   const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_transactions_v9") || "[]") : []);
   const [tradingBalance, setTradingBalance] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_balance_v9") || 5952) : 5952);
-  // displaySymbol either "Rp." or "$"
+  const [totalDeposits, setTotalDeposits] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_deposits_v9") || 5952) : 5952);
   const [displaySymbol, setDisplaySymbol] = useState(() => isBrowser ? (localStorage.getItem("pf_display_sym_v9") || "Rp.") : "Rp.");
+  
   const [usdIdr, setUsdIdr] = useState(16400);
+  const [usdIdrChange24h, setUsdIdrChange24h] = useState(0);
+  const [priceDirection, setPriceDirection] = useState('neutral'); // 'up', 'down', 'neutral'
   const [isFxLoading, setIsFxLoading] = useState(true);
 
   const [view, setView] = useState('main');
   const [isAddAssetModalOpen, setAddAssetModalOpen] = useState(false);
-  const [searchMode, setSearchMode] = useState("stock"); // combined stock (US + ID) by default
+  const [searchMode, setSearchMode] = useState("stock");
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
@@ -107,17 +110,34 @@ export default function PortfolioDashboard() {
   useEffect(() => { if (isBrowser) localStorage.setItem("pf_realized_v9", String(realizedUSD)); }, [realizedUSD]);
   useEffect(() => { if (isBrowser) localStorage.setItem("pf_transactions_v9", JSON.stringify(transactions)); }, [transactions]);
   useEffect(() => { if (isBrowser) localStorage.setItem("pf_balance_v9", String(tradingBalance)); }, [tradingBalance]);
+  useEffect(() => { if (isBrowser) localStorage.setItem("pf_deposits_v9", String(totalDeposits)); }, [totalDeposits]);
   useEffect(() => { if (isBrowser) localStorage.setItem("pf_display_sym_v9", displaySymbol); }, [displaySymbol]);
 
   useEffect(() => {
     const fetchFx = async () => {
       setIsFxLoading(true);
       try {
-        const res = await fetch(COINGECKO_USD_IDR);
+        const res = await fetch(COINGECKO_TETHER_IDR_MARKET);
         const j = await res.json();
-        if (j?.tether?.idr) setUsdIdr(Math.round(j.tether.idr));
-      } catch (e) {}
-      finally { setIsFxLoading(false); }
+        if (j && j[0]) {
+          const newPrice = Math.round(j[0].current_price);
+          const newChange = j[0].price_change_percentage_24h || 0;
+
+          setUsdIdr(prevPrice => {
+            if (prevPrice !== 0 && newPrice > prevPrice) setPriceDirection('up');
+            else if (prevPrice !== 0 && newPrice < prevPrice) setPriceDirection('down');
+            else setPriceDirection('neutral');
+            return newPrice;
+          });
+
+          setUsdIdrChange24h(newChange);
+        }
+      } catch (e) {
+        console.error("Gagal mengambil data FX", e);
+      } finally {
+        setIsFxLoading(false);
+        setTimeout(() => setPriceDirection('neutral'), 1500); // Reset warna setelah 1.5 detik
+      }
     };
     fetchFx();
     const id = setInterval(fetchFx, 70000);
@@ -175,7 +195,6 @@ export default function PortfolioDashboard() {
     return () => clearInterval(id);
   }, [assets.length, usdIdr]);
 
-  // Search suggestions: combined stock returns all quotes (no forced ID only)
   const searchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!query || query.trim().length < 2) { setSuggestions([]); return; }
@@ -251,7 +270,7 @@ export default function PortfolioDashboard() {
     setTradeModal({ open: false, asset: null });
   };
 
-  const addAssetWithInitial = (qty, price, ccy) => {
+  const addAssetWithInitial = (qty, price) => {
     qty = Number(qty || 0); price = Number(price || 0);
     let p = selectedSuggestion;
     if (!p) {
@@ -260,7 +279,7 @@ export default function PortfolioDashboard() {
       p = { symbol: t.toUpperCase(), display: t.toUpperCase(), type: 'stock' };
     }
     if (qty <= 0 || price <= 0) { alert("Quantity & price must be > 0"); return; }
-    const priceUSD = (ccy === "IDR") ? price / usdIdr : price;
+    const priceUSD = (displaySymbol === "Rp.") ? price / usdIdr : price;
     const newStub = { id: `${p.source || 'manual'}:${p.symbol||p.id}:${Date.now()}`, type: p.type, symbol: p.symbol, name: p.display, coingeckoId: p.type === 'crypto' ? p.id : undefined };
     if (handleBuy(newStub, qty, priceUSD)) {
       setAddAssetModalOpen(false);
@@ -279,8 +298,18 @@ export default function PortfolioDashboard() {
     }
   };
 
-  const handleAddBalance = (amount) => { setTradingBalance(b => b + amount); setBalanceModalOpen(false); };
-  const handleWithdraw = (amount) => { if (amount > tradingBalance) { alert("Withdrawal amount exceeds balance."); return; } setTradingBalance(b => b - amount); setBalanceModalOpen(false); };
+  const handleAddBalance = (amount) => {
+    const amountIDR = displaySymbol === "Rp." ? amount : amount * usdIdr;
+    setTradingBalance(b => b + amountIDR);
+    setTotalDeposits(d => d + amountIDR);
+    setBalanceModalOpen(false);
+  };
+  const handleWithdraw = (amount) => {
+    const amountIDR = displaySymbol === "Rp." ? amount : amount * usdIdr;
+    if (amountIDR > tradingBalance) { alert("Withdrawal amount exceeds balance."); return; }
+    setTradingBalance(b => b - amountIDR);
+    setBalanceModalOpen(false);
+  };
 
   /* ===================== Derived Data ===================== */
   const { rows, totals, totalEquity, tradeStats, donutData } = useMemo(() => {
@@ -464,23 +493,39 @@ export default function PortfolioDashboard() {
     <div className="bg-black text-gray-300 min-h-screen font-sans">
       <div className="max-w-4xl mx-auto">
         <header className="p-4 flex justify-between items-center sticky top-0 bg-black z-10">
-          <div className="flex items-center gap-3"><UserAvatar /><h1 className="text-lg font-bold text-white">Bloomboard</h1></div>
+          <div className="flex items-center gap-3">
+            <UserAvatar />
+            <div className="bg-gray-900 border border-gray-700 rounded-lg p-2 flex items-center gap-3">
+                <div className="text-xs text-gray-400 font-semibold">USD/IDR</div>
+                <div className={`font-bold text-sm tabular-nums transition-colors duration-500 ${
+                    priceDirection === 'up' ? 'text-emerald-400' : priceDirection === 'down' ? 'text-red-400' : 'text-white'
+                }`}>
+                  {isFxLoading ? '...' : `Rp ${new Intl.NumberFormat('id-ID').format(usdIdr)}`}
+                </div>
+                {!isFxLoading && (
+                  <div className={`flex items-center text-xs font-semibold ${usdIdrChange24h >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className={`mr-1 ${usdIdrChange24h < 0 ? 'transform rotate-180' : ''}`}>
+                      <path d="M7 14l5-5 5 5z"/>
+                    </svg>
+                    {usdIdrChange24h.toFixed(2)}%
+                  </div>
+                )}
+              </div>
+          </div>
 
           <div className="flex items-center gap-3">
-            {/* Compact IDR / USD switch (small) */}
             <div className="flex items-center gap-2">
-              <div className="text-xs text-gray-400">IDR</div>
+              <span className="text-xs font-semibold text-gray-400">IDR</span>
               <div
                 role="switch"
                 aria-checked={displaySymbol === "$"}
                 onClick={() => setDisplaySymbol(prev => prev === "Rp." ? "$" : "Rp.")}
-                className={`relative w-14 h-7 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-gray-700'}`}
+                className={`relative w-12 h-6 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-gray-700'}`}
                 title="Toggle display currency"
               >
-                <div className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div>
-                <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-black">{displaySymbol === "$" ? 'USD' : 'IDR'}</div>
+                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div>
               </div>
-              <div className="text-xs text-gray-400">{isFxLoading ? '...' : new Intl.NumberFormat('id-ID').format(usdIdr)}</div>
+              <span className="text-xs font-semibold text-gray-400">USD</span>
             </div>
 
             <button onClick={() => setManagePortfolioOpen(true)} className="text-gray-400 hover:text-white"><MoreVerticalIcon /></button>
@@ -515,10 +560,17 @@ export default function PortfolioDashboard() {
                 </p>
               </div>
 
-              <div className="bg-black p-2 col-span-2">
+              <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Gain P&L</p>
                 <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%)
+                </p>
+              </div>
+              
+              <div className="bg-black p-2">
+                <p className="text-xs text-gray-500">Deposit</p>
+                <p className="font-semibold text-sm text-white">
+                  {displaySymbol === "Rp." ? formatMoney(totalDeposits, "Rp.") : formatMoney(totalDeposits / usdIdr, "$")}
                 </p>
               </div>
 
@@ -531,7 +583,6 @@ export default function PortfolioDashboard() {
             </div>
 
             <div className="mt-4 text-right">
-              {/* simplified "View Performance >" text only */}
               <div className="text-sm text-white cursor-pointer inline-flex items-center gap-2" onClick={() => setView('performance')}>View Performance <ArrowRightIconSimple /></div>
             </div>
           </section>
@@ -586,17 +637,17 @@ export default function PortfolioDashboard() {
         </main>
 
         <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)}>
-          <AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, usdIdr}} />
+          <AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, usdIdr, displaySymbol}} />
         </Modal>
 
         <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)}>
-          <BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} />
+          <BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} displaySymbol={displaySymbol} />
         </Modal>
 
         <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({ open: false, asset: null })} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
 
         <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}>
-          <ManagePortfolioSheet onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data?")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); } }} usdIdr={usdIdr} />
+          <ManagePortfolioSheet onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data?")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); setTotalDeposits(0); } }} />
         </BottomSheet>
       </div>
     </div>
@@ -708,24 +759,23 @@ const HistoryView = ({ transactions, usdIdr, displayCcySymbol }) => {
 
 /* ===================== Forms & Modals ===================== */
 
-const BalanceManager = ({ onConfirm }) => {
+const BalanceManager = ({ onConfirm, displaySymbol }) => {
   const [amount, setAmount] = useState('');
   return (
     <form onSubmit={(e) => { e.preventDefault(); onConfirm(toNum(amount)); }} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium mb-1 text-gray-400">Amount (IDR)</label>
-        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-gray-900 px-3 py-2 rounded border border-gray-700 text-white" placeholder="e.g. 1000000" />
+        <label className="block text-sm font-medium mb-1 text-gray-400">Amount ({displaySymbol})</label>
+        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-gray-900 px-3 py-2 rounded border border-gray-700 text-white" placeholder={displaySymbol === "Rp." ? "e.g. 1000000" : "e.g. 100"} />
       </div>
       <button type="submit" className="w-full py-2.5 rounded font-semibold bg-emerald-600 text-white hover:bg-emerald-500">Confirm</button>
     </form>
   );
 };
 
-const ManagePortfolioSheet = ({ onImportClick, onExportClick, onAddBalance, onWithdraw, onClearAll, usdIdr }) => (
+const ManagePortfolioSheet = ({ onImportClick, onExportClick, onAddBalance, onWithdraw, onClearAll }) => ( 
   <div className="p-4 text-white text-sm">
     <h3 className="text-base font-semibold mb-4 px-2">Manage Portfolio</h3>
     <div className="space-y-1">
-      <div className="p-2 rounded text-gray-300">Realtime USD/IDR rate: {new Intl.NumberFormat('id-ID').format(usdIdr)}</div>
       <button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Add Balance</button>
       <button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Withdraw</button>
       <label className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300 block cursor-pointer">Import CSV<input type="file" accept=".csv" onChange={onImportClick} className="hidden" /></label>
@@ -735,23 +785,20 @@ const ManagePortfolioSheet = ({ onImportClick, onExportClick, onAddBalance, onWi
   </div>
 );
 
-const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, usdIdr }) => {
+const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol }) => {
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [total, setTotal] = useState('');
-  const [ccy, setCcy] = useState('IDR');
-
-  useEffect(() => { setSearchMode('stock'); }, []); // ensure stock tab selected by default
 
   const handleInputChange = (field, value) => {
     if (field === 'shares') {
       setShares(value);
       const num = toNum(price) * toNum(value);
-      setTotal(num ? `${Math.round(num)} ${ccy}` : '');
+      setTotal(num ? `${Math.round(num)}` : '');
     } else if (field === 'price') {
       setPrice(value);
       const num = toNum(value) * toNum(shares);
-      setTotal(num ? `${Math.round(num)} ${ccy}` : '');
+      setTotal(num ? `${Math.round(num)}` : '');
     } else if (field === 'total') {
       setTotal(value);
       const nTotal = toNum(value), nShares = toNum(shares);
@@ -763,7 +810,7 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
     <div className="space-y-4">
       <div className="flex border-b border-gray-700">
         {[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (
-          <button key={item.key} onClick={() => { setSearchMode(item.key); setCcy(item.key === 'stock' ? 'IDR' : (item.key === 'crypto' ? 'USD' : 'IDR')); }} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>
+          <button key={item.key} onClick={() => setSearchMode(item.key)} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>
         ))}
       </div>
 
@@ -782,24 +829,18 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
               <input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
             </div>
             <div>
-              <label className="text-xs text-gray-400">Price ({ccy})</label>
-              <div className="flex gap-2">
-                <input value={price} onChange={e => handleInputChange('price', e.target.value)} className="flex-1 mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
-                <select value={ccy} onChange={e => setCcy(e.target.value)} className="mt-1 rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white">
-                  <option value="IDR">IDR</option>
-                  <option value="USD">USD</option>
-                </select>
-              </div>
+              <label className="text-xs text-gray-400">Price ({displaySymbol})</label>
+              <input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
             </div>
           </div>
 
           <div>
-            <label className="text-xs text-gray-400">Total Value ({ccy})</label>
+            <label className="text-xs text-gray-400">Total Value ({displaySymbol})</label>
             <input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
           </div>
 
           <div className="flex justify-end">
-            <button onClick={() => addAssetWithInitial(toNum(shares), toNum(price), ccy)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button>
+            <button onClick={() => addAssetWithInitial(toNum(shares), toNum(price))} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button>
           </div>
         </div>
       ) : (
@@ -829,16 +870,13 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [total, setTotal] = useState('');
-  const [ccy, setCcy] = useState(displaySymbol === "Rp." ? 'IDR' : 'USD');
 
   useEffect(() => {
     if (asset) {
-      const isIdr = asset.symbol && asset.symbol.endsWith('.JK');
-      const priceVal = asset.lastPriceUSD * (isIdr ? usdIdr : 1);
+      const priceVal = displaySymbol === "Rp." ? asset.lastPriceUSD * usdIdr : asset.lastPriceUSD;
       setPrice(String(isFinite(priceVal) ? (displaySymbol === "$" ? priceVal.toFixed(2) : Math.round(priceVal)) : ''));
       setShares('');
       setTotal('');
-      setCcy(displaySymbol === "Rp." ? 'IDR' : 'USD');
     }
   }, [asset, usdIdr, displaySymbol]);
 
@@ -862,7 +900,7 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
     }
   };
 
-  const priceUSD = (ccy === 'IDR') ? toNum(price) / usdIdr : toNum(price);
+  const priceUSD = (displaySymbol === 'Rp.') ? toNum(price) / usdIdr : toNum(price);
 
   const doSubmit = () => {
     if (mode === 'buy') onBuy(asset, toNum(shares), priceUSD);
@@ -883,18 +921,12 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
         </div>
 
         <div>
-          <label className="text-xs text-gray-400">Price ({ccy})</label>
-          <div className="flex gap-2">
-            <input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="flex-1 mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
-            <select value={ccy} onChange={e=>setCcy(e.target.value)} className="mt-1 rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white">
-              <option value="IDR">IDR</option>
-              <option value="USD">USD</option>
-            </select>
-          </div>
+          <label className="text-xs text-gray-400">Price ({displaySymbol})</label>
+          <input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
         </div>
 
         <div>
-          <label className="text-xs text-gray-400">Total ({ccy})</label>
+          <label className="text-xs text-gray-400">Total ({displaySymbol})</label>
           <input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
         </div>
 
@@ -986,3 +1018,5 @@ const AllocationDonut = ({ data, displayCcySymbol, usdIdr }) => {
     </div>
   );
 };
+
+
