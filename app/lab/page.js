@@ -10,6 +10,10 @@ const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 
 const BackArrowIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
 const GraphIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>);
 const TrashIcon = ({className}) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
+const ArrowUpIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/></svg>;
+const ArrowDownIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
+const InfoIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
+
 
 /* ===================== Config & Helpers ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
@@ -673,7 +677,7 @@ export default function PortfolioDashboard() {
 
 /* ===================== Performance & Subcomponents ===================== */
 
-const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries }) => {
+const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
   const [chartRange, setChartRange] = useState("YTD");
   const [returnPeriod, setReturnPeriod] = useState('Monthly');
@@ -799,7 +803,7 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
 
           </div>
         ) : activeTab === 'trade' ? (
-          <TradeStatsView stats={tradeStats} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
+          <TradeStatsView stats={tradeStats} transactions={transactions} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
         ) : (
           <HistoryView transactions={transactions} usdIdr={usdIdr} displayCcySymbol={displaySymbol} />
         )}
@@ -809,26 +813,92 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
 };
 
 
-const TradeStatsView = ({ stats, displayCcySymbol, usdIdr }) => {
+const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
   const getVal = (val) => displayCcySymbol === "Rp." ? val * usdIdr : val;
+  const realizedGainSeries = useMemo(() => {
+    const sorted = [...transactions.filter(t => t.type === 'sell' || t.type === 'delete')].sort((a,b) => a.date - b.date);
+    let cumulativeGain = 0;
+    const points = sorted.map(tx => {
+      cumulativeGain += tx.realized || 0;
+      return {t: tx.date, v: cumulativeGain};
+    });
+    return points.length ? points : [{t: Date.now(), v:0}];
+  }, [transactions]);
+  
+  const topGainers = useMemo(() => {
+    const sells = transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete');
+    const gainers = {};
+    sells.forEach(tx => {
+      if(!gainers[tx.symbol]){
+        gainers[tx.symbol] = {trades:0, pnl: 0, cost: 0, proceeds: 0};
+      }
+      gainers[tx.symbol].trades++;
+      gainers[tx.symbol].pnl += tx.realized;
+      gainers[tx.symbol].cost += tx.qty * (assets.find(a => a.id === tx.assetId)?.avgPrice || tx.pricePerUnit);
+      gainers[tx.symbol].proceeds += tx.proceeds;
+    });
+    return Object.entries(gainers)
+      .map(([symbol, data]) => ({
+        symbol, ...data, 
+        pnlPct: data.cost > 0 ? (data.pnl/data.cost)*100 : 0
+      }))
+      .sort((a,b) => b.pnl - a.pnl).slice(0,5);
+  }, [transactions]);
+
   return (
     <div className="p-4 space-y-6">
-      <div className="text-center">
-        <div className="relative inline-block">
-          <svg className="w-28 h-28 transform -rotate-90"><circle cx="56" cy="56" r="50" stroke="#374151" strokeWidth="6" fill="transparent"/><circle cx="56" cy="56" r="50" stroke="#22c55e" strokeWidth="6" fill="transparent" strokeDasharray="314.159" strokeDashoffset={314.159 * (1 - (stats.winRate / 100))} /></svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-xs text-gray-400">Win Rate</span><span className="text-2xl font-bold text-white">{stats.winRate.toFixed(2)}%</span></div>
+      <div className="bg-gray-900 p-4 rounded-lg">
+        <h3 className="font-semibold text-white mb-2">Win Rate</h3>
+        <div className="flex items-center justify-between">
+          <span className="text-3xl font-bold text-white">{stats.winRate.toFixed(2)}%</span>
+          <div className="relative w-24 h-24">
+            <svg className="w-full h-full transform -rotate-90"><circle cx="50%" cy="50%" r="45%" stroke="#374151" strokeWidth="8" fill="transparent"/><circle cx="50%" cy="50%" r="45%" stroke="#22c55e" strokeWidth="8" fill="transparent" strokeDasharray={`${Math.PI * 90 * (stats.winRate/100)}, ${Math.PI * 90}`} /></svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-xs">
+              <div>{stats.trades} Trades</div>
+              <div className="text-emerald-400">{stats.wins} Wins</div>
+              <div className="text-red-400">{stats.losses} Losses</div>
+            </div>
+          </div>
         </div>
-        <div className="mt-2 text-sm">{stats.wins} Wins / {stats.losses} Losses ({stats.trades} Trades)</div>
       </div>
-
+      
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Max Profit</p><p className="text-lg font-semibold text-emerald-400">+{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxProfit), "Rp.") : formatMoney(getVal(stats.maxProfit), "$")}</p></div>
-        <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Max Loss</p><p className="text-lg font-semibold text-red-400">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxLoss), "Rp.") : formatMoney(getVal(stats.maxLoss), "$")}</p></div>
-        <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Profit</p><p className="text-lg font-semibold text-emerald-400">+{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgProfit), "Rp.") : formatMoney(getVal(stats.avgProfit), "$")}</p></div>
-        <div className="bg-[#181818] p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Loss</p><p className="text-lg font-semibold text-red-400">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgLoss), "Rp.") : formatMoney(getVal(stats.avgLoss), "$")}</p></div>
+        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxProfit), "Rp.") : formatMoney(getVal(stats.maxProfit), "$")}</p></div>
+        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxLoss), "Rp.") : formatMoney(getVal(stats.maxLoss), "$")}</p></div>
+        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgProfit), "Rp.") : formatMoney(getVal(stats.avgProfit), "$")}</p></div>
+        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgLoss), "Rp.") : formatMoney(getVal(stats.avgLoss), "$")}</p></div>
       </div>
 
-      <div><p className="text-sm text-gray-400">Total Realized Gain</p><p className="text-2xl font-bold text-emerald-400">+{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.totalRealizedGain), "Rp.") : formatMoney(getVal(stats.totalRealizedGain), "$")}</p></div>
+      <div className="bg-gray-900 p-4 rounded-lg">
+        <h3 className="font-semibold text-white flex items-center gap-1">Total Realized Gain <InfoIcon className="text-gray-400" /></h3>
+        <p className={`text-2xl font-bold mt-1 ${stats.totalRealizedGain >=0 ? 'text-emerald-400' : 'text-red-400'}`}>{stats.totalRealizedGain >=0 ? '+' : ''}{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.totalRealizedGain), "Rp.") : formatMoney(getVal(stats.totalRealizedGain), "$")}</p>
+        <div className="h-40 mt-2">
+            <AreaChart equityData={realizedGainSeries} displaySymbol={displaySymbol} usdIdr={usdIdr} range="All" setRange={()=>{}} />
+        </div>
+      </div>
+      
+      <div className="bg-gray-900 p-4 rounded-lg">
+        <h3 className="font-semibold text-white mb-2">Top Gainer ({displaySymbol})</h3>
+        <table className="w-full text-sm">
+          <thead className="text-gray-400 text-xs">
+            <tr><th className="text-left font-normal py-1">Code</th><th className="text-center font-normal py-1">Trades</th><th className="text-right font-normal py-1">P&L</th></tr>
+          </thead>
+          <tbody>
+            {topGainers.map(g => (
+              <tr key={g.symbol}>
+                <td className="py-1 flex items-center gap-2">
+                   <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center font-bold text-white text-xs">{g.symbol.charAt(0)}</div>
+                   {g.symbol}
+                </td>
+                <td className="text-center py-1">{g.trades}</td>
+                <td className={`text-right py-1 ${g.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {g.pnl >= 0 ? '+' : ''}{formatMoney(getVal(g.pnl), displayCcySymbol)} ({g.pnlPct.toFixed(2)}%)
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -1063,7 +1133,7 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
     case '1M': startTime = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()); break;
     case '3M': startTime = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()); break;
     case '1Y': startTime = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); break;
-    case 'All': startTime = new Date(0); break;
+    case 'All': startTime = equityData.length > 1 ? new Date(equityData[0].t) : new Date(0); break;
     case 'YTD':
     default: startTime = new Date(now.getFullYear(), 0, 1); break;
   }
@@ -1235,7 +1305,7 @@ const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) 
                 fill="transparent"
                 stroke={d.color || colors[i % colors.length]}
                 strokeWidth={strokeWidth + (isHovered ? 4 : 0)}
-                strokeDasharray={`${angle * Math.PI * innerRadius / 180 - 2} ${360 * Math.PI * innerRadius / 180}`}
+                strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`}
                 strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180}
                 className="transition-all duration-300"
                 onMouseOver={() => setHoveredSegment(d.name)}
