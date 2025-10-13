@@ -316,10 +316,17 @@ export default function PortfolioDashboard() {
   /* ===================== Derived Data ===================== */
   const { rows, totals, totalEquity, tradeStats, donutData } = useMemo(() => {
     const calculatedRows = assets.map(a => {
-      const market = a.shares * a.lastPriceUSD;
+      const effectiveLastPriceUSD = a.lastPriceUSD > 0 ? a.lastPriceUSD : a.avgPrice;
+      const market = a.shares * effectiveLastPriceUSD;
       const pnl = market - a.investedUSD;
       const pnlPct = a.investedUSD > 0 ? (pnl / a.investedUSD) * 100 : 0;
-      return { ...a, marketValueUSD: market, pnlUSD: pnl, pnlPct };
+      return { 
+        ...a, 
+        lastPriceUSD: effectiveLastPriceUSD,
+        marketValueUSD: market, 
+        pnlUSD: pnl, 
+        pnlPct 
+      };
     });
     const invested = calculatedRows.reduce((s, r) => s + r.investedUSD, 0);
     const market = calculatedRows.reduce((s, r) => s + r.marketValueUSD, 0);
@@ -565,7 +572,7 @@ export default function PortfolioDashboard() {
               <div className="bg-black p-2">
                 <p className="text-xs text-gray-500">Gain P&L</p>
                 <p className={`font-semibold text-xs ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%)
+                  {totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({(totals.pnlPct || 0).toFixed(2)}%)
                 </p>
               </div>
               
@@ -634,7 +641,7 @@ export default function PortfolioDashboard() {
 
                       <td className="p-3 text-right tabular-nums">
                         <div className={`font-semibold text-xs ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(r.pnlUSD * usdIdr, "Rp.") : formatMoney(r.pnlUSD, "$")}</div>
-                        <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{Math.round(r.pnlPct)}%</div>
+                        <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{r.pnlPct.toFixed(2)}%</div>
                       </td>
                     </tr>
                   );
@@ -693,7 +700,7 @@ const PerformancePage = ({ totals, totalEquity, tradeStats, setView, usdIdr, dis
             <div>
               <p className="text-sm text-gray-400">Total Equity</p>
               <p className="text-2xl font-bold text-white mb-1">{displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}</p>
-              <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({Math.round(totals.pnlPct||0)}%) All Time</p>
+              <p className={`font-semibold text-sm ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({(totals.pnlPct||0).toFixed(2)}%) All Time</p>
             </div>
 
             <div className="mt-6"><AreaChart equityData={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} /></div>
@@ -720,7 +727,7 @@ const TradeStatsView = ({ stats, displayCcySymbol, usdIdr }) => {
       <div className="text-center">
         <div className="relative inline-block">
           <svg className="w-28 h-28 transform -rotate-90"><circle cx="56" cy="56" r="50" stroke="#374151" strokeWidth="6" fill="transparent"/><circle cx="56" cy="56" r="50" stroke="#22c55e" strokeWidth="6" fill="transparent" strokeDasharray="314.159" strokeDashoffset={314.159 * (1 - (stats.winRate / 100))} /></svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-xs text-gray-400">Win Rate</span><span className="text-2xl font-bold text-white">{Math.round(stats.winRate)}%</span></div>
+          <div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-xs text-gray-400">Win Rate</span><span className="text-2xl font-bold text-white">{stats.winRate.toFixed(2)}%</span></div>
         </div>
         <div className="mt-2 text-sm">{stats.wins} Wins / {stats.losses} Losses ({stats.trades} Trades)</div>
       </div>
@@ -999,7 +1006,7 @@ const AllocationDonut = ({ data, displayCcySymbol, usdIdr }) => {
   const colors = ["#22c55e","#10b981","#059669","#047857","#065f46","#064e3b","#3f3f46","#52525b","#71717a"];
   let cum = -Math.PI/2;
   const handleMove = (e) => { if(ref.current){ const r=ref.current.getBoundingClientRect(); setTooltip(t=>({...t,x:e.clientX-r.left,y:e.clientY-r.top})); } };
-  const handleOver = (i,d) => { setHover(i); const pct = Math.round(d.value / total * 100); const val = Math.round(d.value * (displayCcySymbol === "Rp." ? usdIdr : 1)); setTooltip(t => ({...t, show:true, content:`${d.name}: ${displayCcySymbol === "Rp." ? 'Rp.' : '$'} ${new Intl.NumberFormat(displayCcySymbol === "Rp." ? 'id-ID' : 'en-US').format(val)} (${pct}%)`})); };
+  const handleOver = (i,d) => { const pct = (d.value / total * 100).toFixed(2); const val = Math.round(d.value * (displayCcySymbol === "Rp." ? usdIdr : 1)); setTooltip(t => ({...t, show:true, content:`${d.name}: ${displayCcySymbol === "Rp." ? 'Rp.' : '$'} ${new Intl.NumberFormat(displayCcySymbol === "Rp." ? 'id-ID' : 'en-US').format(val)} (${pct}%)`})); };
   const handleOut = () => { setHover(null); setTooltip(t => ({...t, show:false})); };
 
   return (
@@ -1025,7 +1032,7 @@ const AllocationDonut = ({ data, displayCcySymbol, usdIdr }) => {
         {data.slice(0,8).map((d,i) => (
           <div key={i} className="flex items-center gap-2">
             <div style={{ backgroundColor: colors[i % colors.length] }} className="w-3 h-3 rounded-sm flex-shrink-0"></div>
-            <div><div className="font-semibold text-sm text-gray-100">{d.name}</div><div className="text-xs text-gray-400">{Math.round(d.value / total * 100)}%</div></div>
+            <div><div className="font-semibold text-sm text-gray-100">{d.name}</div><div className="text-xs text-gray-400">{(d.value / total * 100).toFixed(2)}%</div></div>
           </div>
         ))}
       </div>
