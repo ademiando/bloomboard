@@ -1053,7 +1053,9 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 
 /* ===================== Charts ===================== */
 const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
-  
+  const [hoverData, setHoverData] = useState(null);
+  const svgRef = useRef(null);
+
   const now = new Date();
   let startTime;
   switch (range) {
@@ -1067,9 +1069,9 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
   }
   
   const filteredData = equityData.filter(d => d.t >= startTime.getTime());
-  const data = filteredData.length > 1 ? [{t: startTime.getTime(), v: filteredData[0].v}, ...filteredData] : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
+  const data = filteredData.length > 1 ? [{t: startTime.getTime(), v: filteredData.length > 0 ? filteredData[0].v : 0}, ...filteredData] : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
 
-  const height = 220, width = 700, padding = { top: 10, bottom: 40, left: 0, right: 80 };
+  const height = 220, width = 700, padding = { top: 20, bottom: 40, left: 0, right: 80 };
   const minVal = Math.min(...data.map(d => d.v));
   const maxVal = Math.max(...data.map(d => d.v));
   const valRange = maxVal - minVal || 1;
@@ -1100,27 +1102,62 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
     }
     return labels;
   }
+  
+  const handleMouseMove = (event) => {
+    if (!svgRef.current || data.length < 2) return;
+    const svg = svgRef.current;
+    const rect = svg.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+
+    const time = timeStart + ((x - padding.left) / (width - padding.left - padding.right)) * (timeEnd - timeStart);
+
+    let closestPoint = data.reduce((prev, curr) => Math.abs(curr.t - time) < Math.abs(prev.t - time) ? curr : prev);
+    
+    if (closestPoint) {
+        setHoverData({
+            point: closestPoint,
+            x: xScale(closestPoint.t),
+            y: yScale(closestPoint.v),
+        });
+    }
+  };
+
+  const handleMouseLeave = () => {
+      setHoverData(null);
+  };
 
   return (
     <div>
-        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded">
-        <defs>
-            <linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#22c55e" stopOpacity={0.24} />
-            <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
-            </linearGradient>
-        </defs>
-        <path d={areaPath} fill="url(#areaGradient2)" />
-        <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {yAxisLabels.map((v, idx) => (
-            <g key={idx}>
-            <line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" />
-            <text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text>
-            </g>
-        ))}
-         {xAxisLabels().map((item, idx) => (
-            <text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>
-        ))}
+        <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
+          <defs>
+              <linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#22c55e" stopOpacity={0.24} />
+              <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
+              </linearGradient>
+          </defs>
+          <path d={areaPath} fill="url(#areaGradient2)" />
+          <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          {yAxisLabels.map((v, idx) => (
+              <g key={idx}>
+              <line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" />
+              <text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text>
+              </g>
+          ))}
+          {xAxisLabels().map((item, idx) => (
+              <text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>
+          ))}
+          {hoverData && (
+              <g>
+                  <line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" />
+                  <circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#22c55e" stroke="white" strokeWidth="2" />
+                  <g transform={`translate(${hoverData.x > width / 2 ? hoverData.x - 130 : hoverData.x + 15}, ${padding.top - 10})`}>
+                      <rect width="120" height="40" fill="rgba(40, 40, 40, 0.9)" rx="4" />
+                      <text x="10" y="18" fill="#A1A1AA" fontSize="11">{new Date(hoverData.point.t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</text>
+                      <text x="10" y="34" fill="white" fontSize="12" fontWeight="bold">{displaySymbol === 'Rp.' ? formatMoney(hoverData.point.v, 'Rp.') : formatMoney(hoverData.point.v / usdIdr, '$')}</text>
+                  </g>
+              </g>
+          )}
+          <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
         </svg>
         <div className="flex justify-center gap-2 mt-2">
             {['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (
@@ -1135,18 +1172,21 @@ const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) 
   const [activeTab, setActiveTab] = useState('Equity');
   const [hoveredSegment, setHoveredSegment] = useState(null);
 
-  const equityData = useMemo(() => fullAssetData.map(d => ({ name: d.symbol, value: d.marketValueUSD })).sort((a,b)=>b.value-a.value), [fullAssetData]);
+  const equityData = useMemo(() => 
+    fullAssetData.filter(d => d.type === 'stock' || d.type === 'crypto')
+    .map(d => ({ name: d.symbol, value: d.marketValueUSD }))
+    .sort((a,b)=>b.value-a.value), [fullAssetData]);
   
   const sectorData = useMemo(() => {
     const sectors = {
-        'Saham': { value: 0, color: '#10B981', count: 0 },
+        'Equity': { value: 0, color: '#10B981', count: 0 },
         'Crypto': { value: 0, color: '#3B82F6', count: 0 },
         'Non-Liquid': { value: 0, color: '#F97316', count: 0 }
     };
     fullAssetData.forEach(asset => {
         if (asset.type === 'stock') {
-            sectors['Saham'].value += asset.marketValueUSD;
-            sectors['Saham'].count++;
+            sectors['Equity'].value += asset.marketValueUSD;
+            sectors['Equity'].count++;
         } else if (asset.type === 'crypto') {
             sectors['Crypto'].value += asset.marketValueUSD;
             sectors['Crypto'].count++;
@@ -1168,11 +1208,10 @@ const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) 
   const totalValueDisplay = displayCcySymbol === "Rp." ? totalValueUSD * usdIdr : totalValueUSD;
   const assetCount = data.length;
 
-  const size = 200, strokeWidth = 15, innerRadius = (size / 2) - strokeWidth, gap = 0.03;
-  const circumference = 2 * Math.PI * innerRadius;
+  const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth;
   const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"];
 
-  let accumulatedOffset = 0;
+  let accumulatedAngle = 0;
 
   return (
     <div className="mt-8">
@@ -1186,39 +1225,30 @@ const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) 
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           {data.map((d, i) => {
             const percentage = d.value / totalValueUSD;
-            const angle = percentage * 2 * Math.PI;
-            const startAngle = accumulatedOffset;
-            const endAngle = startAngle + angle;
+            const angle = percentage * 360;
             const isHovered = hoveredSegment === d.name;
-            const r = innerRadius + (isHovered ? 3 : 0);
-
-            const largeArcFlag = angle - gap > Math.PI ? 1 : 0;
-            const startX = size/2 + r * Math.cos(startAngle + gap / 2);
-            const startY = size/2 + r * Math.sin(startAngle + gap / 2);
-            const endX = size/2 + r * Math.cos(endAngle - gap / 2);
-            const endY = size/2 + r * Math.sin(endAngle - gap / 2);
-
-            accumulatedOffset += angle;
-
-            const pathData = `M ${startX} ${startY} A ${r} ${r} 0 ${largeArcFlag} 1 ${endX} ${endY}`;
             
-            return (
-              <path
+            const segment = (
+              <circle
                 key={i}
-                d={pathData}
+                cx={size/2} cy={size/2} r={innerRadius}
                 fill="transparent"
                 stroke={d.color || colors[i % colors.length]}
-                strokeWidth={strokeWidth}
+                strokeWidth={strokeWidth + (isHovered ? 4 : 0)}
+                strokeDasharray={`${angle * Math.PI * innerRadius / 180 - 2} ${360 * Math.PI * innerRadius / 180}`}
+                strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180}
                 className="transition-all duration-300"
                 onMouseOver={() => setHoveredSegment(d.name)}
                 onMouseOut={() => setHoveredSegment(null)}
               />
             );
+            accumulatedAngle += angle;
+            return segment;
           })}
         </svg>
-        <div className="absolute flex flex-col items-center justify-center">
+        <div className="absolute flex flex-col items-center justify-center pointer-events-none">
           <div className="text-xl font-bold text-white">{formatMoney(totalValueDisplay, displayCcySymbol)}</div>
-          <div className="text-sm text-gray-400">{assetCount} {activeTab === 'Equity' ? 'Stocks' : 'Sectors'}</div>
+          <div className="text-sm text-gray-400">{assetCount} {activeTab === 'Equity' ? 'Items' : 'Sectors'}</div>
         </div>
       </div>
       
