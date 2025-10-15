@@ -12,7 +12,6 @@ const TrashIcon = ({className}) => (<svg className={className} width="18" height
 const ArrowUpIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/></svg>;
 const ArrowDownIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
 const InfoIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
-const InfoIconSvg = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>;
 const AvgProfitIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20V16"/></svg>;
 const AvgLossIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v10"/><path d="M18 4v16"/><path d="M6 4v8"/></svg>;
 const EquityIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M7 16V8l4 4 4-4v8"/></svg>;
@@ -21,12 +20,16 @@ const NonLiquidIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill
 
 /* ===================== Config & Helpers ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-// Using a proxy to avoid CORS issues with Yahoo Finance
-const YAHOO_SEARCH = (q) => `https://cors-anywhere.herokuapp.com/https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
+const YAHOO_FINANCE_SEARCH_URL = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
+// Using a public CORS proxy to fetch data from Yahoo Finance
+const PROXIED_YAHOO_SEARCH = (q) => `https://api.allorigins.win/raw?url=${encodeURIComponent(YAHOO_FINANCE_SEARCH_URL(q))}`;
+
 // NOTE: Using a public demo token. Replace with your own for production.
-const FINNHUB_QUOTE = (symbol) => `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=cns0a0pr01qj9b42289gcns0a0pr01qj9b4228a0`;
+const FINNHUB_TOKEN = "cns0a0pr01qj9b42289gcns0a0pr01qj9b4228a0";
+const FINNHUB_QUOTE = (symbol) => `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_TOKEN}`;
 const COINGECKO_PRICE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd,idr`;
 const COINGECKO_TETHER_IDR_MARKET = `${COINGECKO_API}/coins/markets?vs_currency=idr&ids=tether`;
+
 const isBrowser = typeof window !== "undefined";
 const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/g,'')); return isNaN(n) ? 0 : n; };
 
@@ -35,7 +38,7 @@ function formatCurrency(value, valueIsUSD, displaySymbol, usdIdr) {
   if (displaySymbol === '$') {
     displayValue = valueIsUSD ? value : value / usdIdr;
     return `$${displayValue.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
-  } else { // 'Rp.'
+  } else { // 'Rp'
     displayValue = valueIsUSD ? value * usdIdr : value;
     return `Rp ${Math.round(displayValue).toLocaleString('id-ID')}`;
   }
@@ -80,20 +83,6 @@ const Modal = ({ children, isOpen, onClose, title }) => {
   );
 };
 
-const InfoModal = ({ children, isOpen, onClose, title }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 transition-opacity duration-300" onClick={onClose}>
-        <div className="bg-zinc-800 rounded-lg p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
-            <h4 className="font-bold text-lg mb-2 text-white">{title}</h4>
-            <div className="text-gray-400 text-sm">{children}</div>
-            <button onClick={onClose} className="mt-4 bg-[#20c997] text-white font-semibold py-2 px-4 rounded-lg hover:bg-opacity-80 transition-colors">Tutup</button>
-        </div>
-    </div>
-  );
-};
-
-
 const BottomSheet = ({ isOpen, onClose, children }) => {
   if (!isOpen) return null;
   return (
@@ -108,8 +97,8 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
 
 /* ===================== Main Component ===================== */
 export default function PortfolioDashboard() {
-  // Using v12 for new data structure and features
-  const STORAGE_VERSION = "v12";
+  // Using v14 for new search fix
+  const STORAGE_VERSION = "v14";
   const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_assets_${STORAGE_VERSION}`) || "[]").map(ensureNumericAsset) : []);
   const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_realized_${STORAGE_VERSION}`) || 0) : 0);
   const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_transactions_${STORAGE_VERSION}`) || "[]") : []);
@@ -133,9 +122,6 @@ export default function PortfolioDashboard() {
   const [isBalanceModalOpen, setBalanceModalOpen] = useState(false);
   const [balanceModalMode, setBalanceModalMode] = useState('Add');
   const [tradeModal, setTradeModal] = useState({ open: false, asset: null });
-
-  const [isTxInfoOpen, setTxInfoOpen] = useState(false);
-  const [isPerfInfoOpen, setPerfInfoOpen] = useState(false);
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
   const importInputRef = useRef(null);
@@ -224,8 +210,8 @@ export default function PortfolioDashboard() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const q = query.trim();
-        const url = searchMode === 'crypto' ? `${COINGECKO_API}/search?query=${encodeURIComponent(q)}` : YAHOO_SEARCH(q);
-        const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const url = searchMode === 'crypto' ? `${COINGECKO_API}/search?query=${encodeURIComponent(q)}` : PROXIED_YAHOO_SEARCH(q);
+        const res = await fetch(url);
         if (!res.ok) throw new Error('Search API failed with status: ' + res.status);
         const j = await res.json();
         
@@ -234,8 +220,8 @@ export default function PortfolioDashboard() {
         } else {
           setSuggestions((j.quotes || []).filter(it => it.shortname || it.longname).map(it => ({ 
               symbol: it.symbol.toUpperCase(), 
-              display: `${it.shortname || it.longname} (${it.symbol.toUpperCase()})`, 
-              exchange: it.exchange, 
+              display: `${it.shortname || it.longname} (${it.symbol.toUpperCase()})`,
+              exchange: it.exchange,
               source: "yahoo", 
               type: "stock" 
           })).slice(0, 10));
@@ -549,16 +535,14 @@ export default function PortfolioDashboard() {
                     <div className="flex w-full h-1.5 bg-zinc-700/50 rounded-full overflow-hidden my-2"><div className="bg-sky-500" style={{ width: `${derivedData.cashPct}%` }}></div><div className="bg-teal-500" style={{ width: `${derivedData.investedPct}%` }}></div></div>
                     <div className="grid grid-cols-2 text-center text-[11px] sm:text-xs text-gray-300"><p>{derivedData.cashPct.toFixed(0)}%</p><p>{derivedData.investedPct.toFixed(0)}%</p></div>
                 </div>
-                <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg relative">
-                    <div onClick={() => setTxInfoOpen(true)} className="absolute top-2 right-2 sm:top-3 sm:right-3 cursor-pointer text-gray-500 hover:text-white transition-colors"><InfoIconSvg /></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg">
                     <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs space-y-2">
                         <div className="flex justify-between items-center"><span className="text-gray-400">Deposit</span><span className="font-medium">{formatCurrency(totalDeposits, false, displaySymbol, usdIdr)}</span></div>
                         <div className="flex justify-between items-center"><span className="text-gray-400">Withdraw</span><span className="font-medium">{formatCurrency(totalWithdrawals, false, displaySymbol, usdIdr)}</span></div>
                         <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Realized P&L</span><span className={`font-semibold ${realizedUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{realizedUSD >= 0 ? '+' : ''}{formatCurrency(realizedUSD, true, displaySymbol, usdIdr)}</span></div>
                     </div>
                 </div>
-                <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg relative">
-                    <div onClick={() => setPerfInfoOpen(true)} className="absolute top-2 right-2 sm:top-3 sm:right-3 cursor-pointer text-gray-500 hover:text-white transition-colors"><InfoIconSvg /></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg">
                     <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs space-y-2">
                         <div className="flex justify-between items-center"><span className="text-gray-400">Unrealized P&L</span><span className={`font-semibold ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.totals.unrealizedPnlUSD >= 0 ? '+' : ''}{formatCurrency(derivedData.totals.unrealizedPnlUSD, true, displaySymbol, usdIdr)} ({derivedData.totals.unrealizedPnlPct.toFixed(2)}%)</span></div>
                         <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Equity vs Deposit</span><span className={`font-semibold ${derivedData.equityVsDeposit >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.equityVsDeposit >= 0 ? '+' : ''}{formatCurrency(derivedData.equityVsDeposit, false, displaySymbol, usdIdr)}</span></div>
@@ -579,8 +563,6 @@ export default function PortfolioDashboard() {
             <div className="p-4 text-center"><button onClick={() => setAddAssetModalOpen(true)} className="text-emerald-400 font-semibold text-sm">+ Add new asset</button></div>
           </div>
         </main>
-        <InfoModal title="Transaction Summary" isOpen={isTxInfoOpen} onClose={() => setTxInfoOpen(false)}><p>Net Deposit dihitung dari total dana yang Anda masukkan (Deposit) dikurangi total dana yang Anda tarik (Withdraw).</p></InfoModal>
-        <InfoModal title="Performance Summary" isOpen={isPerfInfoOpen} onClose={() => setPerfInfoOpen(false)}><p>Semua angka performa di sini menunjukkan keuntungan atau kerugian (P&L) yang belum maupun sudah direalisasikan.</p></InfoModal>
         <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)}><AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, usdIdr, displaySymbol}} /></Modal>
         <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)}><BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} displaySymbol={displaySymbol} /></Modal>
         <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({ open: false, asset: null })} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
@@ -770,7 +752,7 @@ const ManagePortfolioSheet = ({ onAddBalance, onWithdraw, onClearAll, onExport, 
   </div>
 );
 
-const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, addAssetWithInitial, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol }) => {
+const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol }) => {
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [total, setTotal] = useState('');
@@ -789,7 +771,7 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
           <div><label className="text-xs text-gray-400">Total Value ({displaySymbol})</label><input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div>
           <div className="flex justify-end"><button onClick={() => addAssetWithInitial(shares, price)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div>
         </div>
-      ) : ( /* Non-liquid form is unchanged */
+      ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><input value={nlName} onChange={e => setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlQty} onChange={e => setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlPrice} onChange={e => setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><select value={nlPriceCcy} onChange={e => setNlPriceCcy(e.target.value)} className="rounded bg-zinc-800 px-2 py-2 text-sm border border-zinc-700 text-white"><option value="IDR">IDR</option><option value="USD">USD</option></select><input type="date" value={nlPurchaseDate} onChange={e => setNlPurchaseDate(e.target.value)} className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlYoy} onChange={e => setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /></div>
           <input value={nlDesc} onChange={e => setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
@@ -876,7 +858,7 @@ const AreaChart = ({ data: chartData, displaySymbol, range, setRange, showTimefr
     if (Math.abs(v) >= 1e3) return `${(v / 1e3).toFixed(0)}rb`;
     return Math.round(v);
   }
-  const fmtYLabel = (v) => `${displaySymbol}${formatValueForChart(v)}`;
+  const fmtYLabel = (v) => `${displaySymbol === 'Rp' ? 'Rp' : '$'}${formatValueForChart(v)}`;
   const xAxisLabels = () => Array.from({length: 5}, (_, i) => {
       const t = timeStart + (i / 4) * (timeEnd - timeStart);
       return {t, label: new Date(t).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})};
@@ -969,4 +951,5 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
     </div>
   );
 };
+
 
