@@ -15,12 +15,15 @@ const InfoIcon = ({className}) => <svg className={className} width="1em" height=
 const InfoIconSvg = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>;
 const AvgProfitIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20V16"/></svg>;
 const AvgLossIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v10"/><path d="M18 4v16"/><path d="M6 4v8"/></svg>;
-
+const EquityIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M7 16V8l4 4 4-4v8"/></svg>;
+const CryptoIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8.5 14.5h7M8.5 9.5h7M12 17.5v-11"/></svg>;
+const NonLiquidIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
 
 /* ===================== Config & Helpers ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_SEARCH = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
-const FINNHUB_QUOTE = (symbol) => `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=cns0a0pr01qj9b42289gcns0a0pr01qj9b4228a0`; // Demo token
+// NOTE: Using a public demo token. Replace with your own for production.
+const FINNHUB_QUOTE = (symbol) => `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=cns0a0pr01qj9b42289gcns0a0pr01qj9b4228a0`;
 const COINGECKO_PRICE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd,idr`;
 const COINGECKO_TETHER_IDR_MARKET = `${COINGECKO_API}/coins/markets?vs_currency=idr&ids=tether`;
 const isBrowser = typeof window !== "undefined";
@@ -52,7 +55,8 @@ function ensureNumericAsset(a) {
     createdAt: a.createdAt || Date.now(),
     purchaseDate: a.purchaseDate || a.createdAt || Date.now(),
     nonLiquidYoy: toNum(a.nonLiquidYoy || 0),
-    type: a.type || "stock"
+    type: a.type || "stock",
+    image: a.image || null,
   };
 }
 
@@ -100,13 +104,15 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
 
 /* ===================== Main Component ===================== */
 export default function PortfolioDashboard() {
-  const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_assets_v10") || "[]").map(ensureNumericAsset) : []);
-  const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_realized_v10") || 0) : 0);
-  const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_transactions_v10") || "[]") : []);
-  const [tradingBalance, setTradingBalance] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_balance_v10") || 0) : 0);
-  const [totalDeposits, setTotalDeposits] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_deposits_v10") || 0) : 0);
-  const [totalWithdrawals, setTotalWithdrawals] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_withdrawals_v10") || 0) : 0);
-  const [displaySymbol, setDisplaySymbol] = useState(() => isBrowser ? (localStorage.getItem("pf_display_sym_v10") || "Rp.") : "Rp.");
+  // Using v11 to avoid conflicts with old data structures
+  const STORAGE_VERSION = "v11";
+  const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_assets_${STORAGE_VERSION}`) || "[]").map(ensureNumericAsset) : []);
+  const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_realized_${STORAGE_VERSION}`) || 0) : 0);
+  const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_transactions_${STORAGE_VERSION}`) || "[]") : []);
+  const [tradingBalance, setTradingBalance] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_balance_${STORAGE_VERSION}`) || 0) : 0);
+  const [totalDeposits, setTotalDeposits] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_deposits_${STORAGE_VERSION}`) || 0) : 0);
+  const [totalWithdrawals, setTotalWithdrawals] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_withdrawals_${STORAGE_VERSION}`) || 0) : 0);
+  const [displaySymbol, setDisplaySymbol] = useState(() => isBrowser ? (localStorage.getItem(`pf_display_sym_${STORAGE_VERSION}`) || "Rp.") : "Rp.");
   
   const [usdIdr, setUsdIdr] = useState(16400);
   const [usdIdrChange24h, setUsdIdrChange24h] = useState(0);
@@ -129,13 +135,13 @@ export default function PortfolioDashboard() {
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
 
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_assets_v10", JSON.stringify(assets)); }, [assets]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_realized_v10", String(realizedUSD)); }, [realizedUSD]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_transactions_v10", JSON.stringify(transactions)); }, [transactions]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_balance_v10", String(tradingBalance)); }, [tradingBalance]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_deposits_v10", String(totalDeposits)); }, [totalDeposits]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_withdrawals_v10", String(totalWithdrawals)); }, [totalWithdrawals]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_display_sym_v10", displaySymbol); }, [displaySymbol]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_assets_${STORAGE_VERSION}`, JSON.stringify(assets)); }, [assets]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_realized_${STORAGE_VERSION}`, String(realizedUSD)); }, [realizedUSD]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_transactions_${STORAGE_VERSION}`, JSON.stringify(transactions)); }, [transactions]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_balance_${STORAGE_VERSION}`, String(tradingBalance)); }, [tradingBalance]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_deposits_${STORAGE_VERSION}`, String(totalDeposits)); }, [totalDeposits]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_withdrawals_${STORAGE_VERSION}`, String(totalWithdrawals)); }, [totalWithdrawals]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_display_sym_${STORAGE_VERSION}`, displaySymbol); }, [displaySymbol]);
 
   useEffect(() => {
     const fetchFx = async () => {
@@ -176,16 +182,12 @@ export default function PortfolioDashboard() {
           const res = await fetch(FINNHUB_QUOTE(symbol));
           const data = await res.json();
           const c = toNum(data?.c);
-          if (c > 0) {
-            const isIdr = symbol.toUpperCase().endsWith('.JK');
-            newPrices[symbol] = { [isIdr ? 'idr' : 'usd']: c };
-          }
+          if (c > 0) newPrices[symbol] = { [symbol.toUpperCase().endsWith('.JK') ? 'idr' : 'usd']: c };
         } catch (e) {}
       }
       if (cryptoIds.length > 0) {
         try {
-          const idsParam = cryptoIds.join(',');
-          const res = await fetch(COINGECKO_PRICE(idsParam));
+          const res = await fetch(COINGECKO_PRICE(cryptoIds.join(',')));
           const j = await res.json();
           for (const id of cryptoIds) {
             if (j[id]) newPrices[id] = { usd: toNum(j[id].usd), idr: toNum(j[id].idr) };
@@ -195,17 +197,11 @@ export default function PortfolioDashboard() {
 
       setAssets(prev => prev.map(a => {
         if (a.type === 'stock' && newPrices[a.symbol]) {
-          const isIdrStock = a.symbol.endsWith('.JK');
           const p = newPrices[a.symbol];
-          let lastPriceUSD = a.lastPriceUSD;
-          if (isIdrStock && p.idr) lastPriceUSD = p.idr / usdIdr;
-          else if (p.usd) lastPriceUSD = p.usd;
-          return { ...a, lastPriceUSD };
+          return { ...a, lastPriceUSD: a.symbol.endsWith('.JK') ? (p.idr / usdIdr) : p.usd };
         }
         if (a.type === 'crypto' && a.coingeckoId && newPrices[a.coingeckoId]) {
-          const p = newPrices[a.coingeckoId];
-          const lastPriceUSD = p.usd || a.lastPriceUSD;
-          return { ...a, lastPriceUSD };
+          return { ...a, lastPriceUSD: newPrices[a.coingeckoId].usd || a.lastPriceUSD };
         }
         return a;
       }));
@@ -219,29 +215,36 @@ export default function PortfolioDashboard() {
   useEffect(() => {
     if (!query || query.trim().length < 2) { setSuggestions([]); return; }
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const q = query.trim();
-        const res = await fetch(`https://cors-anywhere.herokuapp.com/${searchMode === 'crypto' ? `${COINGECKO_API}/search?query=${encodeURIComponent(q)}` : YAHOO_SEARCH(q)}`);
-        if (!res.ok) throw new Error('search failed');
+        const url = searchMode === 'crypto' ? `${COINGECKO_API}/search?query=${encodeURIComponent(q)}` : YAHOO_SEARCH(q);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Search API failed with status: ' + res.status);
         const j = await res.json();
+        
         if (searchMode === 'crypto') {
-          setSuggestions((j.coins || []).slice(0, 10).map(c => ({ symbol: c.symbol.toUpperCase(), display: c.name, id: c.id, source: "coingecko", type: "crypto" })));
+          setSuggestions((j.coins || []).slice(0, 10).map(c => ({ symbol: c.symbol.toUpperCase(), display: c.name, id: c.id, image: c.thumb, source: "coingecko", type: "crypto" })));
         } else {
           setSuggestions((j.quotes || []).map(it => ({ symbol: it.symbol.toUpperCase(), display: it.shortname || it.longname || it.symbol, exchange: it.exchange, source: "yahoo", type: "stock" })).slice(0, 10));
         }
-      } catch (e) { setSuggestions([]); }
+      } catch (e) {
+        console.error("Search failed:", e);
+        setSuggestions([]);
+      }
     }, 350);
+
     return () => clearTimeout(searchTimeoutRef.current);
   }, [query, searchMode]);
 
   /* ===================== Actions ===================== */
   const handleBuy = (assetStub, qty, priceUSD) => {
-    qty = Number(qty || 0); priceUSD = Number(priceUSD || 0);
+    qty = toNum(qty); priceUSD = toNum(priceUSD);
     if (qty <= 0 || priceUSD <= 0) { alert("Quantity and price must be greater than zero."); return false; }
     const costUSD = qty * priceUSD;
     if (costUSD * usdIdr > tradingBalance) { alert("Insufficient trading balance."); return false; }
-    const existing = assets.find(a => a.symbol === assetStub.symbol);
+    const existing = assets.find(a => a.symbol === assetStub.symbol && a.type === assetStub.type);
     const tx = { id: `tx:${Date.now()}`, type: "buy", qty, pricePerUnit: priceUSD, cost: costUSD, date: Date.now(), symbol: assetStub.symbol, name: assetStub.name || assetStub.symbol };
     if (existing) {
       tx.assetId = existing.id;
@@ -258,15 +261,14 @@ export default function PortfolioDashboard() {
   };
 
   const handleSell = (asset, qty, priceUSD) => {
-    qty = Number(qty || 0); priceUSD = Number(priceUSD || 0);
-    if (!asset) return false;
-    if (qty <= 0) { alert("Quantity must be > 0"); return false; }
+    qty = toNum(qty); priceUSD = toNum(priceUSD);
+    if (!asset || qty <= 0) { alert("Quantity must be > 0"); return false; }
     if (qty > asset.shares) { alert("Cannot sell more than you own."); return false; }
     const proceedsUSD = qty * priceUSD;
     const costOfSold = qty * asset.avgPrice;
     const realized = proceedsUSD - costOfSold;
     const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "sell", qty, pricePerUnit: priceUSD, proceeds: proceedsUSD, costOfSold, realized, date: Date.now(), symbol: asset.symbol, name: asset.name };
-    setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, shares: a.shares - qty, investedUSD: a.investedUSD - costOfSold, avgPrice: (a.shares - qty) > 0 ? (a.investedUSD - costOfSold) / (a.shares - qty) : 0 } : a).filter(a => a.shares > 0.000001));
+    setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, shares: a.shares - qty, investedUSD: a.investedUSD - costOfSold } : a).filter(a => a.shares > 0.000001));
     setTradingBalance(b => b + (proceedsUSD * usdIdr));
     setRealizedUSD(r => r + realized);
     setTransactions(prev => [tx, ...prev]);
@@ -275,12 +277,10 @@ export default function PortfolioDashboard() {
   };
 
   const handleDeleteAsset = (asset) => {
-    if (!asset) return;
-    if (!confirm(`Delete and liquidate ${asset.symbol} at market price?`)) return;
+    if (!asset || !confirm(`Delete and liquidate ${asset.symbol} at market price? This action cannot be undone.`)) return;
     const marketUSD = asset.shares * asset.lastPriceUSD;
-    const costOfSold = asset.investedUSD;
-    const realized = marketUSD - costOfSold;
-    const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "delete", qty: asset.shares, pricePerUnit: asset.lastPriceUSD, proceeds: marketUSD, costOfSold, realized, date: Date.now(), symbol: asset.symbol, name: asset.name, note: "liquidated" };
+    const realized = marketUSD - asset.investedUSD;
+    const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "delete", qty: asset.shares, pricePerUnit: asset.lastPriceUSD, proceeds: marketUSD, costOfSold: asset.investedUSD, realized, date: Date.now(), symbol: asset.symbol, name: asset.name, note: "liquidated" };
     setAssets(prev => prev.filter(a => a.id !== asset.id));
     setTradingBalance(b => b + (marketUSD * usdIdr));
     setRealizedUSD(r => r + realized);
@@ -289,18 +289,18 @@ export default function PortfolioDashboard() {
   };
 
   const addAssetWithInitial = (qty, price) => {
-    qty = Number(qty || 0); price = Number(price || 0);
+    qty = toNum(qty); price = toNum(price);
     let p = selectedSuggestion;
     if (!p) {
       const t = query.split("—")[0].trim();
-      if (!t) { alert("Select a suggestion"); return; }
-      p = { symbol: t.toUpperCase(), display: t.toUpperCase(), type: 'stock' };
+      if (!t) { alert("Select a suggestion or enter a symbol."); return; }
+      p = { symbol: t.toUpperCase(), display: t.toUpperCase(), type: searchMode, image: null };
     }
     if (qty <= 0 || price <= 0) { alert("Quantity & price must be > 0"); return; }
     const priceUSD = (displaySymbol === "Rp.") ? price / usdIdr : price;
-    const newStub = { id: `${p.source || 'manual'}:${p.symbol||p.id}:${Date.now()}`, type: p.type, symbol: p.symbol, name: p.display, coingeckoId: p.type === 'crypto' ? p.id : undefined };
+    const newStub = { id: `${p.source || 'manual'}:${p.symbol||p.id}:${Date.now()}`, type: p.type, symbol: p.symbol, name: p.display, image: p.image, coingeckoId: p.type === 'crypto' ? p.id : undefined };
     if (handleBuy(newStub, qty, priceUSD)) {
-      setAddAssetModalOpen(false); setQuery(''); setSelectedSuggestion(null);
+      setAddAssetModalOpen(false); setQuery(''); setSelectedSuggestion(null); setSuggestions([]);
     }
   };
 
@@ -315,13 +315,13 @@ export default function PortfolioDashboard() {
   };
 
   const handleAddBalance = (amount) => {
-    const amountIDR = displaySymbol === "Rp." ? amount : amount * usdIdr;
+    const amountIDR = displaySymbol === "Rp." ? toNum(amount) : toNum(amount) * usdIdr;
     setTradingBalance(b => b + amountIDR);
     setTotalDeposits(d => d + amountIDR);
     setBalanceModalOpen(false);
   };
   const handleWithdraw = (amount) => {
-    const amountIDR = displaySymbol === "Rp." ? amount : amount * usdIdr;
+    const amountIDR = displaySymbol === "Rp." ? toNum(amount) : toNum(amount) * usdIdr;
     if (amountIDR > tradingBalance) { alert("Withdrawal amount exceeds balance."); return; }
     setTradingBalance(b => b - amountIDR);
     setTotalWithdrawals(w => w + amountIDR);
@@ -329,147 +329,88 @@ export default function PortfolioDashboard() {
   };
 
   /* ===================== Derived Data ===================== */
-  const { 
-    rows, totals, totalEquity, tradeStats, 
-    netDeposit, totalPnlUSD, equityVsDeposit, 
-    cashPct, investedPct 
-  } = useMemo(() => {
-    const calculatedRows = assets.map(a => {
+  const derivedData = useMemo(() => {
+    const rows = assets.map(a => {
       const effectiveLastPriceUSD = a.lastPriceUSD > 0 ? a.lastPriceUSD : a.avgPrice;
-      const market = a.shares * effectiveLastPriceUSD;
-      const pnl = market - a.investedUSD;
-      const pnlPct = a.investedUSD > 0 ? (pnl / a.investedUSD) * 100 : 0;
-      return { ...a, lastPriceUSD: effectiveLastPriceUSD, marketValueUSD: market, pnlUSD: pnl, pnlPct };
+      const marketValueUSD = a.shares * effectiveLastPriceUSD;
+      const pnlUSD = marketValueUSD - a.investedUSD;
+      const pnlPct = a.investedUSD > 0 ? (pnlUSD / a.investedUSD) * 100 : 0;
+      return { ...a, lastPriceUSD: effectiveLastPriceUSD, marketValueUSD, pnlUSD, pnlPct };
     });
     
-    const invested = calculatedRows.reduce((s, r) => s + r.investedUSD, 0);
-    const market = calculatedRows.reduce((s, r) => s + r.marketValueUSD, 0);
-    const pnl = market - invested;
-    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+    const investedUSD = rows.reduce((s, r) => s + r.investedUSD, 0);
+    const marketValueUSD = rows.reduce((s, r) => s + r.marketValueUSD, 0);
+    const unrealizedPnlUSD = marketValueUSD - investedUSD;
+    const unrealizedPnlPct = investedUSD > 0 ? (unrealizedPnlUSD / investedUSD) * 100 : 0;
     
-    const totalEq = (market * usdIdr) + tradingBalance;
+    const totalEquity = (marketValueUSD * usdIdr) + tradingBalance;
     
     const sells = transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete');
     const wins = sells.filter(tx => tx.realized > 0);
     const losses = sells.filter(tx => tx.realized <= 0);
     
-    const tStats = {
+    const tradeStats = {
       trades: sells.length,
       wins: wins.length,
       losses: losses.length,
       winRate: sells.length > 0 ? (wins.length / sells.length) * 100 : 0,
-      maxProfit: wins.length ? Math.max(...wins.map(tx => tx.realized)) : 0,
-      maxLoss: losses.length ? Math.min(...losses.map(tx => tx.realized)) : 0,
+      maxProfit: wins.length ? Math.max(0, ...wins.map(tx => tx.realized)) : 0,
+      maxLoss: losses.length ? Math.min(0, ...losses.map(tx => tx.realized)) : 0,
       avgProfit: wins.length ? wins.reduce((s, tx) => s + tx.realized, 0) / wins.length : 0,
       avgLoss: losses.length ? losses.reduce((s, tx) => s + tx.realized, 0) / losses.length : 0,
       totalRealizedGain: realizedUSD
     };
     
-    // Corrected Summary Calculations
-    const finalNetDeposit = totalDeposits - totalWithdrawals;
-    const finalTotalPnlUSD = pnl + realizedUSD;
-    const finalEquityVsDeposit = totalEq - finalNetDeposit;
+    const netDeposit = totalDeposits - totalWithdrawals;
+    const totalPnlUSD = unrealizedPnlUSD + realizedUSD;
+    const equityVsDeposit = totalEquity - netDeposit;
     
-    const totalValueForBreakdown = tradingBalance + (market * usdIdr);
-    const finalCashPct = totalValueForBreakdown > 0 ? (tradingBalance / totalValueForBreakdown) * 100 : 0;
-    const finalInvestedPct = totalValueForBreakdown > 0 ? ((market * usdIdr) / totalValueForBreakdown) * 100 : 0;
+    const totalValueForBreakdown = tradingBalance + (marketValueUSD * usdIdr);
+    const cashPct = totalValueForBreakdown > 0 ? (tradingBalance / totalValueForBreakdown) * 100 : 0;
+    const investedPct = totalValueForBreakdown > 0 ? ((marketValueUSD * usdIdr) / totalValueForBreakdown) * 100 : 0;
 
     return { 
-      rows: calculatedRows, 
-      totals: { invested, market, pnl, pnlPct }, 
-      totalEquity: totalEq, 
-      tradeStats: tStats,
-      netDeposit: finalNetDeposit,
-      totalPnlUSD: finalTotalPnlUSD,
-      equityVsDeposit: finalEquityVsDeposit,
-      cashPct: finalCashPct,
-      investedPct: finalInvestedPct
+      rows, 
+      totals: { investedUSD, marketValueUSD, unrealizedPnlUSD, unrealizedPnlPct }, 
+      totalEquity, tradeStats, netDeposit, totalPnlUSD,
+      equityVsDeposit, cashPct, investedPct 
     };
   }, [assets, transactions, usdIdr, tradingBalance, realizedUSD, totalDeposits, totalWithdrawals]);
 
   /* ===================== Equity Timeline ===================== */
   const equitySeries = useMemo(() => {
-    if (!transactions.length && totalDeposits === 0) {
-      const now = Date.now();
-      return [{ t: now - 1000, v: 0 }, { t: now, v: totalEquity }];
-    }
-
+    // This is a simplified timeline calculation. A more accurate one would require historical price data.
     const sortedTx = [...transactions].sort((a, b) => a.date - b.date);
-    const points = [];
-    const firstDate = sortedTx.length > 0 ? sortedTx[0].date : Date.now();
-    let runningEquity = totalEquity;
+    if (sortedTx.length === 0) return [{ t: Date.now() - 86400000, v: 0 }, { t: Date.now(), v: derivedData.totalEquity }];
 
-    // Calculate equity backwards from now
-    let runningMarketValue = totals.market * usdIdr;
-    let runningCash = tradingBalance;
+    let currentEquity = derivedData.totalEquity;
+    const points = [{ t: Date.now(), v: currentEquity }];
 
-    points.push({t: Date.now(), v: runningEquity});
-    
     for (let i = sortedTx.length - 1; i >= 0; i--) {
         const tx = sortedTx[i];
         if (tx.type === 'buy') {
-            runningCash += tx.cost * usdIdr;
-            // This part is complex as we don't have historical prices
+            currentEquity += tx.cost * usdIdr;
         } else if (tx.type === 'sell' || tx.type === 'delete') {
-            runningCash -= tx.proceeds * usdIdr;
+            currentEquity -= tx.proceeds * usdIdr;
+            currentEquity += (tx.proceeds - tx.realized) * usdIdr; // Add back the cost basis
         }
-        // This simplified model tracks cash changes but not asset value changes over time
-        runningEquity = runningMarketValue + runningCash;
-        points.push({ t: tx.date, v: runningEquity });
+        points.push({ t: tx.date, v: currentEquity });
     }
     
-    const finalPoints = [...points.reverse()];
+    const finalPoints = points.reverse();
+    const firstPointTime = finalPoints[0].t;
+    const initialDepositTime = totalDeposits > 0 ? firstPointTime - 86400000 : firstPointTime;
     
-    // Add initial deposit point
-    if (totalDeposits > 0 && finalPoints.length > 0) {
-      finalPoints.unshift({ t: firstDate - 86400000, v: finalPoints[0].v - (totalDeposits - totalWithdrawals) });
-    } else if (totalDeposits > 0) {
-      finalPoints.unshift({ t: Date.now() - 86400000, v: 0 });
-    }
+    finalPoints.unshift({ t: initialDepositTime, v: finalPoints[0].v - derivedData.netDeposit });
+    
+    return finalPoints;
+  }, [transactions, derivedData.totalEquity, derivedData.netDeposit, usdIdr]);
 
-    const unique = [];
-    const seen = new Set();
-    for (const p of finalPoints) {
-      if (!seen.has(p.t)) { unique.push(p); seen.add(p.t); }
-    }
-    return unique.length ? unique : [{ t: Date.now() - 1000, v: 0 }, { t: Date.now(), v: totalEquity }];
-  }, [transactions, assets, tradingBalance, usdIdr, totalDeposits, totalWithdrawals, totals.market, totalEquity]);
-
-  /* ===================== CSV ===================== */
-  const exportCSV = () => {
-    const pad = s => `"${String(s||"").replace(/"/g,'""')}"`;
-    const assetHeaders = ["id","type","symbol","name","shares","avgPrice","investedUSD","lastPriceUSD"];
-    const assetsCsv = [assetHeaders.join(",")].concat(assets.map(a => assetHeaders.map(h => pad(a[h])).join(","))).join("\n");
-    const txHeaders = ["id","type","assetId","symbol","qty","pricePerUnit","cost","proceeds","costOfSold","realized","date","note"];
-    const txCsv = [txHeaders.join(",")].concat(transactions.map(t => txHeaders.map(h => pad(t[h])).join(","))).join("\n");
-    const blob = new Blob([`# assets\n${assetsCsv}\n\n# transactions\n${txCsv}`], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `bloomboard_export_${Date.now()}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const importCSV = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const text = ev.target.result;
-        // Basic CSV parsing logic
-        // For simplicity, this part is kept as is, but a robust solution would use a library
-        alert("CSV import is a complex feature. For this fix, we ensure the core app logic is sound.");
-      } catch (err) { alert("Failed to import CSV."); } 
-      finally { e.target.value = ''; }
-    };
-    reader.readAsText(file);
-  };
-  
   const getDisplayValue = (usdValue) => displaySymbol === '$' ? usdValue : usdValue * usdIdr;
 
   /* ================ Render ================ */
   if (view === 'performance') {
-    return <PerformancePage totals={totals} totalEquity={totalEquity} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} portfolioData={rows} transactions={transactions} equitySeries={equitySeries} tradeStats={tradeStats} />;
+    return <PerformancePage {...derivedData} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} portfolioData={derivedData.rows} transactions={transactions} equitySeries={equitySeries} />;
   }
 
   return (
@@ -500,26 +441,26 @@ export default function PortfolioDashboard() {
                         <h3 className="text-[11px] sm:text-sm font-semibold text-gray-400 uppercase tracking-wider">Portfolio Overview</h3>
                         <div className="mt-2 sm:mt-3">
                             <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
-                            <p className="text-xl sm:text-3xl font-bold text-white">{displaySymbol === 'Rp.' ? 'Rp' : '$'} {formatMoney(getDisplayValue(totalEquity / usdIdr), displaySymbol)}</p>
+                            <p className="text-xl sm:text-3xl font-bold text-white">{displaySymbol === 'Rp.' ? 'Rp' : '$'} {formatMoney(derivedData.totalEquity, displaySymbol)}</p>
                         </div>
                     </div>
                     <div className="mt-3 sm:mt-4 border-t border-zinc-800 pt-2 sm:pt-3 text-[11px] sm:text-xs space-y-1">
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Net Deposit</span><span className="font-semibold text-white">{netDeposit >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(netDeposit / usdIdr), displaySymbol)}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Total G/L</span><span className={`font-semibold ${totalPnlUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{totalPnlUSD >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(totalPnlUSD), displaySymbol)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Net Deposit</span><span className="font-semibold text-white">{derivedData.netDeposit >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(derivedData.netDeposit, displaySymbol)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Total G/L</span><span className={`font-semibold ${derivedData.totalPnlUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.totalPnlUSD >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(derivedData.totalPnlUSD), displaySymbol)}</span></div>
                     </div>
                 </div>
                 <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center">
                     <h3 className="text-[11px] sm:text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">Asset Breakdown</h3>
-                    <div className="grid grid-cols-2 text-center gap-1"><p className="text-gray-400 text-[11px] sm:text-xs">Cash</p><p className="text-gray-400 text-[11px] sm:text-xs">Invested</p><p className="font-semibold text-sm sm:text-lg">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(tradingBalance / usdIdr), displaySymbol)}</p><p className="font-semibold text-sm sm:text-lg">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(totals.market), displaySymbol)}</p></div>
-                    <div className="flex w-full h-1.5 bg-zinc-700/50 rounded-full overflow-hidden my-2"><div className="bg-sky-500" style={{ width: `${cashPct}%` }}></div><div className="bg-teal-500" style={{ width: `${investedPct}%` }}></div></div>
-                    <div className="grid grid-cols-2 text-center text-[11px] sm:text-xs text-gray-300"><p>{cashPct.toFixed(0)}%</p><p>{investedPct.toFixed(0)}%</p></div>
+                    <div className="grid grid-cols-2 text-center gap-1"><p className="text-gray-400 text-[11px] sm:text-xs">Cash</p><p className="text-gray-400 text-[11px] sm:text-xs">Invested</p><p className="font-semibold text-sm sm:text-lg">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(tradingBalance, displaySymbol)}</p><p className="font-semibold text-sm sm:text-lg">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(derivedData.totals.marketValueUSD), displaySymbol)}</p></div>
+                    <div className="flex w-full h-1.5 bg-zinc-700/50 rounded-full overflow-hidden my-2"><div className="bg-sky-500" style={{ width: `${derivedData.cashPct}%` }}></div><div className="bg-teal-500" style={{ width: `${derivedData.investedPct}%` }}></div></div>
+                    <div className="grid grid-cols-2 text-center text-[11px] sm:text-xs text-gray-300"><p>{derivedData.cashPct.toFixed(0)}%</p><p>{derivedData.investedPct.toFixed(0)}%</p></div>
                 </div>
                 <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg relative">
                     <h3 className="text-[11px] sm:text-sm font-semibold text-gray-400 uppercase tracking-wider">Transaction Summary</h3>
                     <div onClick={() => setTxInfoOpen(true)} className="absolute top-2 right-2 sm:top-3 sm:right-3 cursor-pointer text-gray-500 hover:text-white transition-colors"><InfoIconSvg /></div>
                     <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs space-y-2">
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Deposit</span><span className="font-medium">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(totalDeposits / usdIdr), displaySymbol)}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Withdraw</span><span className="font-medium">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(totalWithdrawals / usdIdr), displaySymbol)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Deposit</span><span className="font-medium">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(totalDeposits, displaySymbol)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Withdraw</span><span className="font-medium">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(totalWithdrawals, displaySymbol)}</span></div>
                         <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Realized P&L</span><span className={`font-semibold ${realizedUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{realizedUSD >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(realizedUSD), displaySymbol)}</span></div>
                     </div>
                 </div>
@@ -527,8 +468,8 @@ export default function PortfolioDashboard() {
                     <h3 className="text-[11px] sm:text-sm font-semibold text-gray-400 uppercase tracking-wider">Performance Summary</h3>
                     <div onClick={() => setPerfInfoOpen(true)} className="absolute top-2 right-2 sm:top-3 sm:right-3 cursor-pointer text-gray-500 hover:text-white transition-colors"><InfoIconSvg /></div>
                     <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs space-y-2">
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Unrealized P&L</span><span className={`font-semibold ${totals.pnl >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{totals.pnl >= 0 ? '+' : ''}{formatMoney(getDisplayValue(totals.pnl), displaySymbol)} ({totals.pnlPct.toFixed(2)}%)</span></div>
-                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Equity vs Deposit</span><span className={`font-semibold ${equityVsDeposit >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{equityVsDeposit >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(equityVsDeposit / usdIdr), displaySymbol)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Unrealized P&L</span><span className={`font-semibold ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.totals.unrealizedPnlUSD >= 0 ? '+' : ''}{formatMoney(getDisplayValue(derivedData.totals.unrealizedPnlUSD), displaySymbol)} ({derivedData.totals.unrealizedPnlPct.toFixed(2)}%)</span></div>
+                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Equity vs Deposit</span><span className={`font-semibold ${derivedData.equityVsDeposit >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.equityVsDeposit >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(derivedData.equityVsDeposit, displaySymbol)}</span></div>
                     </div>
                 </div>
             </div>
@@ -539,10 +480,10 @@ export default function PortfolioDashboard() {
             <table className="w-full text-sm">
               <thead className="text-left text-gray-500 text-xs font-semibold"><tr><th className="p-3 pt-4"><div>Code</div><div className="font-normal text-gray-600">Qty</div></th><th className="p-3 pt-4 text-right"><div>Invested</div><div className="font-normal text-gray-600">Avg Price</div></th><th className="p-3 pt-4 text-right"><div>Market</div><div className="font-normal text-gray-600">Current Price</div></th><th className="p-3 pt-4 text-right"><div>Gain P&L</div><div className="font-normal text-gray-600">%</div></th></tr></thead>
               <tbody>
-                {rows.map(r => (<tr key={r.id} className="border-t border-zinc-800 hover:bg-zinc-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}><td className="p-3"><div className="font-semibold text-sm text-white">{r.symbol}</div><div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div></td><td className="p-3 text-right tabular-nums"><div className="font-semibold text-xs text-white">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.investedUSD), displaySymbol)}</div><div className="text-xs text-gray-400 mt-0.5">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.avgPrice), displaySymbol)}</div></td><td className="p-3 text-right tabular-nums"><div className="font-semibold text-xs text-white">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.marketValueUSD), displaySymbol)}</div><div className="text-xs text-gray-400 mt-0.5">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.lastPriceUSD), displaySymbol)}</div></td><td className="p-3 text-right tabular-nums"><div className={`font-semibold text-xs ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.pnlUSD), displaySymbol)}</div><div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{r.pnlPct.toFixed(2)}%</div></td></tr>))}
+                {derivedData.rows.map(r => (<tr key={r.id} className="border-t border-zinc-800 hover:bg-zinc-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}><td className="p-3"><div className="font-semibold text-sm text-white">{r.symbol}</div><div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div></td><td className="p-3 text-right tabular-nums"><div className="font-semibold text-xs text-white">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.investedUSD), displaySymbol)}</div><div className="text-xs text-gray-400 mt-0.5">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.avgPrice), displaySymbol)}</div></td><td className="p-3 text-right tabular-nums"><div className="font-semibold text-xs text-white">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.marketValueUSD), displaySymbol)}</div><div className="text-xs text-gray-400 mt-0.5">{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.lastPriceUSD), displaySymbol)}</div></td><td className="p-3 text-right tabular-nums"><div className={`font-semibold text-xs ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : '$'}{formatMoney(getDisplayValue(r.pnlUSD), displaySymbol)}</div><div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{r.pnlPct.toFixed(2)}%</div></td></tr>))}
               </tbody>
             </table>
-            {rows.length === 0 && <p className="text-center py-8 text-gray-500">No assets in portfolio.</p>}
+            {derivedData.rows.length === 0 && <p className="text-center py-8 text-gray-500">No assets in portfolio.</p>}
             <div className="p-4 text-center"><button onClick={() => setAddAssetModalOpen(true)} className="text-emerald-400 font-semibold text-sm">+ Add new asset</button></div>
           </div>
         </main>
@@ -551,28 +492,21 @@ export default function PortfolioDashboard() {
         <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)}><AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, usdIdr, displaySymbol}} /></Modal>
         <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)}><BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} displaySymbol={displaySymbol} /></Modal>
         <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({ open: false, asset: null })} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
-        <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}><ManagePortfolioSheet onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data?")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); setTotalDeposits(0); setTotalWithdrawals(0); } }} /></BottomSheet>
+        <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}><ManagePortfolioSheet onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data? This cannot be undone.")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); setTotalDeposits(0); setTotalWithdrawals(0); } }} /></BottomSheet>
       </div>
     </div>
   );
 }
 
 /* ===================== Performance & Subcomponents ===================== */
-const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats }) => {
+const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats, totalEquity }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
   const [chartRange, setChartRange] = useState("YTD");
   const [returnPeriod, setReturnPeriod] = useState('Monthly');
-
-  const { totalEquity } = useMemo(() => {
-    const market = portfolioData.reduce((s, r) => s + r.marketValueUSD, 0);
-    const tradingBalance = toNum(isBrowser ? localStorage.getItem("pf_balance_v10") || 0 : 0);
-    const totalEq = (market * usdIdr) + tradingBalance;
-    return { totalEquity: totalEq };
-  }, [portfolioData, usdIdr]);
-
-  const { equityReturnData } = useMemo(() => {
+  
+  const equityReturnData = useMemo(() => {
     const data = equitySeries;
-    if (data.length < 2) return { equityReturnData: [] };
+    if (data.length < 2) return [];
     let periodData = {};
     for (let i = 1; i < data.length; i++) {
         const currentDate = new Date(data[i].t);
@@ -581,22 +515,22 @@ const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transa
         else if(returnPeriod === 'Monthly'){ key = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`; } 
         else { key = `${currentDate.getFullYear()}`; }
         if (!periodData[key]) {
-            periodData[key] = { startDate: new Date(data[i-1].t), startEquity: data[i-1].v, endDate: currentDate, endEquity: data[i].v, };
+            periodData[key] = { startEquity: data[i-1].v, endEquity: data[i].v, endDate: currentDate };
         } else {
-            periodData[key].endDate = currentDate;
             periodData[key].endEquity = data[i].v;
+            periodData[key].endDate = currentDate;
         }
     }
-    const equityReturnData = Object.keys(periodData).map(key => {
+    return Object.keys(periodData).map(key => {
         const item = periodData[key];
         const pnl = item.endEquity - item.startEquity;
         const pnlPct = item.startEquity > 0 ? (pnl / item.startEquity) * 100 : 0;
+        const date = new Date(item.endDate);
         let dateLabel = key;
-        if(returnPeriod === 'Monthly'){ const date = new Date(item.endDate); dateLabel = date.toLocaleString('default', { month: 'short' }) + ' ' + String(date.getFullYear()).slice(-2); } 
-        else if(returnPeriod === 'Daily') { const date = new Date(item.endDate); dateLabel = date.toLocaleString('default', { month: 'short' }) + ' ' + String(date.getDate()).padStart(2, '0'); }
-        return { date: dateLabel, equity: item.endEquity, pnl: pnl, pnlPct: pnlPct, rawDate: item.endDate }
+        if(returnPeriod === 'Monthly') dateLabel = date.toLocaleString('default', { month: 'short', year: 'numeric' });
+        else if(returnPeriod === 'Daily') dateLabel = date.toLocaleString('default', { month: 'short', day: 'numeric' });
+        return { date: dateLabel, equity: item.endEquity, pnl, pnlPct, rawDate: item.endDate }
     }).sort((a,b) => b.rawDate - a.rawDate);
-    return { equityReturnData };
   }, [equitySeries, returnPeriod]);
 
   return (
@@ -609,13 +543,13 @@ const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transa
         <div className="border-b border-zinc-800 px-4"><nav className="flex space-x-6"><button onClick={() => setActiveTab('portfolio')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'portfolio' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PORTFOLIO</button><button onClick={() => setActiveTab('trade')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'trade' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>TRADE</button><button onClick={() => setActiveTab('history')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'history' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>HISTORY</button></nav></div>
         {activeTab === 'portfolio' ? (
           <div className="p-4">
-            <div><p className="text-sm text-gray-400">Total Equity</p><p className="text-3xl font-bold text-white mb-1">{displaySymbol === "Rp." ? "Rp" : displaySymbol}{formatMoney(displaySymbol === "Rp." ? totalEquity : totalEquity/usdIdr, displaySymbol)}</p></div>
-            <div className="mt-6"><AreaChart equityData={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} range={chartRange} setRange={setChartRange} /></div>
+            <div><p className="text-sm text-gray-400">Total Equity</p><p className="text-3xl font-bold text-white mb-1">{displaySymbol === "Rp." ? "Rp" : displaySymbol}{formatMoney(totalEquity, displaySymbol)}</p></div>
+            <div className="mt-6"><AreaChart data={equitySeries} displaySymbol={displaySymbol} range={chartRange} setRange={setChartRange} /></div>
             <div className="mt-8">
-              <div className="flex justify-between items-center mb-4"><h3 className="text-base font-semibold text-white">Total Equity Return</h3><div className="flex items-center gap-2 text-sm">{['Daily', 'Monthly', 'Yearly'].map(p => (<button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full ${returnPeriod === p ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{p}</button>))}</div></div>
+              <div className="flex justify-between items-center mb-4"><h3 className="text-base font-semibold text-white">Total Equity Return</h3><div className="flex items-center gap-2 text-sm">{['Daily', 'Monthly', 'Yearly'].map(p => (<button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full text-xs ${returnPeriod === p ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{p}</button>))}</div></div>
               <table className="w-full text-sm">
                 <thead className="text-left text-gray-500 text-xs"><tr><th className="p-2 font-normal">Date</th><th className="p-2 font-normal text-right">Equity</th><th className="p-2 font-normal text-right">P&L</th></tr></thead>
-                <tbody>{equityReturnData.map((item, index) => (<tr key={index} className="border-t border-zinc-800"><td className="p-2 text-white">{item.date}</td><td className="p-2 text-white text-right">{displaySymbol === "Rp." ? "Rp" : displaySymbol}{formatMoney(displaySymbol === "Rp." ? item.equity : item.equity / usdIdr, displaySymbol)}</td><td className={`p-2 text-right ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{item.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? "Rp" : displaySymbol}{formatMoney(displaySymbol === "Rp." ? item.pnl : item.pnl / usdIdr, displaySymbol)} ({item.pnlPct.toFixed(2)}%)</td></tr>))}</tbody>
+                <tbody>{equityReturnData.map((item, index) => (<tr key={index} className="border-t border-zinc-800"><td className="p-2 text-white">{item.date}</td><td className="p-2 text-white text-right">{displaySymbol}{formatMoney(item.equity, displaySymbol)}</td><td className={`p-2 text-right ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{item.pnl >= 0 ? '+' : ''}{displaySymbol}{formatMoney(item.pnl, displaySymbol)} ({item.pnlPct.toFixed(2)}%)</td></tr>))}</tbody>
               </table>
             </div>
             <div className="mt-8"><PortfolioAllocation data={portfolioData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} /></div>
@@ -632,17 +566,14 @@ const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transa
 
 
 const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
+    const [chartRange, setChartRange] = useState("All");
     const getDisplayValue = (usdValue) => displayCcySymbol === '$' ? usdValue : usdValue * usdIdr;
     
     const { maxProfitPct, maxLossPct } = useMemo(() => {
         const maxProfitTx = transactions.find(tx => tx.realized === stats.maxProfit);
-        const costForMaxProfit = maxProfitTx ? (maxProfitTx.proceeds - maxProfitTx.realized) : 0;
-        const profitPct = costForMaxProfit > 0 ? (stats.maxProfit / costForMaxProfit) * 100 : 0;
-        
+        const profitPct = maxProfitTx && maxProfitTx.costOfSold > 0 ? (maxProfitTx.realized / maxProfitTx.costOfSold) * 100 : 0;
         const maxLossTx = transactions.find(tx => tx.realized === stats.maxLoss);
-        const costForMaxLoss = maxLossTx ? (maxLossTx.proceeds - maxLossTx.realized) : 0;
-        const lossPct = costForMaxLoss > 0 ? (stats.maxLoss / costForMaxLoss) * 100 : 0;
-
+        const lossPct = maxLossTx && maxLossTx.costOfSold > 0 ? (maxLossTx.realized / maxLossTx.costOfSold) * 100 : 0;
         return { maxProfitPct: profitPct, maxLossPct: lossPct };
     }, [transactions, stats.maxProfit, stats.maxLoss]);
     
@@ -651,13 +582,11 @@ const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
         let cumulativeGain = 0;
         const points = sorted.map(tx => {
             cumulativeGain += tx.realized || 0;
-            return { t: tx.date, v: cumulativeGain };
+            return { t: tx.date, v: getDisplayValue(cumulativeGain) };
         });
-        if (points.length > 0) {
-            points.unshift({ t: points[0].t - 86400000, v: 0 });
-        }
+        if (points.length > 0) points.unshift({ t: points[0].t - 86400000, v: 0 });
         return points.length ? points : [{ t: Date.now() - 1000, v: 0 }, {t: Date.now(), v:0}];
-    }, [transactions]);
+    }, [transactions, displayCcySymbol, usdIdr]);
     
     const sells = useMemo(() => transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete'), [transactions]);
     const realizedGainOnly = useMemo(() => sells.filter(tx => tx.realized > 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
@@ -669,14 +598,14 @@ const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
             if (!gainers[tx.symbol]) gainers[tx.symbol] = { trades: 0, pnl: 0, cost: 0 };
             gainers[tx.symbol].trades++;
             gainers[tx.symbol].pnl += tx.realized;
-            gainers[tx.symbol].cost += (tx.proceeds - tx.realized);
+            gainers[tx.symbol].cost += tx.costOfSold || 0;
         });
         return Object.entries(gainers)
             .map(([symbol, data]) => ({ symbol, ...data, pnlPct: data.cost > 0 ? (data.pnl / data.cost) * 100 : 0 }))
             .sort((a, b) => b.pnl - a.pnl).slice(0, 5);
     }, [sells]);
     
-    if (!stats) return <div className="p-4 text-center text-gray-500">Loading trade data...</div>;
+    if (!stats) return <div className="p-4 text-center text-gray-500">No trade data available.</div>;
 
     return (
         <div className="p-4 space-y-6">
@@ -687,22 +616,22 @@ const TradeStatsView = ({ stats, transactions, displayCcySymbol, usdIdr }) => {
                 </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.maxProfit), displayCcySymbol)}</p><p className="text-sm text-emerald-400">+{maxProfitPct.toFixed(2)}%</p></div>
-                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.maxLoss), displayCcySymbol)}</p><p className="text-sm text-red-400">{maxLossPct.toFixed(2)}%</p></div>
-                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><AvgProfitIcon className="text-gray-400 w-4 h-4"/>Avg. Profit</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.avgProfit), displayCcySymbol)}</p></div>
-                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><AvgLossIcon className="text-gray-400 w-4 h-4"/>Avg. Loss</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.avgLoss), displayCcySymbol)}</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol}{formatMoney(getDisplayValue(stats.maxProfit), displayCcySymbol)}</p><p className="text-sm text-emerald-400">+{maxProfitPct.toFixed(2)}%</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol}{formatMoney(getDisplayValue(stats.maxLoss), displayCcySymbol)}</p><p className="text-sm text-red-400">{maxLossPct.toFixed(2)}%</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><AvgProfitIcon className="text-gray-400 w-4 h-4"/>Avg. Profit</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol}{formatMoney(getDisplayValue(stats.avgProfit), displayCcySymbol)}</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><AvgLossIcon className="text-gray-400 w-4 h-4"/>Avg. Loss</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol}{formatMoney(getDisplayValue(stats.avgLoss), displayCcySymbol)}</p></div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800/50 p-4 rounded-lg">
                 <h3 className="font-semibold text-white flex items-center gap-1">Total Realized Gain <InfoIcon className="text-gray-400 w-3 h-3" /></h3>
-                <p className={`text-2xl font-bold mt-1 ${stats.totalRealizedGain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{stats.totalRealizedGain >= 0 ? '+' : ''}{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.totalRealizedGain), displayCcySymbol)}</p>
-                <div className="h-40 mt-2"><AreaChart equityData={realizedGainSeries} displaySymbol={displayCcySymbol} usdIdr={usdIdr} range="All" setRange={() => {}} /></div>
+                <p className={`text-2xl font-bold mt-1 ${stats.totalRealizedGain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{stats.totalRealizedGain >= 0 ? '+' : ''}{displayCcySymbol}{formatMoney(getDisplayValue(stats.totalRealizedGain), displayCcySymbol)}</p>
+                <div className="h-48 mt-2"><AreaChart data={realizedGainSeries} displaySymbol={displayCcySymbol} range={chartRange} setRange={setChartRange} /></div>
                 <div className="mt-2 text-xs text-gray-400 border-t border-zinc-800 pt-2 space-y-1">
-                    <div className="flex justify-between"><span>Realized Gain</span> <span className="text-emerald-400 font-semibold">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(realizedGainOnly), displayCcySymbol)}</span></div>
-                    <div className="flex justify-between"><span>Realized Loss</span> <span className="text-red-400 font-semibold">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(realizedLossOnly), displayCcySymbol)}</span></div>
+                    <div className="flex justify-between"><span>Realized Gain</span> <span className="text-emerald-400 font-semibold">{displayCcySymbol}{formatMoney(getDisplayValue(realizedGainOnly), displayCcySymbol)}</span></div>
+                    <div className="flex justify-between"><span>Realized Loss</span> <span className="text-red-400 font-semibold">{displayCcySymbol}{formatMoney(getDisplayValue(realizedLossOnly), displayCcySymbol)}</span></div>
                 </div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800/50 p-4 rounded-lg">
-                <h3 className="font-semibold text-white mb-2">Top Gainer ({displayCcySymbol === 'Rp.' ? 'Rp' : '$'})</h3>
+                <h3 className="font-semibold text-white mb-2">Top Gainer ({displayCcySymbol})</h3>
                 <table className="w-full text-sm">
                     <thead className="text-gray-400 text-xs font-light"><tr><th className="text-left font-normal py-1">Code</th><th className="text-center font-normal py-1">Trades</th><th className="text-right font-normal py-1">P&L</th></tr></thead>
                     <tbody>{topGainers.map(g => (<tr key={g.symbol} className="border-t border-zinc-800"><td className="py-2 flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{g.symbol.charAt(0)}</div>{g.symbol}</td><td className="text-center py-2">{g.trades}</td><td className={`text-right py-2 font-semibold ${g.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{g.pnl >= 0 ? '+' : ''}{formatMoney(getDisplayValue(g.pnl), displayCcySymbol)} ({g.pnlPct.toFixed(2)}%)</td></tr>))}</tbody>
@@ -716,7 +645,7 @@ const HistoryView = ({ transactions, usdIdr, displayCcySymbol }) => (
     <div className="p-4"><div className="overflow-x-auto"><table className="w-full text-sm">
         <thead className="text-left text-gray-500 text-xs"><tr><th className="p-3">Time</th><th className="p-3">Type</th><th className="p-3">Symbol</th><th className="p-3 text-right">Qty</th><th className="p-3 text-right">Price</th><th className="p-3 text-right">Nominal</th></tr></thead>
         <tbody>
-            {transactions.map(tx => (<tr key={tx.id} className="border-t border-zinc-800"><td className="p-3 text-gray-400">{new Date(tx.date).toLocaleString()}</td><td className="p-3 capitalize">{tx.type}</td><td className="p-3 font-semibold">{tx.symbol}</td><td className="p-3 text-right">{formatQty(tx.qty)}</td><td className="p-3 text-right text-gray-400">{displayCcySymbol === "Rp." ? "Rp" : displayCcySymbol}{formatMoney((tx.pricePerUnit || tx.price || 0) * (displayCcySymbol === "Rp." ? usdIdr : 1), displayCcySymbol)}</td><td className="p-3 text-right">{displayCcySymbol === "Rp." ? "Rp" : displayCcySymbol}{formatMoney((tx.cost || tx.proceeds || 0) * (displayCcySymbol === "Rp." ? usdIdr : 1), displayCcySymbol)}</td></tr>))}
+            {transactions.map(tx => (<tr key={tx.id} className="border-t border-zinc-800"><td className="p-3 text-gray-400">{new Date(tx.date).toLocaleString()}</td><td className="p-3 capitalize">{tx.type}</td><td className="p-3 font-semibold">{tx.symbol}</td><td className="p-3 text-right">{formatQty(tx.qty)}</td><td className="p-3 text-right text-gray-400">{displayCcySymbol}{formatMoney(tx.pricePerUnit * (displayCcySymbol === "Rp." ? usdIdr : 1), displayCcySymbol)}</td><td className="p-3 text-right">{displayCcySymbol}{formatMoney((tx.cost || tx.proceeds || 0) * (displayCcySymbol === "Rp." ? usdIdr : 1), displayCcySymbol)}</td></tr>))}
             {transactions.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-gray-500">No history</td></tr>}
         </tbody>
     </table></div></div>
@@ -726,44 +655,44 @@ const HistoryView = ({ transactions, usdIdr, displayCcySymbol }) => (
 const BalanceManager = ({ onConfirm, displaySymbol }) => {
   const [amount, setAmount] = useState('');
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onConfirm(toNum(amount)); }} className="space-y-4">
-      <div><label className="block text-sm font-medium mb-1 text-gray-400">Amount ({displaySymbol})</label><input type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" placeholder={displaySymbol === "Rp." ? "e.g. 1000000" : "e.g. 100"} /></div>
+    <form onSubmit={(e) => { e.preventDefault(); onConfirm(amount); }} className="space-y-4">
+      <div><label className="block text-sm font-medium mb-1 text-gray-400">Amount ({displaySymbol})</label><input type="number" step="any" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" placeholder={displaySymbol === "Rp." ? "e.g. 1000000" : "e.g. 100"} /></div>
       <button type="submit" className="w-full py-2.5 rounded font-semibold bg-emerald-600 text-white hover:bg-emerald-500">Confirm</button>
     </form>
   );
 };
 
-const ManagePortfolioSheet = ({ onImportClick, onExportClick, onAddBalance, onWithdraw, onClearAll }) => ( 
+const ManagePortfolioSheet = ({ onAddBalance, onWithdraw, onClearAll }) => ( 
   <div className="p-4 text-white text-sm">
     <h3 className="text-base font-semibold mb-4 px-2">Manage Portfolio</h3>
-    <div className="space-y-1"><button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Add Balance</button><button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Withdraw</button><label className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300 block cursor-pointer">Import CSV<input type="file" accept=".csv" onChange={onImportClick} className="hidden" /></label><button onClick={onExportClick} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Export CSV</button><button onClick={onClearAll} className="w-full text-left p-2 rounded hover:bg-red-700/20 text-red-400">Erase all data</button></div>
+    <div className="space-y-1"><button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Add Balance</button><button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Withdraw</button><button onClick={onClearAll} className="w-full text-left p-2 rounded hover:bg-red-700/20 text-red-400">Erase all data</button></div>
   </div>
 );
 
-const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol }) => {
+const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, addAssetWithInitial, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol }) => {
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [total, setTotal] = useState('');
   const handleInputChange = (field, value) => {
-    if (field === 'shares') { setShares(value); const num = toNum(price) * toNum(value); setTotal(num ? `${num.toFixed(2)}` : ''); } 
-    else if (field === 'price') { setPrice(value); const num = toNum(value) * toNum(shares); setTotal(num ? `${num.toFixed(2)}` : ''); } 
-    else if (field === 'total') { setTotal(value); const nTotal = toNum(value), nShares = toNum(shares); if (nShares > 0) setPrice(String((nTotal / nShares).toFixed(2))); }
+    if (field === 'shares') { setShares(value); const num = toNum(price) * toNum(value); setTotal(num > 0 ? `${num}` : ''); } 
+    else if (field === 'price') { setPrice(value); const num = toNum(value) * toNum(shares); setTotal(num > 0 ? `${num}` : ''); } 
+    else if (field === 'total') { setTotal(value); const nTotal = toNum(value), nShares = toNum(shares); if (nShares > 0) setPrice(String(nTotal / nShares)); }
   };
   return (
     <div className="space-y-4">
       <div className="flex border-b border-zinc-800">{[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (<button key={item.key} onClick={() => setSearchMode(item.key)} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>))}</div>
       {searchMode !== 'nonliquid' ? (
         <div className="space-y-4">
-          <div className="relative"><input value={query} onChange={e => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder="Search by code or name..." className="w-full rounded bg-zinc-800 px-3 py-2 text-sm outline-none border border-zinc-700 text-white" />{suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-zinc-800 border border-zinc-700 rounded max-h-56 overflow-auto">{suggestions.map((s, i) => (<button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-zinc-700"><div className="font-medium text-gray-100">{s.symbol}</div><div className="text-xs text-gray-400">{s.display}</div></button>))}</div>}</div>
+          <div className="relative"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by code or name..." className="w-full rounded bg-zinc-800 px-3 py-2 text-sm outline-none border border-zinc-700 text-white" />{suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-zinc-800 border border-zinc-700 rounded max-h-56 overflow-auto">{suggestions.map((s, i) => (<button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); }} className="w-full px-3 py-2 text-left hover:bg-zinc-700 flex items-center gap-3"><img src={s.image} alt={s.symbol} className="w-6 h-6 rounded-full" onError={(e) => e.target.style.display='none'} /><div className="flex-1"><div className="font-medium text-gray-100">{s.symbol}</div><div className="text-xs text-gray-400">{s.display}</div></div></button>))}</div>}</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div><label className="text-xs text-gray-400">Qty</label><input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div><div><label className="text-xs text-gray-400">Price ({displaySymbol})</label><input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div></div>
           <div><label className="text-xs text-gray-400">Total Value ({displaySymbol})</label><input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div>
-          <div className="flex justify-end"><button onClick={() => addAssetWithInitial(toNum(shares), toNum(price))} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div>
+          <div className="flex justify-end"><button onClick={() => addAssetWithInitial(shares, price)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div>
         </div>
-      ) : (
+      ) : ( /* Non-liquid form is unchanged */
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><input value={nlName} onChange={e => setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlQty} onChange={e => setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlPrice} onChange={e => setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><select value={nlPriceCcy} onChange={e => setNlPriceCcy(e.target.value)} className="rounded bg-zinc-800 px-2 py-2 text-sm border border-zinc-700 text-white"><option value="IDR">IDR</option><option value="USD">USD</option></select><input type="date" value={nlPurchaseDate} onChange={e => setNlPurchaseDate(e.target.value)} className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlYoy} onChange={e => setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /></div>
           <input value={nlDesc} onChange={e => setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
-          <div className="flex justify-end"><button onClick={addNonLiquidAsset} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div>
+          <div className="flex justify-end"><button onClick={addAssetWithInitial} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div>
         </div>
       )}
     </div>
@@ -789,7 +718,7 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
     else if (field === 'total') { setTotal(value); const nTotal = toNum(value), nShares = toNum(shares); if (nShares > 0 && nTotal > 0) setPrice(String((nTotal / nShares).toFixed(3))); }
   };
   const priceUSD = (displaySymbol === 'Rp.') ? toNum(price) / usdIdr : toNum(price);
-  const doSubmit = () => { if (mode === 'buy') onBuy(asset, toNum(shares), priceUSD); else if (mode === 'sell') onSell(asset, toNum(shares), priceUSD); };
+  const doSubmit = () => { if (mode === 'buy') onBuy(asset, shares, priceUSD); else if (mode === 'sell') onSell(asset, shares, priceUSD); };
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={asset.symbol}>
       <div className="space-y-4">
@@ -804,7 +733,7 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 };
 
 /* ===================== Charts ===================== */
-const AreaChart = ({ equityData, displaySymbol, range, setRange }) => {
+const AreaChart = ({ data: chartData, displaySymbol, range, setRange }) => {
   const [hoverData, setHoverData] = useState(null);
   const svgRef = useRef(null);
   const now = new Date();
@@ -814,14 +743,23 @@ const AreaChart = ({ equityData, displaySymbol, range, setRange }) => {
     case '1M': startTime = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()); break;
     case '3M': startTime = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()); break;
     case '1Y': startTime = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); break;
-    case 'All': startTime = equityData.length > 1 ? new Date(equityData[0].t) : new Date(0); break;
+    case 'All': startTime = chartData.length > 1 ? new Date(chartData[0].t) : new Date(0); break;
     case 'YTD': default: startTime = new Date(now.getFullYear(), 0, 1); break;
   }
-  const filteredData = equityData.filter(d => d.t >= startTime.getTime());
-  const data = filteredData.length > 1 ? [{t: startTime.getTime(), v: filteredData.length > 0 ? filteredData[0].v : 0}, ...filteredData] : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
+  
+  const filteredData = chartData.filter(d => d.t >= startTime.getTime());
+  const data = useMemo(() => {
+      if(filteredData.length === 0) return [{t: startTime.getTime(), v: 0}, {t: now.getTime(), v: 0}];
+      if(filteredData[0].t > startTime.getTime()){
+          return [{t: startTime.getTime(), v: filteredData[0].v}, ...filteredData];
+      }
+      return filteredData;
+  }, [filteredData, startTime, now]);
+
   const height = 220, width = 700, padding = { top: 20, bottom: 40, left: 0, right: 80 };
-  const minVal = Math.min(...data.map(d => d.v));
-  const maxVal = Math.max(...data.map(d => d.v));
+  const yValues = data.map(d => d.v);
+  const minVal = Math.min(...yValues);
+  const maxVal = Math.max(...yValues);
   const valRange = maxVal - minVal || 1;
   const timeStart = data[0].t;
   const timeEnd = data[data.length - 1].t;
@@ -829,23 +767,20 @@ const AreaChart = ({ equityData, displaySymbol, range, setRange }) => {
   const yScale = (v) => padding.top + (1 - (v - minVal) / valRange) * (height - padding.top - padding.bottom);
   const path = data.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
   const areaPath = `${path} L${xScale(timeEnd)},${height - padding.bottom} L${xScale(timeStart)},${height - padding.bottom} Z`;
-  const yAxisLabels = [minVal, minVal + valRange * 0.25, minVal + valRange * 0.5, minVal + valRange * 0.75, maxVal];
+  const yAxisLabels = Array.from({length: 5}, (_, i) => minVal + (valRange / 4) * i);
+  
   const formatValueForChart = (v) => {
-    if (v >= 1e9) return `${(v / 1e9).toFixed(1)}M`;
-    if (v >= 1e6) return `${(v / 1e6).toFixed(1)}jt`;
-    if (v >= 1e3) return `${(v / 1e3).toFixed(0)}rb`;
+    if (Math.abs(v) >= 1e9) return `${(v / 1e9).toFixed(1)}M`;
+    if (Math.abs(v) >= 1e6) return `${(v / 1e6).toFixed(1)}jt`;
+    if (Math.abs(v) >= 1e3) return `${(v / 1e3).toFixed(0)}rb`;
     return Math.round(v);
   }
-  const fmtYLabel = (v) => displaySymbol === "Rp." ? formatValueForChart(v) : `$${formatValueForChart(v)}`;
-  const xAxisLabels = () => {
-    const labels = [];
-    const count = 5;
-    for (let i = 0; i < count; i++) {
-        const t = timeStart + (i / (count - 1)) * (timeEnd - timeStart);
-        labels.push({t: t, label: new Date(t).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})});
-    }
-    return labels;
-  }
+  const fmtYLabel = (v) => `${displaySymbol}${formatValueForChart(v)}`;
+  const xAxisLabels = () => Array.from({length: 5}, (_, i) => {
+      const t = timeStart + (i / 4) * (timeEnd - timeStart);
+      return {t, label: new Date(t).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})};
+  });
+  
   const handleMouseMove = (event) => {
     if (!svgRef.current || data.length < 2) return;
     const svg = svgRef.current;
@@ -855,20 +790,21 @@ const AreaChart = ({ equityData, displaySymbol, range, setRange }) => {
     let closestPoint = data.reduce((prev, curr) => Math.abs(curr.t - time) < Math.abs(prev.t - time) ? curr : prev);
     if (closestPoint) setHoverData({ point: closestPoint, x: xScale(closestPoint.t), y: yScale(closestPoint.v) });
   };
+
   return (
     <div>
-        <div className="relative">
-            <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={() => setHoverData(null)}>
-                <defs><linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#10B981" stopOpacity={0.3} /><stop offset="100%" stopColor="#10B981" stopOpacity={0.05} /></linearGradient></defs>
-                <path d={areaPath} fill="url(#areaGradient2)" /><path d={path} fill="none" stroke="#10B981" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-                {yAxisLabels.map((v, idx) => (<g key={idx}><line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" /><text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text></g>))}
-                {xAxisLabels().map((item, idx) => (<text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>))}
-                {hoverData && (<g><line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" /><circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#10B981" stroke="white" strokeWidth="2" /></g>)}
-                <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
-            </svg>
-            {hoverData && (<div className="absolute p-2 rounded-lg bg-zinc-800 text-white text-xs pointer-events-none" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}><div>{new Date(hoverData.point.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div><div className="font-bold">{displaySymbol === 'Rp.' ? "Rp" : displaySymbol}{formatMoney(hoverData.point.v, displaySymbol)}</div></div>)}
-        </div>
-        <div className="flex justify-center gap-2 mt-2">{['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (<button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{r}</button>))}</div>
+      <div className="relative">
+        <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={() => setHoverData(null)}>
+          <defs><linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#10B981" stopOpacity={0.3} /><stop offset="100%" stopColor="#10B981" stopOpacity={0.05} /></linearGradient></defs>
+          <path d={areaPath} fill="url(#areaGradient2)" /><path d={path} fill="none" stroke="#10B981" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          {yAxisLabels.map((v, idx) => (<g key={idx}><line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" /><text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text></g>))}
+          {xAxisLabels().map((item, idx) => (<text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>))}
+          {hoverData && (<g><line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" /><circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#10B981" stroke="white" strokeWidth="2" /></g>)}
+          <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
+        </svg>
+        {hoverData && (<div className="absolute p-2 rounded-lg bg-zinc-800 text-white text-xs pointer-events-none" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}><div>{new Date(hoverData.point.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div><div className="font-bold">{displaySymbol}{formatMoney(hoverData.point.v, displaySymbol)}</div></div>)}
+      </div>
+      <div className="flex justify-center gap-2 mt-2">{['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (<button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{r}</button>))}</div>
     </div>
   );
 };
@@ -876,27 +812,44 @@ const AreaChart = ({ equityData, displaySymbol, range, setRange }) => {
 const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) => {
   const [activeTab, setActiveTab] = useState('Equity');
   const [hoveredSegment, setHoveredSegment] = useState(null);
-  const equityData = useMemo(() => fullAssetData.filter(d => d.type === 'stock' || d.type === 'crypto').map(d => ({ name: d.symbol, value: d.marketValueUSD })).sort((a,b)=>b.value-a.value), [fullAssetData]);
-  const sectorData = useMemo(() => {
-    const sectors = { 'Equity': { value: 0, color: '#10B981' }, 'Crypto': { value: 0, color: '#3B82F6' }, 'Non-Liquid': { value: 0, color: '#F97316' } };
+
+  const { equityData, sectorData } = useMemo(() => {
+    const eqData = fullAssetData
+      .filter(d => d.type === 'stock' || d.type === 'crypto')
+      .map(d => ({ name: d.symbol, value: d.marketValueUSD, image: d.image, type: d.type }))
+      .sort((a,b)=>b.value-a.value);
+
+    const secData = {
+      'Equity': { value: 0, color: '#10B981', icon: <EquityIcon /> },
+      'Crypto': { value: 0, color: '#3B82F6', icon: <CryptoIcon /> },
+      'Non-Liquid': { value: 0, color: '#F97316', icon: <NonLiquidIcon /> }
+    };
     fullAssetData.forEach(asset => {
-        if (asset.type === 'stock') sectors['Equity'].value += asset.marketValueUSD;
-        else if (asset.type === 'crypto') sectors['Crypto'].value += asset.marketValueUSD;
-        else if (asset.type === 'nonliquid') sectors['Non-Liquid'].value += asset.marketValueUSD;
+      if (asset.type === 'stock') secData['Equity'].value += asset.marketValueUSD;
+      else if (asset.type === 'crypto') secData['Crypto'].value += asset.marketValueUSD;
+      else if (asset.type === 'nonliquid') secData['Non-Liquid'].value += asset.marketValueUSD;
     });
-    return Object.entries(sectors).map(([name, data]) => ({ name, ...data })).filter(d => d.value > 0);
+    
+    return { 
+      equityData: eqData,
+      sectorData: Object.entries(secData).map(([name, data]) => ({ name, ...data })).filter(d => d.value > 0)
+    };
   }, [fullAssetData]);
+
   const data = activeTab === 'Equity' ? equityData : sectorData;
   const totalValueUSD = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
-  if (!totalValueUSD) return null;
+  
+  if (!totalValueUSD) return <div className="mt-8 text-center text-gray-500">No assets to show in allocation.</div>;
+
   const totalValueDisplay = displayCcySymbol === "Rp." ? totalValueUSD * usdIdr : totalValueUSD;
   const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth;
   const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"];
   let accumulatedAngle = 0;
+
   return (
     <div className="mt-8">
       <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3>
-      <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>Equity</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>Sub-Sector</button></div>
+      <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div>
       <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           {data.map((d, i) => {
@@ -905,10 +858,15 @@ const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) 
             accumulatedAngle += angle; return segment;
           })}
         </svg>
-        <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{displayCcySymbol === 'Rp.' ? "Rp" : displayCcySymbol}{formatMoney(totalValueDisplay, displayCcySymbol)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Items' : 'Sectors'}</div></div>
+        <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{displayCcySymbol}{formatMoney(totalValueDisplay, displayCcySymbol)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div>
       </div>
-      <div className="space-y-2">{data.map((d, i) => { const percentage = (d.value / totalValueUSD) * 100; const valueDisplay = d.value * (displayCcySymbol === "Rp." ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{d.name.charAt(0)}</div><div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{displayCcySymbol === 'Rp.' ? "Rp" : displayCcySymbol}{formatMoney(valueDisplay, displayCcySymbol)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div>
+      <div className="space-y-2">{data.map((d, i) => { const percentage = (d.value / totalValueUSD) * 100; const valueDisplay = d.value * (displayCcySymbol === "Rp." ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">
+          {d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}
+        </div>
+        <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{displayCcySymbol}{formatMoney(valueDisplay, displayCcySymbol)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div>
     </div>
   );
 };
+
 
