@@ -9,10 +9,12 @@ const MoreVerticalIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" 
 const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>);
 const BackArrowIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
 const TrashIcon = ({className}) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
-const ArrowUpIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/></svg>;
-const ArrowDownIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
-const InfoIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
+const ArrowUpIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/></svg>;
+const ArrowDownIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
+const InfoIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
 const InfoIconSvg = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>;
+const AvgProfitIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20V16"/></svg>;
+const AvgLossIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v10"/><path d="M18 4v16"/><path d="M6 4v8"/></svg>;
 
 
 /* ===================== Config & Helpers ===================== */
@@ -27,7 +29,7 @@ const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/
 function formatMoney(value, ccySymbol) {
   const n = Number(value || 0);
   if (ccySymbol === "$") {
-    return `${ccySymbol} ${n.toFixed(3).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+    return `${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
   }
   return `${Math.round(n).toLocaleString('id-ID')}`;
 }
@@ -59,8 +61,8 @@ const Modal = ({ children, isOpen, onClose, title }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-[#181818] rounded-lg w-full max-w-lg border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center p-4 border-b border-gray-700">
+      <div className="bg-zinc-900 rounded-lg w-full max-w-lg border border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-zinc-800">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
         </div>
@@ -74,8 +76,8 @@ const InfoModal = ({ children, isOpen, onClose, title }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 transition-opacity duration-300" onClick={onClose}>
-        <div className="bg-gray-800 rounded-lg p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
-            <h4 className="font-bold text-lg mb-2">{title}</h4>
+        <div className="bg-zinc-800 rounded-lg p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
+            <h4 className="font-bold text-lg mb-2 text-white">{title}</h4>
             <div className="text-gray-400 text-sm">{children}</div>
             <button onClick={onClose} className="mt-4 bg-[#20c997] text-white font-semibold py-2 px-4 rounded-lg hover:bg-opacity-80 transition-colors">Tutup</button>
         </div>
@@ -88,8 +90,8 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black/60 z-40" onClick={onClose}>
-      <div className={`fixed bottom-0 left-0 right-0 bg-[#1e1e1e] rounded-t-2xl shadow-lg transition-transform duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
-        <div className="w-10 h-1 bg-gray-600 rounded-full mx-auto my-3"></div>
+      <div className={`fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl shadow-lg transition-transform duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto my-3"></div>
         {children}
       </div>
     </div>
@@ -121,7 +123,6 @@ export default function PortfolioDashboard() {
   const [balanceModalMode, setBalanceModalMode] = useState('Add');
   const [tradeModal, setTradeModal] = useState({ open: false, asset: null });
 
-  // State for info modals
   const [isTxInfoOpen, setTxInfoOpen] = useState(false);
   const [isPerfInfoOpen, setPerfInfoOpen] = useState(false);
 
@@ -512,7 +513,7 @@ export default function PortfolioDashboard() {
   };
   
   /* ================ Additional Derived Data for New Cards ================ */
-  const withdrawals = 0; // As per design, there's no withdrawal state, so we assume 0
+  const withdrawals = 0;
   const netDeposit = totalDeposits - withdrawals;
   const totalValueForBreakdown = tradingBalance + (totals.market * usdIdr);
   const cashPct = totalValueForBreakdown > 0 ? (tradingBalance / totalValueForBreakdown) * 100 : 0;
@@ -540,7 +541,7 @@ export default function PortfolioDashboard() {
         <header className="p-4 flex justify-between items-center sticky top-0 bg-black z-10">
           <div className="flex items-center gap-3">
             <UserAvatar />
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-2 flex items-center gap-2">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex items-center gap-2">
                 <img src="/tether.png" alt="Tether" className="w-5 h-5" />
                 <div className={`font-semibold text-xs tabular-nums transition-colors duration-500 ${
                     priceDirection === 'up' ? 'text-emerald-400' : priceDirection === 'down' ? 'text-red-400' : 'text-white'
@@ -565,7 +566,7 @@ export default function PortfolioDashboard() {
                 role="switch"
                 aria-checked={displaySymbol === "$"}
                 onClick={() => setDisplaySymbol(prev => prev === "Rp." ? "$" : "Rp.")}
-                className={`relative w-12 h-6 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-gray-700'}`}
+                className={`relative w-12 h-6 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-zinc-700'}`}
                 title="Toggle display currency"
               >
                 <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div>
@@ -578,7 +579,7 @@ export default function PortfolioDashboard() {
         </header>
 
         <main>
-          <div className="border-b border-gray-800 px-4">
+          <div className="border-b border-zinc-800 px-4">
             <nav className="flex space-x-6 py-2"></nav>
           </div>
           
@@ -587,47 +588,48 @@ export default function PortfolioDashboard() {
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 
                 {/* CARD 1: PORTFOLIO OVERVIEW */}
-                <div className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-between">
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-between">
                     <div>
                         <h3 className="text-[11px] sm:text-sm font-semibold text-gray-400 uppercase tracking-wider">Portfolio Overview</h3>
                         <div className="mt-2 sm:mt-3">
                             <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
                             <p className="text-xl sm:text-3xl font-bold text-white">
-                                {formatMoney(getDisplayValue(totalEquity / usdIdr), displaySymbol)}
+                                {displaySymbol === 'Rp.' ? 'Rp' : displaySymbol} {formatMoney(getDisplayValue(totalEquity / usdIdr), displaySymbol)}
                             </p>
                         </div>
                     </div>
-                    <div className="mt-3 sm:mt-4 border-t border-gray-700/50 pt-2 sm:pt-3 text-[11px] sm:text-xs space-y-1">
+                    <div className="mt-3 sm:mt-4 border-t border-zinc-800 pt-2 sm:pt-3 text-[11px] sm:text-xs space-y-1">
                         <div className="flex justify-between items-center">
                             <span className="text-gray-400">Net Deposit</span>
                             <span className="font-semibold text-[#20c997]">
-                               {getDisplayValue(netDeposit / usdIdr) >= 0 ? '+' : ''}{formatMoney(getDisplayValue(netDeposit / usdIdr), displaySymbol)}
+                               {getDisplayValue(netDeposit / usdIdr) >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(netDeposit / usdIdr), displaySymbol)}
                             </span>
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-gray-400">Total G/L</span>
                             <span className={`font-semibold ${totals.pnl >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>
-                                {totals.pnl >= 0 ? '+' : ''}{formatMoney(getDisplayValue(totals.pnl), displaySymbol)}
+                                {totals.pnl >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(totals.pnl), displaySymbol)}
                             </span>
                         </div>
                     </div>
                 </div>
 
                 {/* CARD 2: ASSET BREAKDOWN */}
-                <div className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center">
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center">
                     <h3 className="text-[11px] sm:text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">Asset Breakdown</h3>
                     <div className="grid grid-cols-2 text-center gap-1">
                         <p className="text-gray-400 text-[11px] sm:text-xs">Cash</p>
                         <p className="text-gray-400 text-[11px] sm:text-xs">Invested</p>
                         <p className="font-semibold text-sm sm:text-lg">
-                           {formatMoney(getDisplayValue(tradingBalance / usdIdr), displaySymbol)}
+                           {displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(tradingBalance / usdIdr), displaySymbol)}
                         </p>
                         <p className="font-semibold text-sm sm:text-lg">
-                           {formatMoney(getDisplayValue(totals.market), displaySymbol)}
+                           {displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(totals.market), displaySymbol)}
                         </p>
                     </div>
-                    <div className="w-full bg-gray-700/50 rounded-full h-1 my-2">
-                        <div className="bg-gradient-to-r from-teal-500 to-cyan-500 h-1 rounded-full" style={{ width: `${investedPct}%` }}></div>
+                    <div className="flex w-full h-1.5 bg-zinc-700/50 rounded-full overflow-hidden my-2">
+                        <div className="bg-sky-500" style={{ width: `${cashPct}%` }}></div>
+                        <div className="bg-teal-500" style={{ width: `${investedPct}%` }}></div>
                     </div>
                     <div className="grid grid-cols-2 text-center text-[11px] sm:text-xs text-gray-300">
                         <p>{cashPct.toFixed(0)}%</p>
@@ -636,7 +638,7 @@ export default function PortfolioDashboard() {
                 </div>
 
                 {/* CARD 3: TRANSACTION SUMMARY */}
-                <div className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-lg relative">
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg relative">
                     <h3 className="text-[11px] sm:text-sm font-semibold text-gray-400 uppercase tracking-wider">Transaction Summary</h3>
                     <div onClick={() => setTxInfoOpen(true)} className="absolute top-2 right-2 sm:top-3 sm:right-3 cursor-pointer text-gray-500 hover:text-white transition-colors">
                         <InfoIconSvg />
@@ -645,24 +647,24 @@ export default function PortfolioDashboard() {
                         <div className="flex justify-between items-center">
                             <span className="text-gray-400">Deposit</span>
                             <span className="font-medium">
-                                {formatMoney(getDisplayValue(totalDeposits / usdIdr), displaySymbol)}
+                                {displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(totalDeposits / usdIdr), displaySymbol)}
                             </span>
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-gray-400">Withdraw</span>
-                            <span className="font-medium">{formatMoney(getDisplayValue(withdrawals / usdIdr), displaySymbol)}</span>
+                            <span className="font-medium">{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(withdrawals / usdIdr), displaySymbol)}</span>
                         </div>
-                        <div className="flex justify-between items-center border-t border-gray-700/50 pt-2 mt-2">
+                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2">
                             <span className="text-gray-400">Realized P&L</span>
                             <span className={`font-semibold ${realizedUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>
-                               {realizedUSD >= 0 ? '+' : ''}{formatMoney(getDisplayValue(realizedUSD), displaySymbol)}
+                               {realizedUSD >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(realizedUSD), displaySymbol)}
                             </span>
                         </div>
                     </div>
                 </div>
 
                 {/* CARD 4: PERFORMANCE SUMMARY */}
-                <div className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-lg relative">
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg relative">
                     <h3 className="text-[11px] sm:text-sm font-semibold text-gray-400 uppercase tracking-wider">Performance Summary</h3>
                     <div onClick={() => setPerfInfoOpen(true)} className="absolute top-2 right-2 sm:top-3 sm:right-3 cursor-pointer text-gray-500 hover:text-white transition-colors">
                         <InfoIconSvg />
@@ -680,10 +682,10 @@ export default function PortfolioDashboard() {
                                {totals.pnlPct >= 0 ? '+' : ''}{totals.pnlPct.toFixed(2)}%
                             </span>
                         </div>
-                        <div className="flex justify-between items-center border-t border-gray-700/50 pt-2 mt-2">
+                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2">
                             <span className="text-gray-400">Equity vs Deposit</span>
                             <span className={`font-semibold ${equityVsDeposit >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>
-                               {equityVsDeposit >= 0 ? '+' : ''}{formatMoney(getDisplayValue(equityVsDeposit / usdIdr), displaySymbol)}
+                               {equityVsDeposit >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(equityVsDeposit / usdIdr), displaySymbol)}
                             </span>
                         </div>
                     </div>
@@ -722,24 +724,24 @@ export default function PortfolioDashboard() {
               <tbody>
                 {rows.map(r => {
                   return (
-                    <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
+                    <tr key={r.id} className="border-t border-zinc-800 hover:bg-zinc-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
                       <td className="p-3">
                         <div className="font-semibold text-sm text-white">{r.symbol}</div>
                         <div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className="font-semibold text-xs text-white">{formatMoney(getDisplayValue(r.investedUSD), displaySymbol)}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{formatMoney(getDisplayValue(r.avgPrice), displaySymbol)}</div>
+                        <div className="font-semibold text-xs text-white">{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(r.investedUSD), displaySymbol)}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(r.avgPrice), displaySymbol)}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className="font-semibold text-xs text-white">{formatMoney(getDisplayValue(r.marketValueUSD), displaySymbol)}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{formatMoney(getDisplayValue(r.lastPriceUSD), displaySymbol)}</div>
+                        <div className="font-semibold text-xs text-white">{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(r.marketValueUSD), displaySymbol)}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(r.lastPriceUSD), displaySymbol)}</div>
                       </td>
 
                       <td className="p-3 text-right tabular-nums">
-                        <div className={`font-semibold text-xs ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{formatMoney(getDisplayValue(r.pnlUSD), displaySymbol)}</div>
+                        <div className={`font-semibold text-xs ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === 'Rp.' ? 'Rp' : displaySymbol}{formatMoney(getDisplayValue(r.pnlUSD), displaySymbol)}</div>
                         <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{r.pnlPct.toFixed(2)}%</div>
                       </td>
                     </tr>
@@ -782,12 +784,20 @@ export default function PortfolioDashboard() {
   );
 }
 
-/* ===================== Performance & Subcomponents (UNCHANGED) ===================== */
+/* ===================== Performance & Subcomponents ===================== */
 
-const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats }) => {
+const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
   const [chartRange, setChartRange] = useState("YTD");
   const [returnPeriod, setReturnPeriod] = useState('Monthly');
+
+  const { totalEquity } = useMemo(() => {
+    const market = portfolioData.reduce((s, r) => s + r.marketValueUSD, 0);
+    const tradingBalance = toNum(isBrowser ? localStorage.getItem("pf_balance_v9") || 5952 : 5952);
+    const totalEq = (market * usdIdr) + tradingBalance;
+    return { totalEquity: totalEq };
+  }, [portfolioData, usdIdr]);
+
 
   const { equityReturnData } = useMemo(() => {
     const data = equitySeries;
@@ -854,7 +864,7 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
           <h1 className="text-lg font-semibold text-white">Performance</h1>
         </header>
 
-        <div className="border-b border-gray-800 px-4">
+        <div className="border-b border-zinc-800 px-4">
           <nav className="flex space-x-6">
             <button onClick={() => setActiveTab('portfolio')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'portfolio' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PORTFOLIO</button>
             <button onClick={() => setActiveTab('trade')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'trade' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>TRADE</button>
@@ -866,7 +876,7 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
           <div className="p-4">
             <div>
               <p className="text-sm text-gray-400">Total Equity</p>
-              <p className="text-3xl font-bold text-white mb-1">{displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}</p>
+              <p className="text-3xl font-bold text-white mb-1">{displaySymbol === "Rp." ? "Rp" : displaySymbol}{formatMoney(displaySymbol === "Rp." ? totalEquity : totalEquity/usdIdr, displaySymbol)}</p>
             </div>
 
             <div className="mt-6">
@@ -878,7 +888,7 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
                 <h3 className="text-base font-semibold text-white">Total Equity Return</h3>
                 <div className="flex items-center gap-2 text-sm">
                   {['Daily', 'Monthly', 'Yearly'].map(p => (
-                    <button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full ${returnPeriod === p ? 'bg-gray-700 text-white' : 'text-gray-400'}`}>{p}</button>
+                    <button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full ${returnPeriod === p ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{p}</button>
                   ))}
                 </div>
               </div>
@@ -892,11 +902,11 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
                 </thead>
                 <tbody>
                   {equityReturnData.map((item, index) => (
-                    <tr key={index} className="border-t border-gray-800">
+                    <tr key={index} className="border-t border-zinc-800">
                       <td className="p-2 text-white">{item.date}</td>
-                      <td className="p-2 text-white text-right">{displaySymbol === "Rp." ? formatMoney(item.equity, "Rp.") : formatMoney(item.equity / usdIdr, "$")}</td>
+                      <td className="p-2 text-white text-right">{displaySymbol === "Rp." ? "Rp" : displaySymbol}{formatMoney(displaySymbol === "Rp." ? item.equity : item.equity / usdIdr, displaySymbol)}</td>
                       <td className={`p-2 text-right ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {item.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(item.pnl, "Rp.") : formatMoney(item.pnl / usdIdr, "$")} ({item.pnlPct.toFixed(2)}%)
+                        {item.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? "Rp" : displaySymbol}{formatMoney(displaySymbol === "Rp." ? item.pnl : item.pnl / usdIdr, displaySymbol)} ({item.pnlPct.toFixed(2)}%)
                       </td>
                     </tr>
                   ))}
@@ -921,127 +931,143 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
 
 
 const TradeStatsView = ({ stats, transactions, assets, displayCcySymbol, usdIdr }) => {
-  const getVal = (val) => displayCcySymbol === "Rp." ? val * usdIdr : val;
-  
-  const realizedGainSeries = useMemo(() => {
-    const sorted = [...transactions.filter(t => t.type === 'sell' || t.type === 'delete')].sort((a,b) => a.date - b.date);
-    let cumulativeGain = 0;
-    const points = sorted.map(tx => {
-      cumulativeGain += tx.realized || 0;
-      return {t: tx.date, v: cumulativeGain};
-    });
-     if (points.length > 0) {
-      points.unshift({t: points[0].t - 86400000, v: 0});
-    }
-    return points.length ? points : [{t: Date.now(), v:0}];
-  }, [transactions]);
-  
-  const sells = useMemo(() => transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete'), [transactions]);
-  const realizedGainOnly = useMemo(() => sells.filter(tx => tx.realized > 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
-  const realizedLossOnly = useMemo(() => sells.filter(tx => tx.realized < 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
+    const getDisplayValue = (usdValue) => {
+        if (displayCcySymbol === '$') return usdValue;
+        return usdValue * usdIdr;
+    };
 
-  const {maxProfitPct, maxLossPct} = useMemo(() => {
-      const maxProfitTx = transactions.find(tx => tx.realized === stats.maxProfit);
-      let maxProfitCost = 0;
-      if(maxProfitTx) {
-          const asset = assets.find(a => a.id === maxProfitTx.assetId);
-          maxProfitCost = maxProfitTx.qty * (asset ? asset.avgPrice : maxProfitTx.pricePerUnit);
-      }
-      const maxProfitPercentage = maxProfitCost > 0 ? (stats.maxProfit / maxProfitCost) * 100 : 0;
+    const realizedGainSeries = useMemo(() => {
+        const sorted = [...transactions.filter(t => t.type === 'sell' || t.type === 'delete')].sort((a, b) => a.date - b.date);
+        let cumulativeGain = 0;
+        const points = sorted.map(tx => {
+            cumulativeGain += tx.realized || 0;
+            return { t: tx.date, v: cumulativeGain };
+        });
+        if (points.length > 0) {
+            points.unshift({ t: points[0].t - 86400000, v: 0 });
+        }
+        return points.length ? points : [{ t: Date.now(), v: 0 }];
+    }, [transactions]);
 
-      const maxLossTx = transactions.find(tx => tx.realized === stats.maxLoss);
-      let maxLossCost = 0;
-      if(maxLossTx){
-         const asset = assets.find(a => a.id === maxLossTx.assetId);
-         maxLossCost = maxLossTx.qty * (asset ? asset.avgPrice : maxLossTx.pricePerUnit);
-      }
-      const maxLossPercentage = maxLossCost > 0 ? (stats.maxLoss / maxLossCost) * 100 : 0;
-      
-      return {maxProfitPct: maxProfitPercentage, maxLossPct: maxLossPercentage};
-  }, [transactions, assets, stats.maxProfit, stats.maxLoss]);
+    const sells = useMemo(() => transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete'), [transactions]);
+    const realizedGainOnly = useMemo(() => sells.filter(tx => tx.realized > 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
+    const realizedLossOnly = useMemo(() => sells.filter(tx => tx.realized < 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
 
-  
-  const topGainers = useMemo(() => {
-    const gainers = {};
-    sells.forEach(tx => {
-      if(!gainers[tx.symbol]){
-        gainers[tx.symbol] = {trades:0, pnl: 0, cost: 0, proceeds: 0};
-      }
-      const asset = assets.find(a => a.id === tx.assetId);
-      gainers[tx.symbol].trades++;
-      gainers[tx.symbol].pnl += tx.realized;
-      gainers[tx.symbol].cost += tx.qty * (asset?.avgPrice || tx.pricePerUnit);
-      gainers[tx.symbol].proceeds += tx.proceeds;
-    });
-    return Object.entries(gainers)
-      .map(([symbol, data]) => ({
-        symbol, ...data, 
-        pnlPct: data.cost > 0 ? (data.pnl/data.cost)*100 : 0
-      }))
-      .sort((a,b) => b.pnl - a.pnl).slice(0,5);
-  }, [transactions, assets]);
+    const { maxProfitPct, maxLossPct } = useMemo(() => {
+        const maxProfitTx = transactions.find(tx => tx.realized === stats.maxProfit);
+        let maxProfitCost = 0;
+        if (maxProfitTx) {
+            const asset = assets.find(a => a.id === maxProfitTx.assetId);
+            const avgPrice = asset ? asset.avgPrice : maxProfitTx.pricePerUnit;
+            maxProfitCost = maxProfitTx.qty * avgPrice;
+        }
+        const maxProfitPercentage = maxProfitCost > 0 ? (stats.maxProfit / maxProfitCost) * 100 : 0;
 
-  return (
-    <div className="p-4 space-y-6">
-      <div className="bg-gray-900 p-4 rounded-lg">
-        <h3 className="font-semibold text-white mb-2">Win Rate</h3>
-        <div className="flex items-center justify-between">
-          <span className="text-3xl font-bold text-white">{stats.winRate.toFixed(2)}%</span>
-          <div className="relative w-24 h-24">
-            <svg className="w-full h-full transform -rotate-90"><circle cx="50%" cy="50%" r="45%" stroke="#374151" strokeWidth="8" fill="transparent"/><circle cx="50%" cy="50%" r="45%" stroke="#22c55e" strokeWidth="8" fill="transparent" strokeDasharray={`${Math.PI * 45 * 2 * (stats.winRate/100)}, ${Math.PI * 45 * 2}`} /></svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-xs">
-              <div>{stats.trades} Trades</div>
-              <div className="text-emerald-400">{stats.wins} Wins</div>
-              <div className="text-red-400">{stats.losses} Losses</div>
+        const maxLossTx = transactions.find(tx => tx.realized === stats.maxLoss);
+        let maxLossCost = 0;
+        if (maxLossTx) {
+            const asset = assets.find(a => a.id === maxLossTx.assetId);
+            const avgPrice = asset ? asset.avgPrice : maxLossTx.pricePerUnit;
+            maxLossCost = maxLossTx.qty * avgPrice;
+        }
+        const maxLossPercentage = maxLossCost > 0 ? (stats.maxLoss / maxLossCost) * 100 : 0;
+
+        return { maxProfitPct: maxProfitPercentage, maxLossPct: maxLossPercentage };
+    }, [transactions, assets, stats.maxProfit, stats.maxLoss]);
+
+    const topGainers = useMemo(() => {
+        const gainers = {};
+        sells.forEach(tx => {
+            if (!gainers[tx.symbol]) {
+                gainers[tx.symbol] = { trades: 0, pnl: 0, cost: 0, proceeds: 0 };
+            }
+            const asset = assets.find(a => a.id === tx.assetId);
+            gainers[tx.symbol].trades++;
+            gainers[tx.symbol].pnl += tx.realized;
+            gainers[tx.symbol].cost += tx.qty * (asset?.avgPrice || tx.pricePerUnit);
+            gainers[tx.symbol].proceeds += tx.proceeds;
+        });
+        return Object.entries(gainers)
+            .map(([symbol, data]) => ({
+                symbol, ...data,
+                pnlPct: data.cost > 0 ? (data.pnl / data.cost) * 100 : 0
+            }))
+            .sort((a, b) => b.pnl - a.pnl).slice(0, 5);
+    }, [transactions, assets]);
+
+    return (
+        <div className="p-4 space-y-6">
+            <div className="bg-zinc-900 border border-zinc-800/50 p-4 rounded-lg">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-sm text-gray-400">Win Rate</p>
+                        <p className="text-3xl font-bold text-white mt-1">{stats.winRate.toFixed(2)}%</p>
+                    </div>
+                    <div className="relative w-24 h-24">
+                        <svg className="w-full h-full transform -rotate-90">
+                            <circle cx="50%" cy="50%" r="45%" stroke="#3f3f46" strokeWidth="8" fill="transparent" />
+                            <circle cx="50%" cy="50%" r="45%" stroke="#10B981" strokeWidth="8" fill="transparent" strokeDasharray={`${Math.PI * 2 * 45 * (stats.winRate / 100)}, ${Math.PI * 2 * 45}`} strokeLinecap="round"/>
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-xs text-center">
+                            <div className="font-semibold">{stats.trades}</div>
+                            <div className="text-gray-400">Trades</div>
+                            <div className="mt-1 flex gap-2">
+                                <div><span className="text-emerald-400">{stats.wins}</span> W</div>
+                                <div><span className="text-red-400">{stats.losses}</span> L</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxProfit), "Rp.") : formatMoney(getVal(stats.maxProfit), "$")}</p><p className="text-sm text-emerald-400">{maxProfitPct.toFixed(2)}%</p></div>
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxLoss), "Rp.") : formatMoney(getVal(stats.maxLoss), "$")}</p><p className="text-sm text-red-400">{maxLossPct.toFixed(2)}%</p></div>
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgProfit), "Rp.") : formatMoney(getVal(stats.avgProfit), "$")}</p></div>
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgLoss), "Rp.") : formatMoney(getVal(stats.avgLoss), "$")}</p></div>
-      </div>
 
-      <div className="bg-gray-900 p-4 rounded-lg">
-        <h3 className="font-semibold text-white flex items-center gap-1">Total Realized Gain <InfoIcon className="text-gray-400" /></h3>
-        <p className={`text-2xl font-bold mt-1 ${stats.totalRealizedGain >=0 ? 'text-emerald-400' : 'text-red-400'}`}>{stats.totalRealizedGain >=0 ? '+' : ''}{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.totalRealizedGain), "Rp.") : formatMoney(getVal(stats.totalRealizedGain), "$")}</p>
-        <div className="h-40 mt-2">
-            <AreaChart equityData={realizedGainSeries.map(p => ({...p, v: getVal(p.v)}))} displaySymbol={displayCcySymbol} usdIdr={usdIdr} range="All" setRange={()=>{}} />
+            <div className="grid grid-cols-2 gap-4">
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.maxProfit), displayCcySymbol)}</p><p className="text-sm text-emerald-400">+{maxProfitPct.toFixed(2)}%</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.maxLoss), displayCcySymbol)}</p><p className="text-sm text-red-400">{maxLossPct.toFixed(2)}%</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><AvgProfitIcon className="text-gray-400 w-4 h-4"/>Avg. Profit</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.avgProfit), displayCcySymbol)}</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><AvgLossIcon className="text-gray-400 w-4 h-4"/>Avg. Loss</p><p className="text-base font-semibold text-white mt-1">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.avgLoss), displayCcySymbol)}</p></div>
+            </div>
+            
+            <div className="bg-zinc-900 border border-zinc-800/50 p-4 rounded-lg">
+                <h3 className="font-semibold text-white flex items-center gap-1">Total Realized Gain <InfoIcon className="text-gray-400 w-3 h-3" /></h3>
+                <p className={`text-2xl font-bold mt-1 ${stats.totalRealizedGain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{stats.totalRealizedGain >= 0 ? '+' : ''}{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.totalRealizedGain), displayCcySymbol)}</p>
+                <div className="h-40 mt-2">
+                    <AreaChart equityData={realizedGainSeries.map(p => ({ ...p, v: getDisplayValue(p.v) }))} displaySymbol={displaySymbol} usdIdr={usdIdr} range="All" setRange={() => {}} />
+                </div>
+                <div className="mt-2 text-xs text-gray-400 border-t border-zinc-800 pt-2 space-y-1">
+                    <div className="flex justify-between"><span>Total Stocks Realized Gain</span> <span className={`font-semibold ${stats.totalRealizedGain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(stats.totalRealizedGain), displayCcySymbol)}</span></div>
+                    <div className="flex justify-between"><span>Realized Gain</span> <span className="text-emerald-400 font-semibold">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(realizedGainOnly), displayCcySymbol)}</span></div>
+                    <div className="flex justify-between"><span>Realized Loss</span> <span className="text-red-400 font-semibold">{displayCcySymbol === 'Rp.' ? 'Rp' : displayCcySymbol}{formatMoney(getDisplayValue(realizedLossOnly), displayCcySymbol)}</span></div>
+                </div>
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-800/50 p-4 rounded-lg">
+                <h3 className="font-semibold text-white mb-2">Top Gainer ({displayCcySymbol === 'Rp.' ? 'Rp' : '$'})</h3>
+                <table className="w-full text-sm">
+                    <thead className="text-gray-400 text-xs font-light">
+                        <tr>
+                            <th className="text-left font-normal py-1">Code</th>
+                            <th className="text-center font-normal py-1">Trades</th>
+                            <th className="text-right font-normal py-1">P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {topGainers.map(g => (
+                            <tr key={g.symbol} className="border-t border-zinc-800">
+                                <td className="py-2 flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{g.symbol.charAt(0)}</div>
+                                    {g.symbol}
+                                </td>
+                                <td className="text-center py-2">{g.trades}</td>
+                                <td className={`text-right py-2 font-semibold ${g.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {g.pnl >= 0 ? '+' : ''}{formatMoney(getDisplayValue(g.pnl), displayCcySymbol)} ({g.pnlPct.toFixed(2)}%)
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
-        <div className="mt-2 text-xs text-gray-400 border-t border-gray-700 pt-2">
-            <div className="flex justify-between"><span>Total Equity Realized Gain</span> <span className="text-white">{formatMoney(getVal(stats.totalRealizedGain), displayCcySymbol)}</span></div>
-            <div className="flex justify-between"><span>Realized Gain</span> <span className="text-emerald-400">{formatMoney(getVal(realizedGainOnly), displayCcySymbol)}</span></div>
-            <div className="flex justify-between"><span>Realized Loss</span> <span className="text-red-400">{formatMoney(getVal(realizedLossOnly), displayCcySymbol)}</span></div>
-        </div>
-      </div>
-      
-      <div className="bg-gray-900 p-4 rounded-lg">
-        <h3 className="font-semibold text-white mb-2">Top Gainer ({displayCcySymbol === 'Rp.' ? 'Rp' : '$'})</h3>
-        <table className="w-full text-sm">
-          <thead className="text-gray-400 text-xs">
-            <tr><th className="text-left font-normal py-1">Code</th><th className="text-center font-normal py-1">Trades</th><th className="text-right font-normal py-1">P&L</th></tr>
-          </thead>
-          <tbody>
-            {topGainers.map(g => (
-              <tr key={g.symbol}>
-                <td className="py-1 flex items-center gap-2">
-                   <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center font-bold text-white text-xs">{g.symbol.charAt(0)}</div>
-                   {g.symbol}
-                </td>
-                <td className="text-center py-1">{g.trades}</td>
-                <td className={`text-right py-1 ${g.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {g.pnl >= 0 ? '+' : ''}{formatMoney(getVal(g.pnl), displayCcySymbol)} ({g.pnlPct.toFixed(2)}%)
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+    );
 };
 
 const HistoryView = ({ transactions, usdIdr, displayCcySymbol }) => {
@@ -1061,13 +1087,13 @@ const HistoryView = ({ transactions, usdIdr, displayCcySymbol }) => {
           </thead>
           <tbody>
             {transactions.map(tx => (
-              <tr key={tx.id} className="border-t border-gray-800">
+              <tr key={tx.id} className="border-t border-zinc-800">
                 <td className="p-3 text-gray-400">{new Date(tx.date).toLocaleString()}</td>
                 <td className="p-3">{tx.type}</td>
                 <td className="p-3 font-semibold">{tx.symbol}</td>
                 <td className="p-3 text-right">{formatQty(tx.qty)}</td>
-                <td className="p-3 text-right text-gray-400">{displayCcySymbol === "Rp." ? formatMoney((tx.pricePerUnit || tx.price || 0) * usdIdr, "Rp.") : formatMoney((tx.pricePerUnit || tx.price || 0), "$")}</td>
-                <td className="p-3 text-right">{displayCcySymbol === "Rp." ? formatMoney((tx.cost || tx.proceeds || 0) * usdIdr, "Rp.") : formatMoney((tx.cost || tx.proceeds || 0), "$")}</td>
+                <td className="p-3 text-right text-gray-400">{displayCcySymbol === "Rp." ? "Rp" : displayCcySymbol}{formatMoney((tx.pricePerUnit || tx.price || 0) * (displayCcySymbol === "Rp." ? usdIdr : 1), displayCcySymbol)}</td>
+                <td className="p-3 text-right">{displayCcySymbol === "Rp." ? "Rp" : displayCcySymbol}{formatMoney((tx.cost || tx.proceeds || 0) * (displayCcySymbol === "Rp." ? usdIdr : 1), displayCcySymbol)}</td>
               </tr>
             ))}
             {transactions.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-gray-500">No history</td></tr>}
@@ -1086,7 +1112,7 @@ const BalanceManager = ({ onConfirm, displaySymbol }) => {
     <form onSubmit={(e) => { e.preventDefault(); onConfirm(toNum(amount)); }} className="space-y-4">
       <div>
         <label className="block text-sm font-medium mb-1 text-gray-400">Amount ({displaySymbol})</label>
-        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-gray-900 px-3 py-2 rounded border border-gray-700 text-white" placeholder={displaySymbol === "Rp." ? "e.g. 1000000" : "e.g. 100"} />
+        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" placeholder={displaySymbol === "Rp." ? "e.g. 1000000" : "e.g. 100"} />
       </div>
       <button type="submit" className="w-full py-2.5 rounded font-semibold bg-emerald-600 text-white hover:bg-emerald-500">Confirm</button>
     </form>
@@ -1097,10 +1123,10 @@ const ManagePortfolioSheet = ({ onImportClick, onExportClick, onAddBalance, onWi
   <div className="p-4 text-white text-sm">
     <h3 className="text-base font-semibold mb-4 px-2">Manage Portfolio</h3>
     <div className="space-y-1">
-      <button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Add Balance</button>
-      <button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Withdraw</button>
-      <label className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300 block cursor-pointer">Import CSV<input type="file" accept=".csv" onChange={onImportClick} className="hidden" /></label>
-      <button onClick={onExportClick} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Export CSV</button>
+      <button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Add Balance</button>
+      <button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Withdraw</button>
+      <label className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300 block cursor-pointer">Import CSV<input type="file" accept=".csv" onChange={onImportClick} className="hidden" /></label>
+      <button onClick={onExportClick} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Export CSV</button>
       <button onClick={onClearAll} className="w-full text-left p-2 rounded hover:bg-red-700/20 text-red-400">Erase all data</button>
     </div>
   </div>
@@ -1129,7 +1155,7 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
 
   return (
     <div className="space-y-4">
-      <div className="flex border-b border-gray-700">
+      <div className="flex border-b border-zinc-800">
         {[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (
           <button key={item.key} onClick={() => setSearchMode(item.key)} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>
         ))}
@@ -1138,26 +1164,26 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
       {searchMode !== 'nonliquid' ? (
         <div className="space-y-4">
           <div className="relative">
-            <input value={query} onChange={e => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder="Search by code or name..." className="w-full rounded bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-600 text-white" />
-            {suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-[#1e1e1e] border border-gray-700 rounded max-h-56 overflow-auto">
-              {suggestions.map((s, i) => (<button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-700"><div className="font-medium text-gray-100">{s.symbol}</div><div className="text-xs text-gray-400">{s.display}</div></button>))}
+            <input value={query} onChange={e => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder="Search by code or name..." className="w-full rounded bg-zinc-800 px-3 py-2 text-sm outline-none border border-zinc-700 text-white" />
+            {suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-zinc-800 border border-zinc-700 rounded max-h-56 overflow-auto">
+              {suggestions.map((s, i) => (<button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-zinc-700"><div className="font-medium text-gray-100">{s.symbol}</div><div className="text-xs text-gray-400">{s.display}</div></button>))}
             </div>}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-400">Qty</label>
-              <input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
+              <input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" />
             </div>
             <div>
               <label className="text-xs text-gray-400">Price ({displaySymbol})</label>
-              <input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
+              <input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" />
             </div>
           </div>
 
           <div>
             <label className="text-xs text-gray-400">Total Value ({displaySymbol})</label>
-            <input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
+            <input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" />
           </div>
 
           <div className="flex justify-end">
@@ -1167,18 +1193,18 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input value={nlName} onChange={e => setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlQty} onChange={e => setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlPrice} onChange={e => setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <select value={nlPriceCcy} onChange={e => setNlPriceCcy(e.target.value)} className="rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white">
+            <input value={nlName} onChange={e => setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
+            <input value={nlQty} onChange={e => setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
+            <input value={nlPrice} onChange={e => setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
+            <select value={nlPriceCcy} onChange={e => setNlPriceCcy(e.target.value)} className="rounded bg-zinc-800 px-2 py-2 text-sm border border-zinc-700 text-white">
               <option value="IDR">IDR</option>
               <option value="USD">USD</option>
             </select>
-            <input type="date" value={nlPurchaseDate} onChange={e => setNlPurchaseDate(e.target.value)} className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlYoy} onChange={e => setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+            <input type="date" value={nlPurchaseDate} onChange={e => setNlPurchaseDate(e.target.value)} className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
+            <input value={nlYoy} onChange={e => setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
           </div>
 
-          <input value={nlDesc} onChange={e => setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+          <input value={nlDesc} onChange={e => setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
           <div className="flex justify-end"><button onClick={addNonLiquidAsset} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div>
         </div>
       )}
@@ -1231,29 +1257,29 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={asset.symbol}>
       <div className="space-y-4">
-        <div className="flex bg-gray-800 rounded-full p-1">
+        <div className="flex bg-zinc-800 rounded-full p-1">
           <button onClick={() => setMode('buy')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'buy' ? 'bg-emerald-600 text-white' : 'text-gray-300'}`}>Buy</button>
           <button onClick={() => setMode('sell')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'sell' ? 'bg-red-600 text-white' : 'text-gray-300'}`}>Sell</button>
         </div>
 
         <div>
           <label className="text-xs text-gray-400">Qty</label>
-          <input type="text" value={shares} onChange={e=>handleInputChange('shares', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
+          <input type="text" value={shares} onChange={e=>handleInputChange('shares', e.target.value)} className="w-full mt-1 bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" />
         </div>
 
         <div>
           <label className="text-xs text-gray-400">Price ({displaySymbol})</label>
-          <input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
+          <input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full mt-1 bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" />
         </div>
 
         <div>
           <label className="text-xs text-gray-400">Total ({displaySymbol})</label>
-          <input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
+          <input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full mt-1 bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" />
         </div>
 
         <div className="flex gap-2">
           <button onClick={doSubmit} className={`flex-1 py-2.5 rounded font-semibold text-white ${mode === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}</button>
-          <button onClick={() => onDelete(asset)} title="Delete (liquidate)" className="py-2.5 px-3 rounded bg-gray-700 hover:bg-gray-600 text-white flex items-center gap-2">
+          <button onClick={() => onDelete(asset)} title="Delete (liquidate)" className="py-2.5 px-3 rounded bg-zinc-700 hover:bg-zinc-600 text-white flex items-center gap-2">
             <TrashIcon className="text-white" />
           </button>
         </div>
@@ -1297,12 +1323,12 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
   
   const yAxisLabels = [minVal, minVal + valRange * 0.25, minVal + valRange * 0.5, minVal + valRange * 0.75, maxVal];
   
-  const formatValue = (v) => {
-    if (v >= 1e6) return `${(v / 1e6).toFixed(2)} M`;
-    if (v >= 1e3) return `${(v / 1e3).toFixed(1)} K`;
+  const formatValueForChart = (v) => {
+    if (v >= 1e6) return `${(v / 1e6).toFixed(1)}jt`;
+    if (v >= 1e3) return `${(v / 1e3).toFixed(0)}rb`;
     return Math.round(v);
   }
-  const fmtYLabel = (v) => displaySymbol === "Rp." ? formatValue(v) : `$ ${formatValue(v / usdIdr)}`;
+  const fmtYLabel = (v) => displaySymbol === "Rp." ? formatValueForChart(v) : `$${formatValueForChart(v)}`;
 
   const xAxisLabels = () => {
     const labels = [];
@@ -1343,12 +1369,12 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
             <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
             <defs>
                 <linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#22c55e" stopOpacity={0.24} />
-                <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
+                <stop offset="0%" stopColor="#10B981" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#10B981" stopOpacity={0.05} />
                 </linearGradient>
             </defs>
             <path d={areaPath} fill="url(#areaGradient2)" />
-            <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            <path d={path} fill="none" stroke="#10B981" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
             {yAxisLabels.map((v, idx) => (
                 <g key={idx}>
                 <line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" />
@@ -1361,21 +1387,21 @@ const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
             {hoverData && (
                 <g>
                     <line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" />
-                    <circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#22c55e" stroke="white" strokeWidth="2" />
+                    <circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#10B981" stroke="white" strokeWidth="2" />
                 </g>
             )}
             <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
             </svg>
             {hoverData && (
-                 <div className="absolute p-2 rounded-lg bg-gray-800 text-white text-xs pointer-events-none" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}>
+                 <div className="absolute p-2 rounded-lg bg-zinc-800 text-white text-xs pointer-events-none" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}>
                     <div>{new Date(hoverData.point.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                    <div className="font-bold">{displaySymbol === 'Rp.' ? formatMoney(hoverData.point.v, 'Rp.') : formatMoney(hoverData.point.v / usdIdr, '$')}</div>
+                    <div className="font-bold">{displaySymbol === 'Rp.' ? "Rp" : displaySymbol}{formatMoney(hoverData.point.v, displaySymbol)}</div>
                 </div>
             )}
         </div>
         <div className="flex justify-center gap-2 mt-2">
             {['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (
-                <button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-gray-700 text-white' : 'text-gray-400'}`}>{r}</button>
+                <button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{r}</button>
             ))}
         </div>
     </div>
@@ -1431,8 +1457,8 @@ const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) 
     <div className="mt-8">
       <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3>
       <div className="flex gap-2 mb-4">
-        <button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Equity</button>
-        <button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Sub-Sector</button>
+        <button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>Equity</button>
+        <button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>Sub-Sector</button>
       </div>
 
       <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}>
@@ -1461,7 +1487,7 @@ const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) 
           })}
         </svg>
         <div className="absolute flex flex-col items-center justify-center pointer-events-none">
-          <div className="text-xl font-bold text-white">{formatMoney(totalValueDisplay, displayCcySymbol)}</div>
+          <div className="text-xl font-bold text-white">{displayCcySymbol === 'Rp.' ? "Rp" : displayCcySymbol}{formatMoney(totalValueDisplay, displayCcySymbol)}</div>
           <div className="text-sm text-gray-400">{assetCount} {activeTab === 'Equity' ? 'Items' : 'Sectors'}</div>
         </div>
       </div>
@@ -1474,21 +1500,21 @@ const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) 
           return (
             <div 
               key={i}
-              className={`p-2 rounded-lg transition-colors duration-300 ${isHovered ? 'bg-gray-800' : ''}`}
+              className={`p-2 rounded-lg transition-colors duration-300 ${isHovered ? 'bg-zinc-800' : ''}`}
               onMouseOver={() => setHoveredSegment(d.name)}
               onMouseOut={() => setHoveredSegment(null)}
             >
               <div className="flex justify-between items-center text-sm mb-1">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center font-bold text-white text-xs">{d.name.charAt(0)}</div>
+                  <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{d.name.charAt(0)}</div>
                   <div>
                     <div className="font-semibold text-white">{d.name}</div>
-                    <div className="text-xs text-gray-400">{formatMoney(valueDisplay, displayCcySymbol)}</div>
+                    <div className="text-xs text-gray-400">{displayCcySymbol === 'Rp.' ? "Rp" : displayCcySymbol}{formatMoney(valueDisplay, displayCcySymbol)}</div>
                   </div>
                 </div>
                 <div className="text-white font-semibold">{percentage.toFixed(2)}%</div>
               </div>
-              <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
+              <div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1">
                 <div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div>
               </div>
             </div>
