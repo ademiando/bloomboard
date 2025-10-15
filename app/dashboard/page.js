@@ -21,10 +21,8 @@ const NonLiquidIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill
 /* ===================== Config & Helpers ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_FINANCE_SEARCH_URL = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
-// Using a public CORS proxy to fetch data from Yahoo Finance
 const PROXIED_YAHOO_SEARCH = (q) => `https://api.allorigins.win/raw?url=${encodeURIComponent(YAHOO_FINANCE_SEARCH_URL(q))}`;
 
-// NOTE: Using a public demo token. Replace with your own for production.
 const FINNHUB_TOKEN = "cns0a0pr01qj9b42289gcns0a0pr01qj9b4228a0";
 const FINNHUB_QUOTE = (symbol) => `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_TOKEN}`;
 const COINGECKO_PRICE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd,idr`;
@@ -97,14 +95,19 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
 
 /* ===================== Main Component ===================== */
 export default function PortfolioDashboard() {
-  // Using v14 for new search fix
-  const STORAGE_VERSION = "v14";
+  // Using v15 for major logic overhaul
+  const STORAGE_VERSION = "v15";
   const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_assets_${STORAGE_VERSION}`) || "[]").map(ensureNumericAsset) : []);
-  const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_realized_${STORAGE_VERSION}`) || 0) : 0);
   const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_transactions_${STORAGE_VERSION}`) || "[]") : []);
-  const [tradingBalance, setTradingBalance] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_balance_${STORAGE_VERSION}`) || 0) : 0);
-  const [totalDeposits, setTotalDeposits] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_deposits_${STORAGE_VERSION}`) || 0) : 0);
-  const [totalWithdrawals, setTotalWithdrawals] = useState(() => isBrowser ? toNum(localStorage.getItem(`pf_withdrawals_${STORAGE_VERSION}`) || 0) : 0);
+  
+  // Recalculate financial summaries from transactions to ensure data integrity on load
+  const [financialSummaries, setFinancialSummaries] = useState({
+      realizedUSD: 0,
+      tradingBalance: 0,
+      totalDeposits: 0,
+      totalWithdrawals: 0,
+  });
+
   const [displaySymbol, setDisplaySymbol] = useState(() => isBrowser ? (localStorage.getItem(`pf_display_sym_${STORAGE_VERSION}`) || "Rp") : "Rp");
   
   const [usdIdr, setUsdIdr] = useState(16400);
@@ -125,14 +128,74 @@ export default function PortfolioDashboard() {
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
   const importInputRef = useRef(null);
+  
+  // Centralized recalculation logic
+  const recalculateStateFromTransactions = (txs) => {
+    let newAssets = {};
+    let realizedUSD = 0;
+    let tradingBalance = 0;
+    let totalDeposits = 0;
+    let totalWithdrawals = 0;
 
+    const sortedTxs = [...txs].sort((a, b) => a.date - b.date);
+
+    for (const tx of sortedTxs) {
+      if (tx.type === 'deposit') {
+        tradingBalance += tx.amount;
+        totalDeposits += tx.amount;
+        continue;
+      }
+      if (tx.type === 'withdraw') {
+        tradingBalance -= tx.amount;
+        totalWithdrawals += tx.amount;
+        continue;
+      }
+      
+      const assetId = tx.assetId || `${tx.type}:${tx.symbol}`;
+      
+      if (!newAssets[assetId]) {
+        newAssets[assetId] = ensureNumericAsset({
+          ...tx.assetStub,
+          shares: 0,
+          investedUSD: 0,
+          avgPrice: 0,
+        });
+      }
+      
+      const asset = newAssets[assetId];
+
+      if (tx.type === 'buy') {
+        tradingBalance -= tx.cost * usdIdr;
+        const totalInvested = asset.investedUSD + tx.cost;
+        const totalShares = asset.shares + tx.qty;
+        asset.investedUSD = totalInvested;
+        asset.shares = totalShares;
+        asset.avgPrice = totalShares > 0 ? totalInvested / totalShares : 0;
+      } else if (tx.type === 'sell' || tx.type === 'delete') {
+        tradingBalance += tx.proceeds * usdIdr;
+        realizedUSD += tx.realized;
+        const costOfSold = asset.avgPrice * tx.qty;
+        asset.investedUSD -= costOfSold;
+        asset.shares -= tx.qty;
+      }
+    }
+    
+    setAssets(Object.values(newAssets).filter(a => a.shares > 0.000001));
+    setFinancialSummaries({ realizedUSD, tradingBalance, totalDeposits, totalWithdrawals });
+  };
+
+  // Recalculate everything whenever transactions change
+  useEffect(() => {
+    if(isBrowser) {
+        localStorage.setItem(`pf_transactions_${STORAGE_VERSION}`, JSON.stringify(transactions));
+        recalculateStateFromTransactions(transactions);
+    }
+  }, [transactions, usdIdr]); // Depend on usdIdr to recalculate balance if rate changes
+  
+  // Persist assets and display symbol
   useEffect(() => { if (isBrowser) localStorage.setItem(`pf_assets_${STORAGE_VERSION}`, JSON.stringify(assets)); }, [assets]);
-  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_realized_${STORAGE_VERSION}`, String(realizedUSD)); }, [realizedUSD]);
-  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_transactions_${STORAGE_VERSION}`, JSON.stringify(transactions)); }, [transactions]);
-  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_balance_${STORAGE_VERSION}`, String(tradingBalance)); }, [tradingBalance]);
-  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_deposits_${STORAGE_VERSION}`, String(totalDeposits)); }, [totalDeposits]);
-  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_withdrawals_${STORAGE_VERSION}`, String(totalWithdrawals)); }, [totalWithdrawals]);
   useEffect(() => { if (isBrowser) localStorage.setItem(`pf_display_sym_${STORAGE_VERSION}`, displaySymbol); }, [displaySymbol]);
+
 
   useEffect(() => {
     const fetchFx = async () => {
@@ -168,37 +231,44 @@ export default function PortfolioDashboard() {
       const stockSymbols = [...new Set(assets.filter(a => a.type === "stock").map(a => a.symbol).filter(Boolean))];
       const cryptoIds = [...new Set(assets.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId))];
       const newPrices = {};
+
+      // Batch stock quotes
       for (const symbol of stockSymbols) {
-        try {
-          const res = await fetch(FINNHUB_QUOTE(symbol));
-          const data = await res.json();
-          const c = toNum(data?.c);
-          if (c > 0) newPrices[symbol] = { [symbol.toUpperCase().endsWith('.JK') ? 'idr' : 'usd']: c };
-        } catch (e) {}
+          try {
+              const res = await fetch(FINNHUB_QUOTE(symbol));
+              const data = await res.json();
+              if (data && data.c > 0) {
+                  newPrices[symbol] = data.c;
+              }
+          } catch (e) { console.error(`Failed to fetch price for ${symbol}`, e); }
       }
+
+      // Batch crypto quotes
       if (cryptoIds.length > 0) {
         try {
           const res = await fetch(COINGECKO_PRICE(cryptoIds.join(',')));
           const j = await res.json();
           for (const id of cryptoIds) {
-            if (j[id]) newPrices[id] = { usd: toNum(j[id].usd), idr: toNum(j[id].idr) };
+            if (j[id] && j[id].usd) {
+              const asset = assets.find(a => a.coingeckoId === id);
+              if (asset) newPrices[asset.symbol] = j[id].usd;
+            }
           }
-        } catch (e) {}
+        } catch (e) { console.error("Failed to fetch crypto prices", e); }
       }
-
-      setAssets(prev => prev.map(a => {
-        if (a.type === 'stock' && newPrices[a.symbol]) {
-          const p = newPrices[a.symbol];
-          return { ...a, lastPriceUSD: a.symbol.endsWith('.JK') ? (p.idr / usdIdr) : p.usd };
-        }
-        if (a.type === 'crypto' && a.coingeckoId && newPrices[a.coingeckoId]) {
-          return { ...a, lastPriceUSD: newPrices[a.coingeckoId].usd || a.lastPriceUSD };
-        }
-        return a;
-      }));
+      
+      if (Object.keys(newPrices).length > 0) {
+        setAssets(prev => prev.map(a => {
+            if (newPrices[a.symbol]) {
+                const priceInUSD = a.symbol.endsWith('.JK') ? newPrices[a.symbol] / usdIdr : newPrices[a.symbol];
+                return { ...a, lastPriceUSD: priceInUSD };
+            }
+            return a;
+        }));
+      }
     };
     pollPrices();
-    const id = setInterval(pollPrices, 30000);
+    const id = setInterval(pollPrices, 25000); // Poll more frequently
     return () => clearInterval(id);
   }, [assets.length, usdIdr]);
 
@@ -213,7 +283,8 @@ export default function PortfolioDashboard() {
         const url = searchMode === 'crypto' ? `${COINGECKO_API}/search?query=${encodeURIComponent(q)}` : PROXIED_YAHOO_SEARCH(q);
         const res = await fetch(url);
         if (!res.ok) throw new Error('Search API failed with status: ' + res.status);
-        const j = await res.json();
+        const text = await res.text();
+        const j = JSON.parse(text); // Manually parse JSON after getting text
         
         if (searchMode === 'crypto') {
           setSuggestions((j.coins || []).slice(0, 10).map(c => ({ symbol: c.symbol.toUpperCase(), display: `${c.name} (${c.symbol.toUpperCase()})`, id: c.id, image: c.thumb, source: "coingecko", type: "crypto" })));
@@ -230,29 +301,26 @@ export default function PortfolioDashboard() {
         console.error("Search failed:", e);
         setSuggestions([]);
       }
-    }, 350);
+    }, 400); // Slightly increased delay for better typing experience
 
     return () => clearTimeout(searchTimeoutRef.current);
   }, [query, searchMode]);
 
   /* ===================== Actions ===================== */
+  const addTransaction = (tx) => {
+    setTransactions(prev => [...prev, tx]);
+  };
+  
   const handleBuy = (assetStub, qty, priceUSD) => {
     qty = toNum(qty); priceUSD = toNum(priceUSD);
     if (qty <= 0 || priceUSD <= 0) { alert("Quantity and price must be greater than zero."); return false; }
     const costUSD = qty * priceUSD;
-    if (costUSD * usdIdr > tradingBalance) { alert("Insufficient trading balance."); return false; }
-    const existing = assets.find(a => a.symbol === assetStub.symbol && a.type === assetStub.type);
-    const tx = { id: `tx:${Date.now()}`, type: "buy", qty, pricePerUnit: priceUSD, cost: costUSD, date: Date.now(), symbol: assetStub.symbol, name: assetStub.name || assetStub.symbol };
-    if (existing) {
-      tx.assetId = existing.id;
-      setAssets(prev => prev.map(a => a.id === existing.id ? { ...a, shares: a.shares + qty, investedUSD: a.investedUSD + costUSD, avgPrice: (a.investedUSD + costUSD) / (a.shares + qty) } : a));
-    } else {
-      const newAsset = ensureNumericAsset({ ...assetStub, shares: qty, avgPrice: priceUSD, investedUSD: costUSD });
-      tx.assetId = newAsset.id;
-      setAssets(prev => [...prev, newAsset]);
-    }
-    setTradingBalance(b => b - (costUSD * usdIdr));
-    setTransactions(prev => [tx, ...prev]);
+    if (costUSD * usdIdr > financialSummaries.tradingBalance) { alert("Insufficient trading balance."); return false; }
+    
+    const assetId = assetStub.id || `${assetStub.type}:${assetStub.symbol}`;
+    const tx = { id: `tx:${Date.now()}`, type: "buy", qty, pricePerUnit: priceUSD, cost: costUSD, date: Date.now(), symbol: assetStub.symbol, name: assetStub.name || assetStub.symbol, assetId, assetStub };
+    
+    addTransaction(tx);
     if (tradeModal.open) setTradeModal({ open: false, asset: null });
     return true;
   };
@@ -264,11 +332,10 @@ export default function PortfolioDashboard() {
     const proceedsUSD = qty * priceUSD;
     const costOfSold = qty * asset.avgPrice;
     const realized = proceedsUSD - costOfSold;
+    
     const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "sell", qty, pricePerUnit: priceUSD, proceeds: proceedsUSD, costOfSold, realized, date: Date.now(), symbol: asset.symbol, name: asset.name };
-    setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, shares: a.shares - qty, investedUSD: a.investedUSD - costOfSold } : a).filter(a => a.shares > 0.000001));
-    setTradingBalance(b => b + (proceedsUSD * usdIdr));
-    setRealizedUSD(r => r + realized);
-    setTransactions(prev => [tx, ...prev]);
+
+    addTransaction(tx);
     if (tradeModal.open) setTradeModal({ open: false, asset: null });
     return true;
   };
@@ -277,13 +344,18 @@ export default function PortfolioDashboard() {
     if (!asset || !confirm(`Delete and liquidate ${asset.symbol} at market price? This action cannot be undone.`)) return;
     const marketUSD = asset.shares * asset.lastPriceUSD;
     const realized = marketUSD - asset.investedUSD;
+    
     const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "delete", qty: asset.shares, pricePerUnit: asset.lastPriceUSD, proceeds: marketUSD, costOfSold: asset.investedUSD, realized, date: Date.now(), symbol: asset.symbol, name: asset.name, note: "liquidated" };
-    setAssets(prev => prev.filter(a => a.id !== asset.id));
-    setTradingBalance(b => b + (marketUSD * usdIdr));
-    setRealizedUSD(r => r + realized);
-    setTransactions(prev => [tx, ...prev]);
+    
+    addTransaction(tx);
     setTradeModal({ open: false, asset: null });
   };
+  
+  const handleDeleteTransaction = (txId) => {
+    if (!confirm("Are you sure you want to permanently delete this transaction? This action cannot be undone and will affect your portfolio calculation.")) return;
+    setTransactions(prev => prev.filter(tx => tx.id !== txId));
+  };
+
 
   const addAssetWithInitial = (qty, price) => {
     qty = toNum(qty); price = toNum(price);
@@ -295,7 +367,7 @@ export default function PortfolioDashboard() {
     }
     if (qty <= 0 || price <= 0) { alert("Quantity & price must be > 0"); return; }
     const priceUSD = (displaySymbol === "Rp") ? price / usdIdr : price;
-    const newStub = { id: `${p.source || 'manual'}:${p.symbol||p.id}:${Date.now()}`, type: p.type, symbol: p.symbol, name: p.display, image: p.image, coingeckoId: p.type === 'crypto' ? p.id : undefined };
+    const newStub = { id: `${p.source || 'manual'}:${p.symbol||p.id}`, type: p.type, symbol: p.symbol, name: p.display, image: p.image, coingeckoId: p.type === 'crypto' ? p.id : undefined };
     if (handleBuy(newStub, qty, priceUSD)) {
       setAddAssetModalOpen(false); setQuery(''); setSelectedSuggestion(null); setSuggestions([]);
     }
@@ -305,39 +377,40 @@ export default function PortfolioDashboard() {
     const name = nlName.trim(), qty = toNum(nlQty), priceIn = toNum(nlPrice);
     if (!name || qty <= 0 || priceIn <= 0) { alert("Name, quantity, and price must be filled."); return; }
     const priceUSD = nlPriceCcy === 'IDR' ? priceIn / usdIdr : priceIn;
-    const newAssetStub = { id: `nonliquid:${name.replace(/\s/g,'_')}:${Date.now()}`, type: 'nonliquid', symbol: name.slice(0,8).toUpperCase(), name, purchaseDate: nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now(), nonLiquidYoy: toNum(nlYoy), description: nlDesc };
+    const newAssetStub = { id: `nonliquid:${name.replace(/\s/g,'_')}`, type: 'nonliquid', symbol: name.slice(0,8).toUpperCase(), name, purchaseDate: nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now(), nonLiquidYoy: toNum(nlYoy), description: nlDesc };
     if (handleBuy(newAssetStub, qty, priceUSD)) {
       setAddAssetModalOpen(false); setNlName(''); setNlQty(''); setNlPrice(''); setNlPurchaseDate(''); setNlDesc('');
     }
   };
-
+  
   const handleAddBalance = (amount) => {
-    const amountIDR = displaySymbol === "Rp" ? toNum(amount) : toNum(amount) * usdIdr;
-    setTradingBalance(b => b + amountIDR);
-    setTotalDeposits(d => d + amountIDR);
+    const amountIDR = toNum(amount);
+    const tx = { id: `tx:${Date.now()}`, type: "deposit", amount: amountIDR, date: Date.now() };
+    addTransaction(tx);
     setBalanceModalOpen(false);
   };
   const handleWithdraw = (amount) => {
-    const amountIDR = displaySymbol === "Rp" ? toNum(amount) : toNum(amount) * usdIdr;
-    if (amountIDR > tradingBalance) { alert("Withdrawal amount exceeds balance."); return; }
-    setTradingBalance(b => b - amountIDR);
-    setTotalWithdrawals(w => w + amountIDR);
+    const amountIDR = toNum(amount);
+    if (amountIDR > financialSummaries.tradingBalance) { alert("Withdrawal amount exceeds balance."); return; }
+    const tx = { id: `tx:${Date.now()}`, type: "withdraw", amount: amountIDR, date: Date.now() };
+    addTransaction(tx);
     setBalanceModalOpen(false);
   };
 
   const handleExport = () => {
-    if (assets.length === 0) {
-      alert("Portfolio is empty, nothing to export.");
+    if (transactions.length === 0) {
+      alert("No transactions to export.");
       return;
     }
-    const header = "id,type,symbol,shares,avgPrice,investedUSD,purchaseDate,name,coingeckoId,nonLiquidYoy,description\n";
-    const rows = assets.map(a => [a.id, a.type, a.symbol, a.shares, a.avgPrice, a.investedUSD, a.purchaseDate, `"${a.name || ''}"`, a.coingeckoId || '', a.nonLiquidYoy || '', `"${a.description || ''}"`].join(',')).join('\n');
+    // Simple CSV export for now. Can be made more robust.
+    const header = Object.keys(transactions[0]).join(',') + '\n';
+    const rows = transactions.map(tx => Object.values(tx).map(val => `"${val}"`).join(',')).join('\n');
     const csvContent = header + rows;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `portfolio_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", `transactions_export_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -351,66 +424,12 @@ export default function PortfolioDashboard() {
   };
 
   const handleFileImport = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    if (!confirm("Importing a new file will ERASE your current portfolio. Are you sure you want to continue?")) {
-      event.target.value = null; // Reset input
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target.result;
-        const lines = text.split(/[\r\n]+/).filter(line => line.trim() !== '');
-        if (lines.length < 2) {
-          alert("CSV file is empty or invalid.");
-          return;
-        }
-        const header = lines[0].trim().split(',').map(h => h.trim());
-        if (!header.includes('type') || !header.includes('symbol') || !header.includes('shares')) {
-          alert("Invalid CSV format. Required headers: type, symbol, shares.");
-          return;
-        }
-
-        const headerMap = header.reduce((acc, h, i) => ({ ...acc, [h]: i }), {});
-        
-        const importedAssets = lines.slice(1).map(line => {
-          const values = line.split(','); // NOTE: This is a simple parser, won't handle commas within quotes
-          const assetData = {
-            id: values[headerMap['id']] || `imported:${Date.now()}:${Math.random()}`,
-            type: values[headerMap['type']],
-            symbol: values[headerMap['symbol']],
-            shares: values[headerMap['shares']],
-            avgPrice: values[headerMap['avgPrice']],
-            investedUSD: values[headerMap['investedUSD']],
-            purchaseDate: values[headerMap['purchaseDate']],
-            name: (values[headerMap['name']] || '').replace(/"/g, ''),
-            coingeckoId: values[headerMap['coingeckoId']],
-            nonLiquidYoy: values[headerMap['nonLiquidYoy']],
-            description: (values[headerMap['description']] || '').replace(/"/g, '')
-          };
-          return ensureNumericAsset(assetData);
-        });
-        
-        setAssets(importedAssets);
-        setTransactions([]);
-        setTradingBalance(0);
-        setRealizedUSD(0);
-        setTotalDeposits(0);
-        setTotalWithdrawals(0);
-        alert(`Successfully imported ${importedAssets.length} assets. Other data like transactions and balance have been reset.`);
-      } catch (error) {
-        alert("An error occurred while importing the file. Please check the file format.");
-        console.error("Import error:", error);
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = null; // Reset input for next import
+      // Import logic needs to be carefully considered with the new transaction-based system
+      alert("Import feature is being re-evaluated for the new transaction-based system.");
   };
 
   /* ===================== Derived Data ===================== */
+  const { tradingBalance, realizedUSD, totalDeposits, totalWithdrawals } = financialSummaries;
   const derivedData = useMemo(() => {
     const rows = assets.map(a => {
       const effectiveLastPriceUSD = a.lastPriceUSD > 0 ? a.lastPriceUSD : a.avgPrice;
@@ -425,7 +444,6 @@ export default function PortfolioDashboard() {
     const unrealizedPnlUSD = marketValueUSD - investedUSD;
     const unrealizedPnlPct = investedUSD > 0 ? (unrealizedPnlUSD / investedUSD) * 100 : 0;
     
-    // Total Equity is always calculated in IDR for consistency
     const totalEquity = (marketValueUSD * usdIdr) + tradingBalance;
     
     const sells = transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete');
@@ -458,41 +476,65 @@ export default function PortfolioDashboard() {
       totalEquity, tradeStats, netDeposit, totalPnlUSD,
       equityVsDeposit, cashPct, investedPct 
     };
-  }, [assets, transactions, usdIdr, tradingBalance, realizedUSD, totalDeposits, totalWithdrawals]);
+  }, [assets, tradingBalance, realizedUSD, totalDeposits, totalWithdrawals, transactions, usdIdr]);
 
   /* ===================== Equity Timeline ===================== */
   const equitySeries = useMemo(() => {
-    // This is a simplified timeline calculation. A more accurate one would require historical price data.
     const sortedTx = [...transactions].sort((a, b) => a.date - b.date);
-    if (sortedTx.length === 0) return [{ t: Date.now() - 86400000, v: 0 }, { t: Date.now(), v: derivedData.totalEquity }];
+    if (sortedTx.length === 0) return [{ t: Date.now() - 86400000, v: 0 }, { t: Date.now(), v: 0 }];
 
-    let currentEquity = derivedData.totalEquity;
-    const points = [{ t: Date.now(), v: currentEquity }];
+    const points = [];
+    let currentCash = 0;
+    let currentHoldings = {}; // { [assetId]: { shares, avgPrice } }
 
-    for (let i = sortedTx.length - 1; i >= 0; i--) {
-        const tx = sortedTx[i];
-        if (tx.type === 'buy') {
-            currentEquity += tx.cost * usdIdr;
+    for (const tx of sortedTx) {
+        if (tx.type === 'deposit') {
+            currentCash += tx.amount;
+        } else if (tx.type === 'withdraw') {
+            currentCash -= tx.amount;
+        } else if (tx.type === 'buy') {
+            const costIDR = tx.cost * usdIdr;
+            currentCash -= costIDR;
+            const asset = currentHoldings[tx.assetId] || { shares: 0, avgPrice: 0, invested: 0 };
+            const newInvested = asset.invested + tx.cost;
+            const newShares = asset.shares + tx.qty;
+            asset.invested = newInvested;
+            asset.shares = newShares;
+            asset.avgPrice = newShares > 0 ? newInvested / newShares : 0;
+            currentHoldings[tx.assetId] = asset;
         } else if (tx.type === 'sell' || tx.type === 'delete') {
-            currentEquity -= tx.proceeds * usdIdr;
-            currentEquity += (tx.proceeds - tx.realized) * usdIdr; // Add back the cost basis
+            const proceedsIDR = tx.proceeds * usdIdr;
+            currentCash += proceedsIDR;
+            if (currentHoldings[tx.assetId]) {
+                const asset = currentHoldings[tx.assetId];
+                const costOfSold = asset.avgPrice * tx.qty;
+                asset.invested -= costOfSold;
+                asset.shares -= tx.qty;
+            }
         }
-        points.push({ t: tx.date, v: currentEquity });
+        
+        // Find latest prices for current holdings to calculate market value
+        let holdingsValueUSD = 0;
+        for (const assetId in currentHoldings) {
+            const holding = currentHoldings[assetId];
+            const liveAsset = assets.find(a => a.id === assetId);
+            const price = liveAsset ? liveAsset.lastPriceUSD : holding.avgPrice;
+            holdingsValueUSD += holding.shares * price;
+        }
+
+        const totalEquity = currentCash + (holdingsValueUSD * usdIdr);
+        points.push({ t: tx.date, v: totalEquity });
     }
     
-    const finalPoints = points.reverse();
-    const firstPointTime = finalPoints[0].t;
-    const initialDepositTime = totalDeposits > 0 ? firstPointTime - 86400000 : firstPointTime;
-    
-    finalPoints.unshift({ t: initialDepositTime, v: finalPoints[0].v - derivedData.netDeposit });
-    
-    return finalPoints;
-  }, [transactions, derivedData.totalEquity, derivedData.netDeposit, usdIdr]);
+    if (points.length === 0) return [{ t: Date.now() - 86400000, v: 0 }, { t: Date.now(), v: derivedData.totalEquity }];
+
+    return [{ t: points[0].t - 86400000, v: 0 }, ...points, {t: Date.now(), v: derivedData.totalEquity}];
+  }, [transactions, assets, usdIdr, derivedData.totalEquity]);
 
 
   /* ================ Render ================ */
   if (view === 'performance') {
-    return <PerformancePage {...derivedData} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} portfolioData={derivedData.rows} transactions={transactions} equitySeries={equitySeries} />;
+    return <PerformancePage {...derivedData} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} portfolioData={derivedData.rows} transactions={transactions} equitySeries={equitySeries} onDeleteTransaction={handleDeleteTransaction}/>;
   }
 
   return (
@@ -531,7 +573,12 @@ export default function PortfolioDashboard() {
                     </div>
                 </div>
                 <div className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center">
-                    <div className="grid grid-cols-2 text-center gap-1"><p className="text-gray-400 text-[11px] sm:text-xs">Cash</p><p className="text-gray-400 text-[11px] sm:text-xs">Invested</p><p className="font-semibold text-sm sm:text-lg">{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p><p className="font-semibold text-sm sm:text-lg">{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p></div>
+                    <div className="grid grid-cols-2 text-center gap-1">
+                        <p className="text-gray-400 text-[11px] sm:text-xs">Cash</p>
+                        <p className="text-gray-400 text-[11px] sm:text-xs">Invested</p>
+                        <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
+                        <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
+                    </div>
                     <div className="flex w-full h-1.5 bg-zinc-700/50 rounded-full overflow-hidden my-2"><div className="bg-sky-500" style={{ width: `${derivedData.cashPct}%` }}></div><div className="bg-teal-500" style={{ width: `${derivedData.investedPct}%` }}></div></div>
                     <div className="grid grid-cols-2 text-center text-[11px] sm:text-xs text-gray-300"><p>{derivedData.cashPct.toFixed(0)}%</p><p>{derivedData.investedPct.toFixed(0)}%</p></div>
                 </div>
@@ -566,7 +613,7 @@ export default function PortfolioDashboard() {
         <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)}><AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, usdIdr, displaySymbol}} /></Modal>
         <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)}><BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} displaySymbol={displaySymbol} /></Modal>
         <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({ open: false, asset: null })} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
-        <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}><ManagePortfolioSheet onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data? This cannot be undone.")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); setTotalDeposits(0); setTotalWithdrawals(0); } setManagePortfolioOpen(false); }} onExport={handleExport} onImport={handleImportClick} /></BottomSheet>
+        <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}><ManagePortfolioSheet onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data? This cannot be undone.")) { setTransactions([]); } setManagePortfolioOpen(false); }} onExport={handleExport} onImport={handleImportClick} /></BottomSheet>
         <input type="file" ref={importInputRef} onChange={handleFileImport} className="hidden" accept=".csv" />
       </div>
     </div>
@@ -574,9 +621,9 @@ export default function PortfolioDashboard() {
 }
 
 /* ===================== Performance & Subcomponents ===================== */
-const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats, totalEquity }) => {
+const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats, totalEquity, onDeleteTransaction }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
-  const [chartRange, setChartRange] = useState("All"); // Changed default to "All"
+  const [chartRange, setChartRange] = useState("All"); 
   const [returnPeriod, setReturnPeriod] = useState('Monthly');
   
   const equityReturnData = useMemo(() => {
@@ -632,7 +679,7 @@ const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transa
         ) : activeTab === 'trade' ? (
           <TradeStatsView stats={tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} />
         ) : (
-          <HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} />
+          <HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={onDeleteTransaction} />
         )}
       </div>
     </div>
@@ -716,22 +763,61 @@ const TradeStatsView = ({ stats, transactions, displaySymbol, usdIdr }) => {
     );
 };
 
-const HistoryView = ({ transactions, usdIdr, displaySymbol }) => (
-    <div className="p-4"><div className="overflow-x-auto"><table className="w-full text-sm">
-        <thead className="text-left text-gray-500 text-xs"><tr><th className="p-3">Time</th><th className="p-3">Type</th><th className="p-3">Symbol</th><th className="p-3 text-right">Qty</th><th className="p-3 text-right">Price</th><th className="p-3 text-right">Nominal</th></tr></thead>
-        <tbody>
-            {transactions.map(tx => (<tr key={tx.id} className="border-t border-zinc-800"><td className="p-3 text-gray-400">{new Date(tx.date).toLocaleString()}</td><td className="p-3 capitalize">{tx.type}</td><td className="p-3 font-semibold">{tx.symbol}</td><td className="p-3 text-right">{formatQty(tx.qty)}</td><td className="p-3 text-right text-gray-400">{formatCurrency(tx.pricePerUnit, true, displaySymbol, usdIdr)}</td><td className="p-3 text-right">{formatCurrency((tx.cost || tx.proceeds || 0), true, displaySymbol, usdIdr)}</td></tr>))}
-            {transactions.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-gray-500">No history</td></tr>}
-        </tbody>
-    </table></div></div>
+const HistoryView = ({ transactions, usdIdr, displaySymbol, onDeleteTransaction }) => (
+    <div className="p-4">
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+                <thead className="text-left text-gray-500 text-xs">
+                    <tr>
+                        <th className="p-3">Time</th>
+                        <th className="p-3">Type</th>
+                        <th className="p-3">Detail</th>
+                        <th className="p-3 text-right">Nominal</th>
+                        <th className="p-3 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {[...transactions].sort((a,b) => b.date - a.date).map(tx => (
+                        <tr key={tx.id} className="border-t border-zinc-800">
+                            <td className="p-3 text-gray-400 text-xs">{new Date(tx.date).toLocaleString()}</td>
+                            <td className="p-3 capitalize font-semibold">{tx.type}</td>
+                            <td className="p-3 text-xs">
+                                {tx.type === 'buy' || tx.type === 'sell' || tx.type === 'delete' ? (
+                                    <>
+                                        <div><strong>{tx.symbol}</strong></div>
+                                        <div>{formatQty(tx.qty)} @ {formatCurrency(tx.pricePerUnit, true, displaySymbol, usdIdr)}</div>
+                                    </>
+                                ) : (
+                                    <span>-</span>
+                                )}
+                            </td>
+                            <td className="p-3 text-right">
+                                {formatCurrency(
+                                    tx.type === 'deposit' || tx.type === 'withdraw' ? tx.amount : (tx.cost || tx.proceeds || 0) * usdIdr,
+                                    false, 'Rp', 1
+                                )}
+                            </td>
+                            <td className="p-3 text-right">
+                                <button onClick={() => onDeleteTransaction(tx.id)} className="text-red-500 hover:text-red-400">
+                                    <TrashIcon className="w-4 h-4" />
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                    {transactions.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-gray-500">No history</td></tr>}
+                </tbody>
+            </table>
+        </div>
+    </div>
 );
+
 
 /* ===================== Forms & Modals ===================== */
 const BalanceManager = ({ onConfirm, displaySymbol }) => {
   const [amount, setAmount] = useState('');
   return (
     <form onSubmit={(e) => { e.preventDefault(); onConfirm(amount); }} className="space-y-4">
-      <div><label className="block text-sm font-medium mb-1 text-gray-400">Amount ({displaySymbol})</label><input type="number" step="any" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" placeholder={displaySymbol === "Rp" ? "e.g. 1000000" : "e.g. 100"} /></div>
+      <div><label className="block text-sm font-medium mb-1 text-gray-400">Amount (dalam Rupiah)</label><input type="number" step="any" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" placeholder="e.g. 1000000" /></div>
       <button type="submit" className="w-full py-2.5 rounded font-semibold bg-emerald-600 text-white hover:bg-emerald-500">Confirm</button>
     </form>
   );
@@ -833,7 +919,7 @@ const AreaChart = ({ data: chartData, displaySymbol, range, setRange, showTimefr
   const filteredData = chartData.filter(d => d.t >= startTime.getTime());
   const data = useMemo(() => {
       if(filteredData.length === 0) return [{t: startTime.getTime(), v: 0}, {t: now.getTime(), v: 0}];
-      if(filteredData[0].t > startTime.getTime()){
+      if(filteredData[0].t > startTime.getTime() && filteredData.length > 0){
           return [{t: startTime.getTime(), v: filteredData[0].v}, ...filteredData];
       }
       return filteredData;
