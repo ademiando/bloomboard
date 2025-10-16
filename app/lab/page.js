@@ -599,7 +599,7 @@ export default function PortfolioDashboard() {
                         <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
                         <p className="text-xl sm:text-3xl font-bold text-white leading-tight">{formatCurrency(derivedData.totalEquity, false, displaySymbol, usdIdr)}</p>
                         <p className="text-xs text-gray-500">{formatCurrency(derivedData.totalEquity, false, displaySymbol === 'Rp' ? '$' : 'Rp', usdIdr)}</p>
-                        <div className="h-10 w-full mt-2 opacity-70">
+                        <div className="h-6 w-full mt-2 opacity-70">
                             <MiniAreaChart data={equitySeries} />
                         </div>
                     </div>
@@ -609,19 +609,27 @@ export default function PortfolioDashboard() {
                     </div>
                 </div>
                 <div onClick={() => setView('allocationDetail')} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center cursor-pointer hover:border-zinc-700 transition-colors">
-                    <div className="flex items-center justify-around">
-                        <div className="text-center">
-                           <p className="text-gray-400 text-[11px] sm:text-xs">Cash</p>
-                           <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
-                           <p className="text-[11px] sm:text-xs text-gray-300">{derivedData.cashPct.toFixed(0)}%</p>
+                    <div className="flex flex-col h-full justify-between">
+                        <div className="flex justify-between text-[11px] sm:text-xs">
+                            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500"></span><span className="text-gray-400">Cash</span></div>
+                            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-teal-500"></span><span className="text-gray-400">Invested</span></div>
                         </div>
-                         <div className="w-16 h-16">
-                            <MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} />
+                        <div className="w-full bg-zinc-800 rounded-full h-2 my-2 flex overflow-hidden">
+                            <div className="bg-sky-500 h-2" style={{ width: `${derivedData.cashPct}%` }} title={`Cash: ${derivedData.cashPct.toFixed(1)}%`}></div>
+                            <div className="bg-teal-500 h-2" style={{ width: `${derivedData.investedPct}%` }} title={`Invested: ${derivedData.investedPct.toFixed(1)}%`}></div>
                         </div>
-                        <div className="text-center">
-                           <p className="text-gray-400 text-[11px] sm:text-xs">Invested</p>
-                           <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
-                           <p className="text-[11px] sm:text-xs text-gray-300">{derivedData.investedPct.toFixed(0)}%</p>
+                        <div className="flex justify-between items-end">
+                            <div>
+                                <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
+                                <p className="text-[11px] sm:text-xs text-gray-300">{derivedData.cashPct.toFixed(0)}%</p>
+                            </div>
+                            <div className="w-8 h-8">
+                                <MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} size={32} />
+                            </div>
+                            <div className="text-right">
+                                <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
+                                <p className="text-[11px] sm:text-xs text-gray-300">{derivedData.investedPct.toFixed(0)}%</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1005,7 +1013,7 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 /* ===================== Charts ===================== */
 const MiniAreaChart = ({ data }) => {
     if (!data || data.length < 2) return null;
-    const width = 100, height = 40;
+    const width = 100, height = 30; // Reduced height for a smaller look
     const yValues = data.map(d => d.v);
     const minVal = Math.min(...yValues);
     const maxVal = Math.max(...yValues);
@@ -1014,7 +1022,24 @@ const MiniAreaChart = ({ data }) => {
     const timeEnd = data[data.length - 1].t;
     const xScale = (t) => ((t - timeStart) / (timeEnd - timeStart || 1)) * width;
     const yScale = (v) => (1 - (v - minVal) / valRange) * height;
-    const path = data.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
+
+    const createSplinePath = (data) => {
+        const points = data.map(p => [xScale(p.t), yScale(p.v)]);
+        let path = `M ${points[0][0]},${points[0][1]}`;
+        for (let i = 0; i < points.length - 1; i++) {
+            const x_mid = (points[i][0] + points[i+1][0]) / 2;
+            const y_mid = (points[i][1] + points[i+1][1]) / 2;
+            const cp_x1 = (x_mid + points[i][0]) / 2;
+            const cp_y1 = (y_mid + points[i][1]) / 2;
+            const cp_x2 = (x_mid + points[i+1][0]) / 2;
+            const cp_y2 = (y_mid + points[i+1][1]) / 2;
+            path += ` Q ${cp_x1},${points[i][1]} ${x_mid},${y_mid}`;
+            path += ` Q ${cp_x2},${points[i+1][1]} ${points[i+1][0]},${points[i+1][1]}`;
+        }
+        return path;
+    };
+    
+    const path = createSplinePath(data);
     const areaPath = `${path} L${width},${height} L0,${height} Z`;
     const isUp = data[data.length - 1].v >= data[0].v;
     const strokeColor = isUp ? "#10B981" : "#F87171";
@@ -1024,19 +1049,18 @@ const MiniAreaChart = ({ data }) => {
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
             <defs>
                 <linearGradient id="miniAreaGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor={gradientColor} stopOpacity={0.3} />
+                    <stop offset="0%" stopColor={gradientColor} stopOpacity={0.4} />
                     <stop offset="100%" stopColor={gradientColor} stopOpacity={0} />
                 </linearGradient>
             </defs>
             <path d={areaPath} fill="url(#miniAreaGradient)" />
-            <path d={path} fill="none" stroke={strokeColor} strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" />
+            <path d={path} fill="none" stroke={strokeColor} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
         </svg>
     );
 };
 
-const MiniDonutChart = ({ cashPct, investedPct }) => {
-    const size = 64; // Corresponds to w-16 h-16
-    const strokeWidth = 8;
+const MiniDonutChart = ({ cashPct, investedPct, size = 64 }) => {
+    const strokeWidth = size / 8;
     const radius = (size / 2) - (strokeWidth / 2);
     const circumference = 2 * Math.PI * radius;
 
