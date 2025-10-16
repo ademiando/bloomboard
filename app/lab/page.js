@@ -6,7 +6,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 /* ===================== Icons ===================== */
 const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#374151"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" fill="#9CA3AF"></path></svg>);
 const MoreVerticalIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>);
-const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>);
 const BackArrowIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
 const TrashIcon = ({className}) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
 const ArrowUpIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/></svg>;
@@ -611,23 +610,23 @@ export default function PortfolioDashboard() {
                 <div onClick={() => setView('allocationDetail')} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center cursor-pointer hover:border-zinc-700 transition-colors">
                      <div className="flex flex-col h-full justify-between">
                         <div className="flex justify-between text-[11px] sm:text-xs">
-                            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500"></span><span className="text-gray-400">Cash</span></div>
-                            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-teal-500"></span><span className="text-gray-400">Invested</span></div>
+                            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-400"></span><span className="text-gray-400">Cash</span></div>
+                            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><span className="text-gray-400">Invested</span></div>
                         </div>
-                        <div className="flex justify-between items-end mt-2">
-                           <p className="font-semibold text-white text-xs sm:text-sm">{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
-                           <p className="font-semibold text-white text-xs sm:text-sm text-right">{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
+                         <div className="flex justify-between items-center mt-2">
+                           <p className="font-semibold text-white text-[11px] sm:text-xs">{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
+                           <p className="font-semibold text-white text-[11px] sm:text-xs text-right">{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
                         </div>
-                        <div className="w-full bg-zinc-800 rounded-full h-1.5 my-1 flex overflow-hidden">
-                            <div className="bg-sky-500 h-1.5" style={{ width: `${derivedData.cashPct}%` }} title={`Cash: ${derivedData.cashPct.toFixed(1)}%`}></div>
-                            <div className="bg-teal-500 h-1.5" style={{ width: `${derivedData.investedPct}%` }} title={`Invested: ${derivedData.investedPct.toFixed(1)}%`}></div>
+                        <div className="w-full bg-zinc-800 rounded-full h-1.5 my-1.5 flex overflow-hidden">
+                            <div className="bg-sky-400 h-1.5" style={{ width: `${derivedData.cashPct}%` }} title={`Cash: ${derivedData.cashPct.toFixed(1)}%`}></div>
+                            <div className="bg-emerald-400 h-1.5" style={{ width: `${derivedData.investedPct}%` }} title={`Invested: ${derivedData.investedPct.toFixed(1)}%`}></div>
                         </div>
                         <div className="flex justify-between items-center">
-                            <p className="text-[11px] text-gray-400">{derivedData.cashPct.toFixed(0)}%</p>
-                            <div className="w-5 h-5 mx-1">
-                                <MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} size={20} />
+                            <p className="text-[10px] text-gray-400">{derivedData.cashPct.toFixed(0)}%</p>
+                            <div className="w-4 h-4 mx-1">
+                                <MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} size={16} />
                             </div>
-                            <p className="text-[11px] text-gray-400">{derivedData.investedPct.toFixed(0)}%</p>
+                            <p className="text-[10px] text-gray-400">{derivedData.investedPct.toFixed(0)}%</p>
                         </div>
                     </div>
                 </div>
@@ -1009,9 +1008,32 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 };
 
 /* ===================== Charts ===================== */
+// New helper function for creating a Catmull-Rom spline path
+function createSplinePath(points, tension = 0.5) {
+    if (points.length < 2) return "";
+    let path = `M ${points[0].x},${points[0].y}`;
+    const pts = [points[0], ...points, points[points.length - 1]];
+
+    for (let i = 1; i < pts.length - 2; i++) {
+        const p0 = pts[i - 1];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = pts[i + 2];
+
+        const cp1x = p1.x + (p2.x - p0.x) / 6 * tension;
+        const cp1y = p1.y + (p2.y - p0.y) / 6 * tension;
+        const cp2x = p2.x - (p3.x - p1.x) / 6 * tension;
+        const cp2y = p2.y - (p3.y - p1.y) / 6 * tension;
+        
+        path += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+    }
+    return path;
+}
+
+
 const MiniAreaChart = ({ data }) => {
     if (!data || data.length < 2) return null;
-    const width = 100, height = 30; // Reduced height for a smaller look
+    const width = 100, height = 30;
     const yValues = data.map(d => d.v);
     const minVal = Math.min(...yValues);
     const maxVal = Math.max(...yValues);
@@ -1019,35 +1041,10 @@ const MiniAreaChart = ({ data }) => {
     const timeStart = data[0].t;
     const timeEnd = data[data.length - 1].t;
     const xScale = (t) => ((t - timeStart) / (timeEnd - timeStart || 1)) * width;
-    const yScale = (v) => (1 - (v - minVal) / valRange) * height;
-
-    // Function to create a smooth spline path
-    const createSplinePath = (points) => {
-        let path = `M${points[0].x},${points[0].y}`;
-        for (let i = 0; i < points.length - 1; i++) {
-            const x1 = points[i].x;
-            const y1 = points[i].y;
-            const x2 = points[i+1].x;
-            const y2 = points[i+1].y;
-
-            const tension = 0.4;
-            const dx = x2 - x1;
-            
-            const p0 = i > 0 ? points[i-1] : points[i];
-            const p3 = i < points.length - 2 ? points[i+2] : points[i+1];
-
-            const c1x = x1 + dx * tension;
-            const c1y = y1 + (y2 - p0.y) * tension / 2;
-            const c2x = x2 - dx * tension;
-            const c2y = y2 - (p3.y - y1) * tension / 2;
-            
-            path += ` C ${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}`;
-        }
-        return path;
-    };
+    const yScale = (v) => height - ((v - minVal) / valRange) * height;
     
     const chartPoints = data.map(p => ({ x: xScale(p.t), y: yScale(p.v) }));
-    const path = createSplinePath(chartPoints);
+    const path = createSplinePath(chartPoints, 1); // Using tension 1 for more curve
     const areaPath = `${path} L${width},${height} L0,${height} Z`;
     const isUp = data[data.length - 1].v >= data[0].v;
     const strokeColor = isUp ? "#10B981" : "#F87171";
@@ -1068,7 +1065,7 @@ const MiniAreaChart = ({ data }) => {
 };
 
 const MiniDonutChart = ({ cashPct, investedPct, size = 64 }) => {
-    const strokeWidth = size / 6;
+    const strokeWidth = size / 5;
     const radius = (size / 2) - (strokeWidth / 2);
     const circumference = 2 * Math.PI * radius;
 
@@ -1078,8 +1075,8 @@ const MiniDonutChart = ({ cashPct, investedPct, size = 64 }) => {
     return (
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
             <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#3f3f46" strokeWidth={strokeWidth} />
-            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#0ea5e9" strokeWidth={strokeWidth} strokeDasharray={`${cashArc} ${circumference}`} strokeLinecap="round" />
-            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#14b8a6" strokeWidth={strokeWidth} strokeDasharray={`${investedArc} ${circumference}`} strokeDashoffset={-cashArc} strokeLinecap="round" />
+            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#38bdf8" strokeWidth={strokeWidth} strokeDasharray={`${cashArc} ${circumference}`} strokeLinecap="round" />
+            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#2dd4bf" strokeWidth={strokeWidth} strokeDasharray={`${investedArc} ${circumference}`} strokeDashoffset={-cashArc} strokeLinecap="round" />
         </svg>
     );
 };
@@ -1117,8 +1114,11 @@ const AreaChart = ({ data: chartData, displaySymbol, range, setRange, showTimefr
   const timeEnd = data[data.length - 1].t;
   const xScale = (t) => padding.left + ((t - timeStart) / (timeEnd - timeStart || 1)) * (width - padding.left - padding.right);
   const yScale = (v) => padding.top + (1 - (v - minVal) / valRange) * (height - padding.top - padding.bottom);
-  const path = data.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
-  const areaPath = `${path} L${xScale(timeEnd)},${height - padding.bottom} L${xScale(timeStart)},${height - padding.bottom} Z`;
+  
+  const chartPoints = data.map(p => ({ x: xScale(p.t), y: yScale(p.v) }));
+  const path = createSplinePath(chartPoints, 1);
+  const areaPath = `${path} L${width - padding.right},${height - padding.bottom} L${padding.left},${height - padding.bottom} Z`;
+  
   const yAxisLabels = Array.from({length: 5}, (_, i) => minVal + (valRange / 4) * i);
   
   const formatValueForChart = (v) => {
@@ -1165,6 +1165,8 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
   const [activeTab, setActiveTab] = useState('Equity');
   const [hoveredSegment, setHoveredSegment] = useState(null);
 
+  const softPastelColors = ['#7dd3fc', '#6ee7b7', '#fde047', '#f0abfc', '#fdba74', '#a5b4fc', '#d8b4fe', '#f9a8d4'];
+
   const { equityData, sectorData } = useMemo(() => {
     const eqData = fullAssetData
       .filter(d => d.type === 'stock' || d.type === 'crypto')
@@ -1172,9 +1174,9 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
       .sort((a,b)=>b.value-a.value);
 
     const secData = {
-      'Equity': { value: 0, color: '#10B981', icon: <EquityIcon /> },
-      'Crypto': { value: 0, color: '#3B82F6', icon: <CryptoIcon /> },
-      'Non-Liquid': { value: 0, color: '#F97316', icon: <NonLiquidIcon /> }
+      'Equity': { value: 0, color: softPastelColors[1], icon: <EquityIcon /> },
+      'Crypto': { value: 0, color: softPastelColors[0], icon: <CryptoIcon /> },
+      'Non-Liquid': { value: 0, color: softPastelColors[4], icon: <NonLiquidIcon /> }
     };
     fullAssetData.forEach(asset => {
       if (asset.type === 'stock') secData['Equity'].value += asset.marketValueUSD;
@@ -1194,8 +1196,7 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
   if (!totalValueUSD) return <div className="mt-8 text-center text-gray-500">No assets to show in allocation.</div>;
 
   const totalValueDisplay = displaySymbol === "Rp" ? totalValueUSD * usdIdr : totalValueUSD;
-  const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth;
-  const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"];
+  const size = 200, strokeWidth = 25, innerRadius = (size / 2) - strokeWidth;
   let accumulatedAngle = 0;
 
   return (
@@ -1204,11 +1205,28 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
       <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div>
       <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
-          {data.map((d, i) => {
-            const angle = (d.value / totalValueUSD) * 360;
-            const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color || colors[i % colors.length]} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>);
-            accumulatedAngle += angle; return segment;
-          })}
+          <g>
+            {data.map((d, i) => {
+              const angle = (d.value / totalValueUSD) * 360;
+              const segment = (
+                <circle 
+                    key={i} 
+                    cx={size/2} cy={size/2} r={innerRadius} 
+                    fill="transparent" 
+                    stroke={d.color || softPastelColors[i % softPastelColors.length]} 
+                    strokeWidth={strokeWidth} 
+                    strokeDasharray={`${(angle) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} 
+                    strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} 
+                    className="transition-all duration-300"
+                    style={{transformOrigin: 'center center', transform: hoveredSegment === d.name ? 'scale(1.05)' : 'scale(1)'}}
+                    onMouseOver={() => setHoveredSegment(d.name)} 
+                    onMouseOut={() => setHoveredSegment(null)}
+                />
+              );
+              accumulatedAngle += angle; 
+              return segment;
+            })}
+          </g>
         </svg>
         <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{formatCurrency(totalValueDisplay, false, displaySymbol, 1)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div>
       </div>
@@ -1216,7 +1234,7 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
         <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">
           {d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}
         </div>
-        <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div>
+        <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || softPastelColors[i % softPastelColors.length] }}></div></div></div>); })}</div>
     </div>
   );
 };
