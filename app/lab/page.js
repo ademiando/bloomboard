@@ -37,12 +37,43 @@ function formatCurrency(value, valueIsUSD, displaySymbol, usdIdr) {
   let displayValue;
   if (displaySymbol === '$') {
     displayValue = valueIsUSD ? value : value / usdIdr;
-    return `$${displayValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    const options = {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    };
+    if (Math.abs(displayValue) > 0 && Math.abs(displayValue) < 1) {
+      options.minimumFractionDigits = 6;
+      options.maximumFractionDigits = 6;
+    }
+    return `$${displayValue.toLocaleString('en-US', options)}`;
   } else { // 'Rp'
     displayValue = valueIsUSD ? value * usdIdr : value;
     return `Rp ${Math.round(displayValue).toLocaleString('id-ID')}`;
   }
 }
+
+function formatCurrencyShort(value, valueIsUSD, displaySymbol, usdIdr) {
+  let displayValue;
+  if (displaySymbol === '$') {
+    displayValue = valueIsUSD ? value : value / usdIdr;
+  } else { // 'Rp'
+    displayValue = valueIsUSD ? value * usdIdr : value;
+  }
+
+  let formatted;
+  if (Math.abs(displayValue) >= 1e9) {
+    formatted = (displayValue / 1e9).toFixed(2) + 'B';
+  } else if (Math.abs(displayValue) >= 1e6) {
+    formatted = (displayValue / 1e6).toFixed(2) + 'M';
+  } else if (Math.abs(displayValue) >= 1e3) {
+    formatted = (displayValue / 1e3).toFixed(1) + 'K';
+  } else {
+    formatted = Math.round(displayValue);
+  }
+  
+  return displaySymbol === '$' ? `$${formatted}` : `Rp ${formatted}`;
+}
+
 
 function formatQty(v) {
   const n = Number(v || 0);
@@ -267,7 +298,13 @@ export default function PortfolioDashboard() {
 
   const { tradingBalance, realizedUSD, totalDeposits, totalWithdrawals } = financialSummaries;
   const derivedData = useMemo(() => {
-    const rows = assets.map(a => { const marketValueUSD = a.shares * a.lastPriceUSD; const pnlUSD = marketValueUSD - a.investedUSD; const pnlPct = a.investedUSD > 0 ? (pnlUSD / a.investedUSD) * 100 : 0; return { ...a, marketValueUSD, pnlUSD, pnlPct }; });
+    const rows = assets.map(a => {
+        const currentPrice = a.lastPriceUSD > 0 ? a.lastPriceUSD : a.avgPrice;
+        const marketValueUSD = a.shares * currentPrice;
+        const pnlUSD = marketValueUSD - a.investedUSD;
+        const pnlPct = a.investedUSD > 0 ? (pnlUSD / a.investedUSD) * 100 : 0;
+        return { ...a, marketValueUSD, pnlUSD, pnlPct, lastPriceUSD: currentPrice };
+    });
     const investedUSD = rows.reduce((s, r) => s + r.investedUSD, 0);
     const marketValueUSD = rows.reduce((s, r) => s + r.marketValueUSD, 0);
     const unrealizedPnlUSD = marketValueUSD - investedUSD;
@@ -335,20 +372,48 @@ export default function PortfolioDashboard() {
                     <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
                     <p className="text-xl sm:text-3xl font-bold text-white">{formatCurrency(derivedData.totalEquity, false, displaySymbol, usdIdr)}</p>
                     <p className="text-xs text-gray-400 -mt-1">{displaySymbol === 'Rp' ? formatCurrency(derivedData.totalEquity, false, '$', usdIdr) : formatCurrency(derivedData.totalEquity, true, 'Rp', usdIdr, usdIdr)}</p>
-                    <div className="h-20 -mb-4 -mx-4"><AreaChart data={equitySeries} simplified={true}/></div>
+                     <div className="text-[10px] sm:text-xs mt-2 space-y-1 text-gray-400 border-t border-zinc-800/50 pt-2">
+                        <div className="flex justify-between">
+                            <span>Net Deposit</span>
+                            <span className="font-medium text-gray-300">{formatCurrency(derivedData.netDeposit, false, displaySymbol, usdIdr)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>Total G/L</span>
+                            <span className={`font-semibold ${derivedData.totalPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {formatCurrency(derivedData.totalPnlUSD, true, displaySymbol, usdIdr)}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="h-16 -mb-4 -mx-4 mt-2"><AreaChart data={equitySeries} simplified={true}/></div>
                 </div>
                 <div onClick={() => setIsAllocationModalOpen(true)} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center cursor-pointer hover:border-zinc-700 transition-colors">
                     <div className="grid grid-cols-2 text-center gap-1">
                         <p className="text-gray-400 text-[11px] sm:text-xs">Cash</p>
                         <p className="text-gray-400 text-[11px] sm:text-xs">Invested</p>
-                        <p className="font-semibold text-sm sm:text-lg">{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
-                        <p className="font-semibold text-sm sm:text-lg">{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
+                        <p className="font-semibold text-sm sm:text-base -mt-1">{formatCurrencyShort(tradingBalance, false, displaySymbol, usdIdr)}</p>
+                        <p className="font-semibold text-sm sm:text-base -mt-1">{formatCurrencyShort(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
                     </div>
-                    <div className="flex w-full h-1.5 bg-zinc-700/50 rounded-full overflow-hidden my-2"><div className="bg-sky-500" style={{ width: `${derivedData.cashPct}%` }}></div><div className="bg-teal-500" style={{ width: `${derivedData.investedPct}%` }}></div></div>
-                    <div className="text-center text-[11px] sm:text-xs text-gray-400 mt-2">Unrealized <span className={`font-semibold ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCurrency(derivedData.totals.unrealizedPnlUSD, true, displaySymbol, usdIdr)}</span></div>
+                    <div className="relative w-full h-4 bg-zinc-700/50 rounded-full my-2 flex text-[10px] font-bold text-white items-center">
+                        <div className="bg-sky-500 h-full flex items-center justify-center rounded-l-full" style={{ width: `${derivedData.cashPct}%` }}>
+                            {derivedData.cashPct > 15 && `${derivedData.cashPct.toFixed(0)}%`}
+                        </div>
+                        <div className="bg-teal-500 h-full flex items-center justify-center rounded-r-full" style={{ width: `${derivedData.investedPct}%` }}>
+                            {derivedData.investedPct > 15 && `${derivedData.investedPct.toFixed(0)}%`}
+                        </div>
+                    </div>
+                    <div className="text-center text-gray-400 mt-1">
+                        <p className="text-[10px] sm:text-xs">Unrealized P&L</p>
+                        <p className={`font-semibold text-sm ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {formatCurrency(derivedData.totals.unrealizedPnlUSD, true, displaySymbol, usdIdr)}
+                        </p>
+                        <p className={`font-semibold text-xs ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {derivedData.totals.unrealizedPnlUSD >= 0 ? '+' : ''}{derivedData.totals.unrealizedPnlPct.toFixed(2)}%
+                        </p>
+                    </div>
                 </div>
                 <div onClick={() => setIsHistoryModalOpen(true)} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg cursor-pointer hover:border-zinc-700 transition-colors">
-                    <div className="mt-2 text-[11px] sm:text-xs space-y-2">
+                     <p className="text-gray-500 text-[10px] sm:text-xs mb-2">Summary</p>
+                    <div className="text-[11px] sm:text-xs space-y-2">
                         <div className="flex justify-between items-center"><span className="text-gray-400">Deposit</span><span className="font-medium">{formatCurrency(totalDeposits, false, displaySymbol, usdIdr)}</span></div>
                         <div className="flex justify-between items-center"><span className="text-gray-400">Withdraw</span><span className="font-medium">{formatCurrency(totalWithdrawals, false, displaySymbol, usdIdr)}</span></div>
                         <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Realized P&L</span><span className={`font-semibold ${realizedUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{realizedUSD >= 0 ? '+' : ''}{formatCurrency(realizedUSD, true, displaySymbol, usdIdr)}</span></div>
@@ -400,8 +465,6 @@ export default function PortfolioDashboard() {
     </div>
   );
 }
-
-// ... The rest of the components (PerformancePage, EquityGrowthView, TradeStatsView, etc.) remain largely the same, but AreaChart needs the 'simplified' prop logic.
 
 /* ===================== Charts ===================== */
 const AreaChart = ({ data: chartData, simplified = false, displaySymbol, range, setRange, showTimeframes = true }) => {
@@ -478,10 +541,6 @@ const AreaChart = ({ data: chartData, simplified = false, displaySymbol, range, 
   );
 };
 
-
-// Other components like EquityGrowthView, TradeStatsView, etc. would follow here.
-// They are mostly unchanged from the previous version, so I'll omit them for brevity, but they are included in the complete file.
-// Let's add them back in to be complete.
 const PerformancePage = ({ setView, tradeStats, transactions, displaySymbol, usdIdr }) => {
     return ( <div className="bg-black text-gray-300 min-h-screen font-sans"> <div className="max-w-4xl mx-auto"> <header className="p-4 flex items-center gap-4 sticky top-0 bg-black z-10"> <button onClick={() => setView('main')} className="text-white"><BackArrowIcon /></button> <h1 className="text-lg font-semibold text-white">Trade Performance</h1> </header> <TradeStatsView stats={tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} /> </div> </div> );
 };
@@ -539,7 +598,7 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
     const data = activeTab === 'Equity' ? equityData : sectorData; const totalValueUSD = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
     if (!totalValueUSD) return <div className="mt-8 text-center text-gray-500">No assets to show in allocation.</div>;
     const totalValueDisplay = displaySymbol === "Rp" ? totalValueUSD * usdIdr : totalValueUSD; const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth; const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"]; let accumulatedAngle = 0;
-    return ( <div className="p-1 max-h-[70vh] overflow-y-auto"> <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3> <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div> <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}> <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90"> {data.map((d, i) => { const angle = (d.value / totalValueUSD) * 360; const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color || colors[i % colors.length]} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); accumulatedAngle += angle; return segment; })} </svg> <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{formatCurrency(totalValueDisplay, false, displaySymbol, 1)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div> </div> <div className="space-y-2">{data.map((d, i) => { const percentage = (d.value / totalValueUSD) * 100; const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3"> <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}</div> <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div> </div> );
+    return ( <div className="p-1 max-h-[70vh] overflow-y-auto"> <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3> <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div> <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}> <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90"> {data.map((d, i) => { const angle = totalValueUSD > 0 ? (d.value / totalValueUSD) * 360 : 0; const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color || colors[i % colors.length]} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); accumulatedAngle += angle; return segment; })} </svg> <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{formatCurrencyShort(totalValueDisplay, false, displaySymbol, 1)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div> </div> <div className="space-y-2">{data.map((d, i) => { const percentage = totalValueUSD > 0 ? (d.value / totalValueUSD) * 100 : 0; const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3"> <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}</div> <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div> </div> );
 };
 
 
