@@ -609,27 +609,25 @@ export default function PortfolioDashboard() {
                     </div>
                 </div>
                 <div onClick={() => setView('allocationDetail')} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center cursor-pointer hover:border-zinc-700 transition-colors">
-                    <div className="flex flex-col h-full justify-between">
+                     <div className="flex flex-col h-full justify-between">
                         <div className="flex justify-between text-[11px] sm:text-xs">
                             <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500"></span><span className="text-gray-400">Cash</span></div>
                             <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-teal-500"></span><span className="text-gray-400">Invested</span></div>
                         </div>
-                        <div className="w-full bg-zinc-800 rounded-full h-2 my-2 flex overflow-hidden">
-                            <div className="bg-sky-500 h-2" style={{ width: `${derivedData.cashPct}%` }} title={`Cash: ${derivedData.cashPct.toFixed(1)}%`}></div>
-                            <div className="bg-teal-500 h-2" style={{ width: `${derivedData.investedPct}%` }} title={`Invested: ${derivedData.investedPct.toFixed(1)}%`}></div>
+                        <div className="flex justify-between items-end mt-2">
+                           <p className="font-semibold text-white text-xs sm:text-sm">{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
+                           <p className="font-semibold text-white text-xs sm:text-sm text-right">{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
                         </div>
-                        <div className="flex justify-between items-end">
-                            <div>
-                                <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
-                                <p className="text-[11px] sm:text-xs text-gray-300">{derivedData.cashPct.toFixed(0)}%</p>
+                        <div className="w-full bg-zinc-800 rounded-full h-1.5 my-1 flex overflow-hidden">
+                            <div className="bg-sky-500 h-1.5" style={{ width: `${derivedData.cashPct}%` }} title={`Cash: ${derivedData.cashPct.toFixed(1)}%`}></div>
+                            <div className="bg-teal-500 h-1.5" style={{ width: `${derivedData.investedPct}%` }} title={`Invested: ${derivedData.investedPct.toFixed(1)}%`}></div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <p className="text-[11px] text-gray-400">{derivedData.cashPct.toFixed(0)}%</p>
+                            <div className="w-5 h-5 mx-1">
+                                <MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} size={20} />
                             </div>
-                            <div className="w-8 h-8">
-                                <MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} size={32} />
-                            </div>
-                            <div className="text-right">
-                                <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
-                                <p className="text-[11px] sm:text-xs text-gray-300">{derivedData.investedPct.toFixed(0)}%</p>
-                            </div>
+                            <p className="text-[11px] text-gray-400">{derivedData.investedPct.toFixed(0)}%</p>
                         </div>
                     </div>
                 </div>
@@ -1023,23 +1021,33 @@ const MiniAreaChart = ({ data }) => {
     const xScale = (t) => ((t - timeStart) / (timeEnd - timeStart || 1)) * width;
     const yScale = (v) => (1 - (v - minVal) / valRange) * height;
 
-    const createSplinePath = (data) => {
-        const points = data.map(p => [xScale(p.t), yScale(p.v)]);
-        let path = `M ${points[0][0]},${points[0][1]}`;
+    // Function to create a smooth spline path
+    const createSplinePath = (points) => {
+        let path = `M${points[0].x},${points[0].y}`;
         for (let i = 0; i < points.length - 1; i++) {
-            const x_mid = (points[i][0] + points[i+1][0]) / 2;
-            const y_mid = (points[i][1] + points[i+1][1]) / 2;
-            const cp_x1 = (x_mid + points[i][0]) / 2;
-            const cp_y1 = (y_mid + points[i][1]) / 2;
-            const cp_x2 = (x_mid + points[i+1][0]) / 2;
-            const cp_y2 = (y_mid + points[i+1][1]) / 2;
-            path += ` Q ${cp_x1},${points[i][1]} ${x_mid},${y_mid}`;
-            path += ` Q ${cp_x2},${points[i+1][1]} ${points[i+1][0]},${points[i+1][1]}`;
+            const x1 = points[i].x;
+            const y1 = points[i].y;
+            const x2 = points[i+1].x;
+            const y2 = points[i+1].y;
+
+            const tension = 0.4;
+            const dx = x2 - x1;
+            
+            const p0 = i > 0 ? points[i-1] : points[i];
+            const p3 = i < points.length - 2 ? points[i+2] : points[i+1];
+
+            const c1x = x1 + dx * tension;
+            const c1y = y1 + (y2 - p0.y) * tension / 2;
+            const c2x = x2 - dx * tension;
+            const c2y = y2 - (p3.y - y1) * tension / 2;
+            
+            path += ` C ${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}`;
         }
         return path;
     };
     
-    const path = createSplinePath(data);
+    const chartPoints = data.map(p => ({ x: xScale(p.t), y: yScale(p.v) }));
+    const path = createSplinePath(chartPoints);
     const areaPath = `${path} L${width},${height} L0,${height} Z`;
     const isUp = data[data.length - 1].v >= data[0].v;
     const strokeColor = isUp ? "#10B981" : "#F87171";
@@ -1060,7 +1068,7 @@ const MiniAreaChart = ({ data }) => {
 };
 
 const MiniDonutChart = ({ cashPct, investedPct, size = 64 }) => {
-    const strokeWidth = size / 8;
+    const strokeWidth = size / 6;
     const radius = (size / 2) - (strokeWidth / 2);
     const circumference = 2 * Math.PI * radius;
 
