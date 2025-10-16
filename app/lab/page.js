@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /* ===================== Icons ===================== */
-const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><defs><radialGradient id="userAvatarGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%"><stop offset="0%" stopColor="#4b5563"></stop><stop offset="100%" stopColor="#1f2937"></stop></radialGradient></defs><circle cx="12" cy="12" r="10" fill="url(#userAvatarGradient)"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" fill="#9CA3AF"></path></svg>);
+const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#374151"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" fill="#9CA3AF"></path></svg>);
 const MoreVerticalIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>);
 const BackArrowIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
 const TrashIcon = ({className}) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
@@ -96,10 +96,12 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
 
 /* ===================== Main Component ===================== */
 export default function PortfolioDashboard() {
+  // Using v15 for major logic overhaul
   const STORAGE_VERSION = "v15";
   const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_assets_${STORAGE_VERSION}`) || "[]").map(ensureNumericAsset) : []);
   const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_transactions_${STORAGE_VERSION}`) || "[]") : []);
   
+  // Recalculate financial summaries from transactions to ensure data integrity on load
   const [financialSummaries, setFinancialSummaries] = useState({
       realizedUSD: 0,
       tradingBalance: 0,
@@ -129,6 +131,7 @@ export default function PortfolioDashboard() {
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
   const importInputRef = useRef(null);
   
+  // Centralized recalculation logic
   const recalculateStateFromTransactions = (txs) => {
     let newAssets = {};
     let realizedUSD = 0;
@@ -183,13 +186,15 @@ export default function PortfolioDashboard() {
     setFinancialSummaries({ realizedUSD, tradingBalance, totalDeposits, totalWithdrawals });
   };
 
+  // Recalculate everything whenever transactions change
   useEffect(() => {
     if(isBrowser) {
         localStorage.setItem(`pf_transactions_${STORAGE_VERSION}`, JSON.stringify(transactions));
         recalculateStateFromTransactions(transactions);
     }
-  }, [transactions, usdIdr]);
+  }, [transactions, usdIdr]); // Depend on usdIdr to recalculate balance if rate changes
   
+  // Persist assets and display symbol
   useEffect(() => { if (isBrowser) localStorage.setItem(`pf_assets_${STORAGE_VERSION}`, JSON.stringify(assets)); }, [assets]);
   useEffect(() => { if (isBrowser) localStorage.setItem(`pf_display_sym_${STORAGE_VERSION}`, displaySymbol); }, [displaySymbol]);
 
@@ -229,6 +234,7 @@ export default function PortfolioDashboard() {
       const cryptoIds = [...new Set(assets.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId))];
       const newPrices = {};
 
+      // Batch stock quotes
       for (const symbol of stockSymbols) {
           try {
               const res = await fetch(FINNHUB_QUOTE(symbol));
@@ -239,6 +245,7 @@ export default function PortfolioDashboard() {
           } catch (e) { console.error(`Failed to fetch price for ${symbol}`, e); }
       }
 
+      // Batch crypto quotes
       if (cryptoIds.length > 0) {
         try {
           const res = await fetch(COINGECKO_PRICE(cryptoIds.join(',')));
@@ -263,7 +270,7 @@ export default function PortfolioDashboard() {
       }
     };
     pollPrices();
-    const id = setInterval(pollPrices, 25000);
+    const id = setInterval(pollPrices, 25000); // Poll more frequently
     return () => clearInterval(id);
   }, [assets.length, usdIdr]);
 
@@ -279,7 +286,7 @@ export default function PortfolioDashboard() {
         const res = await fetch(url);
         if (!res.ok) throw new Error('Search API failed with status: ' + res.status);
         const text = await res.text();
-        const j = JSON.parse(text);
+        const j = JSON.parse(text); // Manually parse JSON after getting text
         
         if (searchMode === 'crypto') {
           setSuggestions((j.coins || []).slice(0, 10).map(c => ({ symbol: c.symbol.toUpperCase(), display: `${c.name} (${c.symbol.toUpperCase()})`, id: c.id, image: c.thumb, source: "coingecko", type: "crypto" })));
@@ -296,7 +303,7 @@ export default function PortfolioDashboard() {
         console.error("Search failed:", e);
         setSuggestions([]);
       }
-    }, 400);
+    }, 400); // Slightly increased delay for better typing experience
 
     return () => clearTimeout(searchTimeoutRef.current);
   }, [query, searchMode]);
@@ -397,6 +404,7 @@ export default function PortfolioDashboard() {
       alert("No transactions to export.");
       return;
     }
+    // Simple CSV export for now. Can be made more robust.
     const header = Object.keys(transactions[0]).join(',') + '\n';
     const rows = transactions.map(tx => Object.values(tx).map(val => `"${val}"`).join(',')).join('\n');
     const csvContent = header + rows;
@@ -418,6 +426,7 @@ export default function PortfolioDashboard() {
   };
 
   const handleFileImport = (event) => {
+      // Import logic needs to be carefully considered with the new transaction-based system
       alert("Import feature is being re-evaluated for the new transaction-based system.");
   };
 
@@ -478,7 +487,7 @@ export default function PortfolioDashboard() {
 
     const points = [];
     let currentCash = 0;
-    let currentHoldings = {};
+    let currentHoldings = {}; // { [assetId]: { shares, avgPrice } }
 
     for (const tx of sortedTx) {
         if (tx.type === 'deposit') {
@@ -506,6 +515,7 @@ export default function PortfolioDashboard() {
             }
         }
         
+        // Find latest prices for current holdings to calculate market value
         let holdingsValueUSD = 0;
         for (const assetId in currentHoldings) {
             const holding = currentHoldings[assetId];
@@ -548,8 +558,6 @@ export default function PortfolioDashboard() {
 
 
   /* ================ Render ================ */
-  const cardClasses = "bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 p-4 rounded-2xl shadow-xl transition-all duration-300 hover:border-zinc-700 hover:shadow-cyan-500/10 cursor-pointer";
-
   if (view === 'performance') {
     return <PerformancePage {...derivedData} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} portfolioData={derivedData.rows} transactions={transactions} equitySeries={equitySeries} onDeleteTransaction={handleDeleteTransaction} initialTab={initialPerformanceTab} />;
   }
@@ -564,7 +572,7 @@ export default function PortfolioDashboard() {
   return (
     <div className="bg-black text-gray-300 min-h-screen font-sans">
       <div className="max-w-4xl mx-auto">
-        <header className="p-4 flex justify-between items-center sticky top-0 bg-black/80 backdrop-blur-sm z-10 border-b border-zinc-900">
+        <header className="p-4 flex justify-between items-center sticky top-0 bg-black z-10">
           <div className="flex items-center gap-3">
             <UserAvatar />
             <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex items-center gap-2">
@@ -584,48 +592,55 @@ export default function PortfolioDashboard() {
 
         <main>
           <section className="p-4">
-            <div className="grid grid-cols-2 gap-4">
-                <div onClick={() => { setView('performance'); setInitialPerformanceTab('portfolio'); }} className={cardClasses}>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                <div onClick={() => { setView('performance'); setInitialPerformanceTab('portfolio'); }} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-between cursor-pointer hover:border-zinc-700 transition-colors">
                     <div className="flex-grow">
-                        <p className="text-gray-400 text-xs">Total Equity</p>
-                        <p className="text-2xl sm:text-3xl font-bold text-white leading-tight mt-1">{formatCurrency(derivedData.totalEquity, false, displaySymbol, usdIdr)}</p>
+                        <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
+                        <p className="text-xl sm:text-3xl font-bold text-white leading-tight">{formatCurrency(derivedData.totalEquity, false, displaySymbol, usdIdr)}</p>
                         <p className="text-xs text-gray-500">{formatCurrency(derivedData.totalEquity, false, displaySymbol === 'Rp' ? '$' : 'Rp', usdIdr)}</p>
-                        <div className="h-10 w-full mt-3 opacity-80">
+                        <div className="h-6 w-full mt-2 opacity-70">
                             <MiniAreaChart data={equitySeries} />
                         </div>
                     </div>
-                    <div className="mt-2 border-t border-zinc-800 pt-2 text-xs space-y-1">
+                    <div className="mt-2 border-t border-zinc-800 pt-2 text-[11px] sm:text-xs space-y-1">
                         <div className="flex justify-between items-center"><span className="text-gray-400">Net Deposit</span><span className="font-semibold text-white">{derivedData.netDeposit >= 0 ? '+' : ''}{formatCurrency(derivedData.netDeposit, false, displaySymbol, usdIdr)}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Total G/L</span><span className={`font-semibold ${derivedData.totalPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{derivedData.totalPnlUSD >= 0 ? '+' : ''}{formatCurrency(derivedData.totalPnlUSD, true, displaySymbol, usdIdr)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Total G/L</span><span className={`font-semibold ${derivedData.totalPnlUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.totalPnlUSD >= 0 ? '+' : ''}{formatCurrency(derivedData.totalPnlUSD, true, displaySymbol, usdIdr)}</span></div>
                     </div>
                 </div>
-                <div onClick={() => setView('allocationDetail')} className={cardClasses}>
-                     <div className="flex flex-col h-full justify-center items-center text-center gap-3">
-                        <div className="w-16 h-16 sm:w-20 sm:h-20"><MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} size={80} /></div>
-                         <div className="w-full">
-                            <div className="flex justify-between items-baseline">
-                                <div className="text-left"><div className="text-xs text-sky-400">Cash</div><div className="font-semibold text-white text-sm">{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</div></div>
-                                <div className="text-right"><div className="text-xs text-emerald-400">Invested</div><div className="font-semibold text-white text-sm">{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</div></div>
+                <div onClick={() => setView('allocationDetail')} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center cursor-pointer hover:border-zinc-700 transition-colors">
+                     <div className="flex flex-col h-full justify-between">
+                        <div className="flex justify-between text-[11px] sm:text-xs">
+                            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-400"></span><span className="text-gray-400">Cash</span></div>
+                            <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><span className="text-gray-400">Invested</span></div>
+                        </div>
+                         <div className="flex justify-between items-center mt-2">
+                           <p className="font-semibold text-white text-[11px] sm:text-xs">{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
+                           <p className="font-semibold text-white text-[11px] sm:text-xs text-right">{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
+                        </div>
+                        <div className="w-full bg-zinc-800 rounded-full h-1.5 my-1.5 flex overflow-hidden">
+                            <div className="bg-sky-400 h-1.5" style={{ width: `${derivedData.cashPct}%` }} title={`Cash: ${derivedData.cashPct.toFixed(1)}%`}></div>
+                            <div className="bg-emerald-400 h-1.5" style={{ width: `${derivedData.investedPct}%` }} title={`Invested: ${derivedData.investedPct.toFixed(1)}%`}></div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <p className="text-[10px] text-gray-400">{derivedData.cashPct.toFixed(0)}%</p>
+                            <div className="w-4 h-4 mx-1">
+                                <MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} size={16} />
                             </div>
-                            <div className="w-full bg-zinc-800 rounded-full h-2 mt-2 flex overflow-hidden">
-                                <div className="bg-sky-400 h-2 rounded-l-full" style={{ width: `${derivedData.cashPct}%` }}></div>
-                                <div className="bg-emerald-400 h-2 rounded-r-full" style={{ width: `${derivedData.investedPct}%` }}></div>
-                            </div>
+                            <p className="text-[10px] text-gray-400">{derivedData.investedPct.toFixed(0)}%</p>
                         </div>
                     </div>
                 </div>
-                <div onClick={() => { setView('performance'); setInitialPerformanceTab('history'); }} className={`${cardClasses} flex flex-col justify-center`}>
-                    <div className="text-xs space-y-2">
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Deposit</span><span className="font-medium text-white">{formatCurrency(totalDeposits, false, displaySymbol, usdIdr)}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Withdraw</span><span className="font-medium text-white">{formatCurrency(totalWithdrawals, false, displaySymbol, usdIdr)}</span></div>
-                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Realized P&L</span><span className={`font-semibold ${realizedUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{realizedUSD >= 0 ? '+' : ''}{formatCurrency(realizedUSD, true, displaySymbol, usdIdr)}</span></div>
+                <div onClick={() => { setView('performance'); setInitialPerformanceTab('history'); }} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg cursor-pointer hover:border-zinc-700 transition-colors">
+                    <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs space-y-2">
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Deposit</span><span className="font-medium">{formatCurrency(totalDeposits, false, displaySymbol, usdIdr)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Withdraw</span><span className="font-medium">{formatCurrency(totalWithdrawals, false, displaySymbol, usdIdr)}</span></div>
+                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Realized P&L</span><span className={`font-semibold ${realizedUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{realizedUSD >= 0 ? '+' : ''}{formatCurrency(realizedUSD, true, displaySymbol, usdIdr)}</span></div>
                     </div>
                 </div>
-                <div onClick={() => { setView('performance'); setInitialPerformanceTab('trade'); }} className={`${cardClasses} flex flex-col justify-center`}>
-                    <div className="text-xs space-y-2">
-                        <div className="flex justify-between items-center"><span className="text-gray-400">Unrealized P&L</span><span className={`font-semibold ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{derivedData.totals.unrealizedPnlUSD >= 0 ? '+' : ''}{formatCurrency(derivedData.totals.unrealizedPnlUSD, true, displaySymbol, usdIdr)}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-gray-400">P&L %</span><span className={`font-semibold ${derivedData.totals.unrealizedPnlPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{derivedData.totals.unrealizedPnlPct.toFixed(2)}%</span></div>
-                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Equity vs Deposit</span><span className={`font-semibold ${derivedData.equityVsDeposit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{derivedData.equityVsDeposit >= 0 ? '+' : ''}{formatCurrency(derivedData.equityVsDeposit, false, displaySymbol, usdIdr)}</span></div>
+                <div onClick={() => { setView('performance'); setInitialPerformanceTab('trade'); }} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg cursor-pointer hover:border-zinc-700 transition-colors">
+                    <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs space-y-2">
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Unrealized P&L</span><span className={`font-semibold ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.totals.unrealizedPnlUSD >= 0 ? '+' : ''}{formatCurrency(derivedData.totals.unrealizedPnlUSD, true, displaySymbol, usdIdr)} ({derivedData.totals.unrealizedPnlPct.toFixed(2)}%)</span></div>
+                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Equity vs Deposit</span><span className={`font-semibold ${derivedData.equityVsDeposit >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.equityVsDeposit >= 0 ? '+' : ''}{formatCurrency(derivedData.equityVsDeposit, false, displaySymbol, usdIdr)}</span></div>
                     </div>
                 </div>
             </div>
@@ -993,9 +1008,10 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
 };
 
 /* ===================== Charts ===================== */
-function createSplinePath(points, tension = 1.2) { // Increased tension for more curve
+// New helper function for creating a Catmull-Rom spline path
+function createSplinePath(points, tension = 0.5) {
     if (points.length < 2) return "";
-    let path = `M ${points[0].x.toFixed(2)},${points[0].y.toFixed(2)}`;
+    let path = `M ${points[0].x},${points[0].y}`;
     const pts = [points[0], ...points, points[points.length - 1]];
 
     for (let i = 1; i < pts.length - 2; i++) {
@@ -1009,7 +1025,7 @@ function createSplinePath(points, tension = 1.2) { // Increased tension for more
         const cp2x = p2.x - (p3.x - p1.x) / 6 * tension;
         const cp2y = p2.y - (p3.y - p1.y) / 6 * tension;
         
-        path += ` C ${cp1x.toFixed(2)},${cp1y.toFixed(2)} ${cp2x.toFixed(2)},${cp2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
+        path += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
     }
     return path;
 }
@@ -1017,7 +1033,7 @@ function createSplinePath(points, tension = 1.2) { // Increased tension for more
 
 const MiniAreaChart = ({ data }) => {
     if (!data || data.length < 2) return null;
-    const width = 100, height = 40;
+    const width = 100, height = 30;
     const yValues = data.map(d => d.v);
     const minVal = Math.min(...yValues);
     const maxVal = Math.max(...yValues);
@@ -1028,11 +1044,11 @@ const MiniAreaChart = ({ data }) => {
     const yScale = (v) => height - ((v - minVal) / valRange) * height;
     
     const chartPoints = data.map(p => ({ x: xScale(p.t), y: yScale(p.v) }));
-    const path = createSplinePath(chartPoints); 
+    const path = createSplinePath(chartPoints, 1); // Using tension 1 for more curve
     const areaPath = `${path} L${width},${height} L0,${height} Z`;
     const isUp = data[data.length - 1].v >= data[0].v;
-    const strokeColor = isUp ? "#4ade80" : "#f87171";
-    const gradientColor = isUp ? "#4ade80" : "#f87171";
+    const strokeColor = isUp ? "#10B981" : "#F87171";
+    const gradientColor = isUp ? "#10B981" : "#F87171";
 
     return (
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
@@ -1041,22 +1057,15 @@ const MiniAreaChart = ({ data }) => {
                     <stop offset="0%" stopColor={gradientColor} stopOpacity={0.4} />
                     <stop offset="100%" stopColor={gradientColor} stopOpacity={0} />
                 </linearGradient>
-                 <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                    <feMerge>
-                        <feMergeNode in="coloredBlur"/>
-                        <feMergeNode in="SourceGraphic"/>
-                    </feMerge>
-                </filter>
             </defs>
             <path d={areaPath} fill="url(#miniAreaGradient)" />
-            <path d={path} fill="none" stroke={strokeColor} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" style={{filter: 'url(#glow)'}} />
+            <path d={path} fill="none" stroke={strokeColor} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
         </svg>
     );
 };
 
 const MiniDonutChart = ({ cashPct, investedPct, size = 64 }) => {
-    const strokeWidth = size / 6;
+    const strokeWidth = size / 5;
     const radius = (size / 2) - (strokeWidth / 2);
     const circumference = 2 * Math.PI * radius;
 
@@ -1064,10 +1073,10 @@ const MiniDonutChart = ({ cashPct, investedPct, size = 64 }) => {
     const investedArc = (circumference * investedPct) / 100;
     
     return (
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" style={{filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))'}}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
             <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#3f3f46" strokeWidth={strokeWidth} />
-            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#60a5fa" strokeWidth={strokeWidth} strokeDasharray={`${cashArc} ${circumference}`} strokeLinecap="round" />
-            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#4ade80" strokeWidth={strokeWidth} strokeDasharray={`${investedArc} ${circumference}`} strokeDashoffset={-cashArc} strokeLinecap="round" />
+            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#38bdf8" strokeWidth={strokeWidth} strokeDasharray={`${cashArc} ${circumference}`} strokeLinecap="round" />
+            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#2dd4bf" strokeWidth={strokeWidth} strokeDasharray={`${investedArc} ${circumference}`} strokeDashoffset={-cashArc} strokeLinecap="round" />
         </svg>
     );
 };
@@ -1091,8 +1100,7 @@ const AreaChart = ({ data: chartData, displaySymbol, range, setRange, showTimefr
   const data = useMemo(() => {
       if(filteredData.length === 0) return [{t: startTime.getTime(), v: 0}, {t: now.getTime(), v: 0}];
       if(filteredData[0].t > startTime.getTime() && filteredData.length > 0){
-          const firstPointVal = filteredData.find(d => d.v > 0)?.v || 0;
-          return [{t: startTime.getTime(), v: firstPointVal}, ...filteredData];
+          return [{t: startTime.getTime(), v: filteredData[0].v}, ...filteredData];
       }
       return filteredData;
   }, [filteredData, startTime, now]);
@@ -1108,7 +1116,7 @@ const AreaChart = ({ data: chartData, displaySymbol, range, setRange, showTimefr
   const yScale = (v) => padding.top + (1 - (v - minVal) / valRange) * (height - padding.top - padding.bottom);
   
   const chartPoints = data.map(p => ({ x: xScale(p.t), y: yScale(p.v) }));
-  const path = createSplinePath(chartPoints);
+  const path = createSplinePath(chartPoints, 1);
   const areaPath = `${path} L${width - padding.right},${height - padding.bottom} L${padding.left},${height - padding.bottom} Z`;
   
   const yAxisLabels = Array.from({length: 5}, (_, i) => minVal + (valRange / 4) * i);
@@ -1135,21 +1143,18 @@ const AreaChart = ({ data: chartData, displaySymbol, range, setRange, showTimefr
     if (closestPoint) setHoverData({ point: closestPoint, x: xScale(closestPoint.t), y: yScale(closestPoint.v) });
   };
 
-  const isUp = data.length > 1 ? data[data.length-1].v >= data[0].v : true;
-  const chartColor = isUp ? '#4ade80' : '#f87171';
-
   return (
     <div>
       <div className="relative">
         <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={() => setHoverData(null)}>
-          <defs><linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor={chartColor} stopOpacity={0.3} /><stop offset="100%" stopColor={chartColor} stopOpacity={0.05} /></linearGradient></defs>
-          <path d={areaPath} fill="url(#areaGradient2)" /><path d={path} fill="none" stroke={chartColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          <defs><linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#10B981" stopOpacity={0.3} /><stop offset="100%" stopColor="#10B981" stopOpacity={0.05} /></linearGradient></defs>
+          <path d={areaPath} fill="url(#areaGradient2)" /><path d={path} fill="none" stroke="#10B981" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
           {yAxisLabels.map((v, idx) => (<g key={idx}><line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" /><text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text></g>))}
           {xAxisLabels().map((item, idx) => (<text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>))}
-          {hoverData && (<g><line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" /><circle cx={hoverData.x} cy={hoverData.y} r="4" fill={chartColor} stroke="white" strokeWidth="2" /></g>)}
+          {hoverData && (<g><line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" /><circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#10B981" stroke="white" strokeWidth="2" /></g>)}
           <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
         </svg>
-        {hoverData && (<div className="absolute p-2 rounded-lg bg-zinc-800 text-white text-xs pointer-events-none shadow-lg" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}><div>{new Date(hoverData.point.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div><div className="font-bold">{formatCurrency(hoverData.point.v, false, displaySymbol, 1)}</div></div>)}
+        {hoverData && (<div className="absolute p-2 rounded-lg bg-zinc-800 text-white text-xs pointer-events-none" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}><div>{new Date(hoverData.point.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div><div className="font-bold">{formatCurrency(hoverData.point.v, false, displaySymbol, 1)}</div></div>)}
       </div>
       {showTimeframes && <div className="flex justify-center gap-2 mt-2">{['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (<button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{r}</button>))}</div>}
     </div>
@@ -1160,7 +1165,7 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
   const [activeTab, setActiveTab] = useState('Equity');
   const [hoveredSegment, setHoveredSegment] = useState(null);
 
-  const softPastelColors = ['#818cf8', '#f472b6', '#fbbf24', '#4ade80', '#60a5fa', '#a78bfa', '#f87171', '#34d399'];
+  const softPastelColors = ['#7dd3fc', '#6ee7b7', '#fde047', '#f0abfc', '#fdba74', '#a5b4fc', '#d8b4fe', '#f9a8d4'];
 
   const { equityData, sectorData } = useMemo(() => {
     const eqData = fullAssetData
@@ -1191,14 +1196,15 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
   if (!totalValueUSD) return <div className="mt-8 text-center text-gray-500">No assets to show in allocation.</div>;
 
   const totalValueDisplay = displaySymbol === "Rp" ? totalValueUSD * usdIdr : totalValueUSD;
-  const size = 200, strokeWidth = 30, innerRadius = (size / 2) - strokeWidth;
+  const size = 200, strokeWidth = 25, innerRadius = (size / 2) - strokeWidth;
   let accumulatedAngle = 0;
 
   return (
-    <div className="mt-4">
+    <div className="mt-8">
+      <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3>
       <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div>
       <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}>
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90" style={{filter: 'drop-shadow(0 5px 10px rgba(0,0,0,0.5))'}}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           <g>
             {data.map((d, i) => {
               const angle = (d.value / totalValueUSD) * 360;
@@ -1224,12 +1230,13 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
         </svg>
         <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{formatCurrency(totalValueDisplay, false, displaySymbol, 1)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div>
       </div>
-      <div className="space-y-2">{data.map((d, i) => { const percentage = (d.value / totalValueUSD) * 100; const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); return (<div key={i} className={`p-3 rounded-lg transition-all duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800/80 scale-[1.02]' : 'bg-zinc-900/50'}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs shrink-0">
+      <div className="space-y-2">{data.map((d, i) => { const percentage = (d.value / totalValueUSD) * 100; const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">
           {d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}
         </div>
         <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || softPastelColors[i % softPastelColors.length] }}></div></div></div>); })}</div>
     </div>
   );
 };
+
 
