@@ -594,7 +594,7 @@ export default function PortfolioDashboard() {
         <main>
           <section className="p-4">
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                <div onClick={() => setView('equityDetail')} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-between cursor-pointer hover:border-zinc-700 transition-colors">
+                <div onClick={() => { setView('performance'); setInitialPerformanceTab('portfolio'); }} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-between cursor-pointer hover:border-zinc-700 transition-colors">
                     <div className="flex-grow">
                         <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
                         <p className="text-xl sm:text-3xl font-bold text-white leading-tight">{formatCurrency(derivedData.totalEquity, false, displaySymbol, usdIdr)}</p>
@@ -663,7 +663,7 @@ export default function PortfolioDashboard() {
 }
 
 /* ===================== Detail Views ===================== */
-const EquityDetailView = ({ setView, totalEquity, equitySeries, displaySymbol, usdIdr }) => {
+const EquityDetailContent = ({ totalEquity, equitySeries, displaySymbol, usdIdr }) => {
     const [chartRange, setChartRange] = useState("All");
     const [returnPeriod, setReturnPeriod] = useState('Monthly');
 
@@ -697,29 +697,40 @@ const EquityDetailView = ({ setView, totalEquity, equitySeries, displaySymbol, u
     }, [equitySeries, returnPeriod]);
 
     return (
+        <div className="p-4">
+            <div>
+                <p className="text-sm text-gray-400">Total Equity</p>
+                <p className="text-3xl font-bold text-white mb-1">{formatCurrency(totalEquity, false, displaySymbol, usdIdr)}</p>
+            </div>
+            <div className="mt-6"><AreaChart data={equitySeries} displaySymbol={displaySymbol} range={chartRange} setRange={setChartRange} /></div>
+            <div className="mt-8">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-base font-semibold text-white">Total Equity Return</h3>
+                    <div className="flex items-center gap-2 text-sm">{['Daily', 'Monthly', 'Yearly'].map(p => (<button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full text-xs ${returnPeriod === p ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{p}</button>))}</div>
+                </div>
+                <table className="w-full text-sm">
+                    <thead className="text-left text-gray-500 text-xs"><tr><th className="p-2 font-normal">Date</th><th className="p-2 font-normal text-right">Equity</th><th className="p-2 font-normal text-right">P&L</th></tr></thead>
+                    <tbody>{equityReturnData.map((item, index) => (<tr key={index} className="border-t border-zinc-800"><td className="p-2 text-white">{item.date}</td><td className="p-2 text-white text-right">{formatCurrency(item.equity, false, displaySymbol, usdIdr)}</td><td className={`p-2 text-right ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{item.pnl >= 0 ? '+' : ''}{formatCurrency(item.pnl, false, displaySymbol, usdIdr)} ({item.pnlPct.toFixed(2)}%)</td></tr>))}</tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+const EquityDetailView = ({ setView, totalEquity, equitySeries, displaySymbol, usdIdr }) => {
+    return (
         <div className="bg-black text-gray-300 min-h-screen font-sans">
             <div className="max-w-4xl mx-auto">
                 <header className="p-4 flex items-center gap-4 sticky top-0 bg-black z-10">
                     <button onClick={() => setView('main')} className="text-white"><BackArrowIcon /></button>
                     <h1 className="text-lg font-semibold text-white">Equity Growth</h1>
                 </header>
-                <div className="p-4">
-                    <div>
-                        <p className="text-sm text-gray-400">Total Equity</p>
-                        <p className="text-3xl font-bold text-white mb-1">{formatCurrency(totalEquity, false, displaySymbol, usdIdr)}</p>
-                    </div>
-                    <div className="mt-6"><AreaChart data={equitySeries} displaySymbol={displaySymbol} range={chartRange} setRange={setChartRange} /></div>
-                    <div className="mt-8">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-base font-semibold text-white">Total Equity Return</h3>
-                            <div className="flex items-center gap-2 text-sm">{['Daily', 'Monthly', 'Yearly'].map(p => (<button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full text-xs ${returnPeriod === p ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{p}</button>))}</div>
-                        </div>
-                        <table className="w-full text-sm">
-                            <thead className="text-left text-gray-500 text-xs"><tr><th className="p-2 font-normal">Date</th><th className="p-2 font-normal text-right">Equity</th><th className="p-2 font-normal text-right">P&L</th></tr></thead>
-                            <tbody>{equityReturnData.map((item, index) => (<tr key={index} className="border-t border-zinc-800"><td className="p-2 text-white">{item.date}</td><td className="p-2 text-white text-right">{formatCurrency(item.equity, false, displaySymbol, usdIdr)}</td><td className={`p-2 text-right ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{item.pnl >= 0 ? '+' : ''}{formatCurrency(item.pnl, false, displaySymbol, usdIdr)} ({item.pnlPct.toFixed(2)}%)</td></tr>))}</tbody>
-                        </table>
-                    </div>
-                </div>
+                <EquityDetailContent 
+                    totalEquity={totalEquity}
+                    equitySeries={equitySeries}
+                    displaySymbol={displaySymbol}
+                    usdIdr={usdIdr}
+                />
             </div>
         </div>
     );
@@ -741,24 +752,36 @@ const AllocationDetailView = ({ setView, portfolioData, displaySymbol, usdIdr })
 
 
 /* ===================== Performance & Subcomponents ===================== */
-const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats, totalEquity, onDeleteTransaction, initialTab }) => {
-  const [activeTab, setActiveTab] = useState(initialTab || 'portfolio');
-  
+const PerformancePage = ({ setView, usdIdr, displaySymbol, transactions, equitySeries, tradeStats, totalEquity, onDeleteTransaction, initialTab }) => {
+  const getTitle = () => {
+    switch (initialTab) {
+      case 'trade': return 'Trade Analysis';
+      case 'history': return 'Transaction History';
+      case 'portfolio':
+      default: return 'Portfolio Performance';
+    }
+  };
+
+  const renderContent = () => {
+    switch (initialTab) {
+      case 'trade':
+        return <TradeStatsView stats={tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} />;
+      case 'history':
+        return <HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={onDeleteTransaction} />;
+      case 'portfolio':
+      default:
+        return <EquityDetailContent totalEquity={totalEquity} equitySeries={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} />;
+    }
+  };
+
   return (
     <div className="bg-black text-gray-300 min-h-screen font-sans">
       <div className="max-w-4xl mx-auto">
         <header className="p-4 flex items-center gap-4 sticky top-0 bg-black z-10">
           <button onClick={() => setView('main')} className="text-white"><BackArrowIcon /></button>
-          <h1 className="text-lg font-semibold text-white">Performance</h1>
+          <h1 className="text-lg font-semibold text-white">{getTitle()}</h1>
         </header>
-        <div className="border-b border-zinc-800 px-4"><nav className="flex space-x-6"><button onClick={() => setActiveTab('portfolio')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'portfolio' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PORTFOLIO</button><button onClick={() => setActiveTab('trade')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'trade' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>TRADE</button><button onClick={() => setActiveTab('history')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'history' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>HISTORY</button></nav></div>
-        {activeTab === 'portfolio' ? (
-            <EquityDetailView setView={setView} totalEquity={totalEquity} equitySeries={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} />
-        ) : activeTab === 'trade' ? (
-          <TradeStatsView stats={tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} />
-        ) : (
-          <HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={onDeleteTransaction} />
-        )}
+        {renderContent()}
       </div>
     </div>
   );
@@ -1165,4 +1188,5 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
     </div>
   );
 };
+
 
