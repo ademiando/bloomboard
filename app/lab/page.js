@@ -8,34 +8,47 @@ const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><circl
 const MoreVerticalIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>);
 const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>);
 const BackArrowIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
-const GraphIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>);
 const TrashIcon = ({className}) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
-const ArrowUpIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/></svg>;
-const ArrowDownIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
-const InfoIcon = () => <svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
+const ArrowUpIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/></svg>;
+const ArrowDownIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
+const InfoIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
+const AvgProfitIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20V16"/></svg>;
+const AvgLossIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v10"/><path d="M18 4v16"/><path d="M6 4v8"/></svg>;
+const EquityIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M7 16V8l4 4 4-4v8"/></svg>;
+const CryptoIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8.5 14.5h7M8.5 9.5h7M12 17.5v-11"/></svg>;
+const NonLiquidIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
+const SearchIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>);
+
 
 /* ===================== Config & Helpers ===================== */
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-const YAHOO_SEARCH = (q) => `/api/yahoo/search?q=${encodeURIComponent(q)}`;
-const FINNHUB_QUOTE = (symbol) => `/api/finnhub/quote?symbol=${encodeURIComponent(symbol)}`;
+const YAHOO_FINANCE_SEARCH_URL = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
+const PROXIED_YAHOO_SEARCH = (q) => `https://api.allorigins.win/raw?url=${encodeURIComponent(YAHOO_FINANCE_SEARCH_URL(q))}`;
+
+const FINNHUB_TOKEN = "cns0a0pr01qj9b42289gcns0a0pr01qj9b4228a0";
+const FINNHUB_QUOTE = (symbol) => `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_TOKEN}`;
 const COINGECKO_PRICE = (ids) => `${COINGECKO_API}/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd,idr`;
 const COINGECKO_TETHER_IDR_MARKET = `${COINGECKO_API}/coins/markets?vs_currency=idr&ids=tether`;
+
 const isBrowser = typeof window !== "undefined";
 const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/g,'')); return isNaN(n) ? 0 : n; };
 
-function formatMoney(value, ccySymbol) {
-  const n = Number(value || 0);
-  if (ccySymbol === "$") {
-    return `${ccySymbol} ${n.toFixed(3).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+function formatCurrency(value, valueIsUSD, displaySymbol, usdIdr) {
+  let displayValue;
+  if (displaySymbol === '$') {
+    displayValue = valueIsUSD ? value : value / usdIdr;
+    return `$${displayValue.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+  } else { // 'Rp'
+    displayValue = valueIsUSD ? value * usdIdr : value;
+    return `Rp ${Math.round(displayValue).toLocaleString('id-ID')}`;
   }
-  return `Rp. ${Math.round(n).toLocaleString('id-ID')}`;
 }
 
 function formatQty(v) {
   const n = Number(v || 0);
   if (n === 0) return "0";
   if (Math.abs(n) < 1) return n.toFixed(6).replace(/(?:\.0+|(\.\d+?)0+)$/, "$1");
-  return Math.round(n).toLocaleString();
+  return n.toLocaleString('id-ID');
 }
 
 function ensureNumericAsset(a) {
@@ -49,7 +62,8 @@ function ensureNumericAsset(a) {
     createdAt: a.createdAt || Date.now(),
     purchaseDate: a.purchaseDate || a.createdAt || Date.now(),
     nonLiquidYoy: toNum(a.nonLiquidYoy || 0),
-    type: a.type || "stock"
+    type: a.type || "stock",
+    image: a.image || null,
   };
 }
 
@@ -58,8 +72,8 @@ const Modal = ({ children, isOpen, onClose, title }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-[#181818] rounded-lg w-full max-w-lg border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center p-4 border-b border-gray-700">
+      <div className="bg-zinc-900 rounded-lg w-full max-w-lg border border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b border-zinc-800">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
         </div>
@@ -73,8 +87,8 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black/60 z-40" onClick={onClose}>
-      <div className={`fixed bottom-0 left-0 right-0 bg-[#1e1e1e] rounded-t-2xl shadow-lg transition-transform duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
-        <div className="w-10 h-1 bg-gray-600 rounded-full mx-auto my-3"></div>
+      <div className={`fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl shadow-lg transition-transform duration-300 ${isOpen ? 'translate-y-0' : 'translate-y-full'}`} onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto my-3"></div>
         {children}
       </div>
     </div>
@@ -83,19 +97,28 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
 
 /* ===================== Main Component ===================== */
 export default function PortfolioDashboard() {
-  const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_assets_v9") || "[]").map(ensureNumericAsset) : []);
-  const [realizedUSD, setRealizedUSD] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_realized_v9") || 0) : 0);
-  const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem("pf_transactions_v9") || "[]") : []);
-  const [tradingBalance, setTradingBalance] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_balance_v9") || 5952) : 5952);
-  const [totalDeposits, setTotalDeposits] = useState(() => isBrowser ? toNum(localStorage.getItem("pf_deposits_v9") || 5952) : 5952);
-  const [displaySymbol, setDisplaySymbol] = useState(() => isBrowser ? (localStorage.getItem("pf_display_sym_v9") || "Rp.") : "Rp.");
+  // Using v15 for major logic overhaul
+  const STORAGE_VERSION = "v15";
+  const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_assets_${STORAGE_VERSION}`) || "[]").map(ensureNumericAsset) : []);
+  const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_transactions_${STORAGE_VERSION}`) || "[]") : []);
+  
+  // Recalculate financial summaries from transactions to ensure data integrity on load
+  const [financialSummaries, setFinancialSummaries] = useState({
+      realizedUSD: 0,
+      tradingBalance: 0,
+      totalDeposits: 0,
+      totalWithdrawals: 0,
+  });
+
+  const [displaySymbol, setDisplaySymbol] = useState(() => isBrowser ? (localStorage.getItem(`pf_display_sym_${STORAGE_VERSION}`) || "Rp") : "Rp");
   
   const [usdIdr, setUsdIdr] = useState(16400);
   const [usdIdrChange24h, setUsdIdrChange24h] = useState(0);
-  const [priceDirection, setPriceDirection] = useState('neutral'); // 'up', 'down', 'neutral'
+  const [priceDirection, setPriceDirection] = useState('neutral');
   const [isFxLoading, setIsFxLoading] = useState(true);
 
   const [view, setView] = useState('main');
+  const [initialPerformanceTab, setInitialPerformanceTab] = useState('portfolio');
   const [isAddAssetModalOpen, setAddAssetModalOpen] = useState(false);
   const [searchMode, setSearchMode] = useState("stock");
   const [query, setQuery] = useState("");
@@ -107,13 +130,75 @@ export default function PortfolioDashboard() {
   const [tradeModal, setTradeModal] = useState({ open: false, asset: null });
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
+  const importInputRef = useRef(null);
+  
+  // Centralized recalculation logic
+  const recalculateStateFromTransactions = (txs) => {
+    let newAssets = {};
+    let realizedUSD = 0;
+    let tradingBalance = 0;
+    let totalDeposits = 0;
+    let totalWithdrawals = 0;
 
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_assets_v9", JSON.stringify(assets)); }, [assets]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_realized_v9", String(realizedUSD)); }, [realizedUSD]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_transactions_v9", JSON.stringify(transactions)); }, [transactions]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_balance_v9", String(tradingBalance)); }, [tradingBalance]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_deposits_v9", String(totalDeposits)); }, [totalDeposits]);
-  useEffect(() => { if (isBrowser) localStorage.setItem("pf_display_sym_v9", displaySymbol); }, [displaySymbol]);
+    const sortedTxs = [...txs].sort((a, b) => a.date - b.date);
+
+    for (const tx of sortedTxs) {
+      if (tx.type === 'deposit') {
+        tradingBalance += tx.amount;
+        totalDeposits += tx.amount;
+        continue;
+      }
+      if (tx.type === 'withdraw') {
+        tradingBalance -= tx.amount;
+        totalWithdrawals += tx.amount;
+        continue;
+      }
+      
+      const assetId = tx.assetId || `${tx.type}:${tx.symbol}`;
+      
+      if (!newAssets[assetId]) {
+        newAssets[assetId] = ensureNumericAsset({
+          ...tx.assetStub,
+          shares: 0,
+          investedUSD: 0,
+          avgPrice: 0,
+        });
+      }
+      
+      const asset = newAssets[assetId];
+
+      if (tx.type === 'buy') {
+        tradingBalance -= tx.cost * usdIdr;
+        const totalInvested = asset.investedUSD + tx.cost;
+        const totalShares = asset.shares + tx.qty;
+        asset.investedUSD = totalInvested;
+        asset.shares = totalShares;
+        asset.avgPrice = totalShares > 0 ? totalInvested / totalShares : 0;
+      } else if (tx.type === 'sell' || tx.type === 'delete') {
+        tradingBalance += tx.proceeds * usdIdr;
+        realizedUSD += tx.realized;
+        const costOfSold = asset.avgPrice * tx.qty;
+        asset.investedUSD -= costOfSold;
+        asset.shares -= tx.qty;
+      }
+    }
+    
+    setAssets(Object.values(newAssets).filter(a => a.shares > 0.000001));
+    setFinancialSummaries({ realizedUSD, tradingBalance, totalDeposits, totalWithdrawals });
+  };
+
+  // Recalculate everything whenever transactions change
+  useEffect(() => {
+    if(isBrowser) {
+        localStorage.setItem(`pf_transactions_${STORAGE_VERSION}`, JSON.stringify(transactions));
+        recalculateStateFromTransactions(transactions);
+    }
+  }, [transactions, usdIdr]); // Depend on usdIdr to recalculate balance if rate changes
+  
+  // Persist assets and display symbol
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_assets_${STORAGE_VERSION}`, JSON.stringify(assets)); }, [assets]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_display_sym_${STORAGE_VERSION}`, displaySymbol); }, [displaySymbol]);
+
 
   useEffect(() => {
     const fetchFx = async () => {
@@ -124,21 +209,18 @@ export default function PortfolioDashboard() {
         if (j && j[0]) {
           const newPrice = Math.round(j[0].current_price);
           const newChange = j[0].price_change_percentage_24h || 0;
-
           setUsdIdr(prevPrice => {
             if (prevPrice !== 0 && newPrice > prevPrice) setPriceDirection('up');
             else if (prevPrice !== 0 && newPrice < prevPrice) setPriceDirection('down');
             else setPriceDirection('neutral');
             return newPrice;
           });
-
           setUsdIdrChange24h(newChange);
         }
-      } catch (e) {
-        console.error("Failed to fetch FX data", e);
-      } finally {
+      } catch (e) { console.error("Failed to fetch FX data", e); } 
+      finally {
         setIsFxLoading(false);
-        setTimeout(() => setPriceDirection('neutral'), 1500); // Reset color after 1.5 seconds
+        setTimeout(() => setPriceDirection('neutral'), 1500);
       }
     };
     fetchFx();
@@ -152,48 +234,44 @@ export default function PortfolioDashboard() {
       const stockSymbols = [...new Set(assets.filter(a => a.type === "stock").map(a => a.symbol).filter(Boolean))];
       const cryptoIds = [...new Set(assets.filter(a => a.type === "crypto" && a.coingeckoId).map(a => a.coingeckoId))];
       const newPrices = {};
+
+      // Batch stock quotes
       for (const symbol of stockSymbols) {
-        try {
-          const res = await fetch(FINNHUB_QUOTE(symbol));
-          const data = await res.json();
-          const c = toNum(data?.c);
-          if (c > 0) {
-            const isIdr = symbol.toUpperCase().endsWith('.JK');
-            newPrices[symbol] = { [isIdr ? 'idr' : 'usd']: c };
-          }
-        } catch (e) {}
+          try {
+              const res = await fetch(FINNHUB_QUOTE(symbol));
+              const data = await res.json();
+              if (data && data.c > 0) {
+                  newPrices[symbol] = data.c;
+              }
+          } catch (e) { console.error(`Failed to fetch price for ${symbol}`, e); }
       }
+
+      // Batch crypto quotes
       if (cryptoIds.length > 0) {
         try {
-          const idsParam = cryptoIds.join(',');
-          const res = await fetch(COINGECKO_PRICE(idsParam));
+          const res = await fetch(COINGECKO_PRICE(cryptoIds.join(',')));
           const j = await res.json();
           for (const id of cryptoIds) {
-            if (j[id]) newPrices[id] = { usd: toNum(j[id].usd), idr: toNum(j[id].idr) };
+            if (j[id] && j[id].usd) {
+              const asset = assets.find(a => a.coingeckoId === id);
+              if (asset) newPrices[asset.symbol] = j[id].usd;
+            }
           }
-        } catch (e) {}
+        } catch (e) { console.error("Failed to fetch crypto prices", e); }
       }
-
-      setAssets(prev => prev.map(a => {
-        if (a.type === 'stock' && newPrices[a.symbol]) {
-          const isIdrStock = a.symbol.endsWith('.JK');
-          const p = newPrices[a.symbol];
-          let lastPriceUSD = a.lastPriceUSD;
-          if (isIdrStock && p.idr) lastPriceUSD = p.idr / usdIdr;
-          else if (p.usd) lastPriceUSD = p.usd;
-          return { ...a, lastPriceUSD };
-        }
-        if (a.type === 'crypto' && a.coingeckoId && newPrices[a.coingeckoId]) {
-          const p = newPrices[a.coingeckoId];
-          const lastPriceUSD = p.usd || a.lastPriceUSD;
-          return { ...a, lastPriceUSD };
-        }
-        return a;
-      }));
+      
+      if (Object.keys(newPrices).length > 0) {
+        setAssets(prev => prev.map(a => {
+            if (newPrices[a.symbol]) {
+                const priceInUSD = a.symbol.endsWith('.JK') ? newPrices[a.symbol] / usdIdr : newPrices[a.symbol];
+                return { ...a, lastPriceUSD: priceInUSD };
+            }
+            return a;
+        }));
+      }
     };
-
     pollPrices();
-    const id = setInterval(pollPrices, 30000);
+    const id = setInterval(pollPrices, 25000); // Poll more frequently
     return () => clearInterval(id);
   }, [assets.length, usdIdr]);
 
@@ -201,92 +279,100 @@ export default function PortfolioDashboard() {
   useEffect(() => {
     if (!query || query.trim().length < 2) { setSuggestions([]); return; }
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const q = query.trim();
+        const url = searchMode === 'crypto' ? `${COINGECKO_API}/search?query=${encodeURIComponent(q)}` : PROXIED_YAHOO_SEARCH(q);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Search API failed with status: ' + res.status);
+        const text = await res.text();
+        const j = JSON.parse(text); // Manually parse JSON after getting text
+        
         if (searchMode === 'crypto') {
-          const res = await fetch(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}`);
-          const j = await res.json();
-          setSuggestions((j.coins || []).slice(0, 10).map(c => ({ symbol: c.symbol.toUpperCase(), display: c.name, id: c.id, source: "coingecko", type: "crypto" })));
+          setSuggestions((j.coins || []).slice(0, 10).map(c => ({ symbol: c.symbol.toUpperCase(), display: `${c.name} (${c.symbol.toUpperCase()})`, id: c.id, image: c.thumb, source: "coingecko", type: "crypto" })));
         } else {
-          const res = await fetch(YAHOO_SEARCH(q));
-          if (!res.ok) throw new Error('search failed');
-          const payload = await res.json();
-          const list = (payload.quotes || []).map(it => ({ symbol: it.symbol.toUpperCase(), display: it.shortname || it.longname || it.symbol, exchange: it.exchange, source: "yahoo", type: "stock" }));
-          setSuggestions(list.slice(0, 10));
+          setSuggestions((j.quotes || []).filter(it => it.shortname || it.longname).map(it => ({ 
+              symbol: it.symbol.toUpperCase(), 
+              display: `${it.shortname || it.longname} (${it.symbol.toUpperCase()})`,
+              exchange: it.exchange,
+              source: "yahoo", 
+              type: "stock" 
+          })).slice(0, 10));
         }
-      } catch (e) { setSuggestions([]); }
-    }, 350);
+      } catch (e) {
+        console.error("Search failed:", e);
+        setSuggestions([]);
+      }
+    }, 400); // Slightly increased delay for better typing experience
+
     return () => clearTimeout(searchTimeoutRef.current);
   }, [query, searchMode]);
 
   /* ===================== Actions ===================== */
+  const addTransaction = (tx) => {
+    setTransactions(prev => [...prev, tx]);
+  };
+  
   const handleBuy = (assetStub, qty, priceUSD) => {
-    qty = Number(qty || 0); priceUSD = Number(priceUSD || 0);
+    qty = toNum(qty); priceUSD = toNum(priceUSD);
     if (qty <= 0 || priceUSD <= 0) { alert("Quantity and price must be greater than zero."); return false; }
     const costUSD = qty * priceUSD;
-    if (costUSD * usdIdr > tradingBalance) { alert("Insufficient trading balance."); return false; }
-    const existing = assets.find(a => a.symbol === assetStub.symbol);
-    const tx = { id: `tx:${Date.now()}`, type: "buy", qty, pricePerUnit: priceUSD, cost: costUSD, date: Date.now(), symbol: assetStub.symbol, name: assetStub.name || assetStub.symbol };
-    if (existing) {
-      tx.assetId = existing.id;
-      setAssets(prev => prev.map(a => a.id === existing.id ? { ...a, shares: a.shares + qty, investedUSD: a.investedUSD + costUSD, avgPrice: (a.investedUSD + costUSD) / (a.shares + qty) } : a));
-    } else {
-      const newAsset = ensureNumericAsset({ ...assetStub, shares: qty, avgPrice: priceUSD, investedUSD: costUSD });
-      tx.assetId = newAsset.id;
-      setAssets(prev => [...prev, newAsset]);
-    }
-    setTradingBalance(b => b - (costUSD * usdIdr));
-    setTransactions(prev => [tx, ...prev]);
+    if (costUSD * usdIdr > financialSummaries.tradingBalance) { alert("Insufficient trading balance."); return false; }
+    
+    const assetId = assetStub.id || `${assetStub.type}:${assetStub.symbol}`;
+    const tx = { id: `tx:${Date.now()}`, type: "buy", qty, pricePerUnit: priceUSD, cost: costUSD, date: Date.now(), symbol: assetStub.symbol, name: assetStub.name || assetStub.symbol, assetId, assetStub };
+    
+    addTransaction(tx);
     if (tradeModal.open) setTradeModal({ open: false, asset: null });
     return true;
   };
 
   const handleSell = (asset, qty, priceUSD) => {
-    qty = Number(qty || 0); priceUSD = Number(priceUSD || 0);
-    if (!asset) return false;
-    if (qty <= 0) { alert("Quantity must be > 0"); return false; }
+    qty = toNum(qty); priceUSD = toNum(priceUSD);
+    if (!asset || qty <= 0) { alert("Quantity must be > 0"); return false; }
     if (qty > asset.shares) { alert("Cannot sell more than you own."); return false; }
     const proceedsUSD = qty * priceUSD;
     const costOfSold = qty * asset.avgPrice;
     const realized = proceedsUSD - costOfSold;
-    const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "sell", qty, pricePerUnit: priceUSD, proceeds: proceedsUSD, realized, date: Date.now(), symbol: asset.symbol, name: asset.name };
-    setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, shares: a.shares - qty, investedUSD: a.investedUSD - costOfSold, avgPrice: (a.shares - qty) > 0 ? (a.investedUSD - costOfSold) / (a.shares - qty) : 0 } : a).filter(a => a.shares > 0));
-    setTradingBalance(b => b + (proceedsUSD * usdIdr));
-    setRealizedUSD(r => r + realized);
-    setTransactions(prev => [tx, ...prev]);
+    
+    const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "sell", qty, pricePerUnit: priceUSD, proceeds: proceedsUSD, costOfSold, realized, date: Date.now(), symbol: asset.symbol, name: asset.name };
+
+    addTransaction(tx);
     if (tradeModal.open) setTradeModal({ open: false, asset: null });
     return true;
   };
 
   const handleDeleteAsset = (asset) => {
-    if (!asset) return;
-    if (!confirm(`Delete and liquidate ${asset.symbol} at market price?`)) return;
+    if (!asset || !confirm(`Delete and liquidate ${asset.symbol} at market price? This action cannot be undone.`)) return;
     const marketUSD = asset.shares * asset.lastPriceUSD;
     const realized = marketUSD - asset.investedUSD;
-    const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "delete", qty: asset.shares, pricePerUnit: asset.lastPriceUSD, proceeds: marketUSD, realized, date: Date.now(), symbol: asset.symbol, name: asset.name, note: "liquidated" };
-    setAssets(prev => prev.filter(a => a.id !== asset.id));
-    setTradingBalance(b => b + (marketUSD * usdIdr));
-    setRealizedUSD(r => r + realized);
-    setTransactions(prev => [tx, ...prev]);
+    
+    const tx = { id: `tx:${Date.now()}`, assetId: asset.id, type: "delete", qty: asset.shares, pricePerUnit: asset.lastPriceUSD, proceeds: marketUSD, costOfSold: asset.investedUSD, realized, date: Date.now(), symbol: asset.symbol, name: asset.name, note: "liquidated" };
+    
+    addTransaction(tx);
     setTradeModal({ open: false, asset: null });
   };
+  
+  const handleDeleteTransaction = (txId) => {
+    if (!confirm("Are you sure you want to permanently delete this transaction? This action cannot be undone and will affect your portfolio calculation.")) return;
+    setTransactions(prev => prev.filter(tx => tx.id !== txId));
+  };
+
 
   const addAssetWithInitial = (qty, price) => {
-    qty = Number(qty || 0); price = Number(price || 0);
+    qty = toNum(qty); price = toNum(price);
     let p = selectedSuggestion;
     if (!p) {
-      const t = query.split("—")[0].trim();
-      if (!t) { alert("Select a suggestion"); return; }
-      p = { symbol: t.toUpperCase(), display: t.toUpperCase(), type: 'stock' };
+      const t = query.split("(")[0].trim();
+      if (!t) { alert("Select a suggestion or enter a symbol."); return; }
+      p = { symbol: t.toUpperCase(), display: t.toUpperCase(), type: searchMode, image: null };
     }
     if (qty <= 0 || price <= 0) { alert("Quantity & price must be > 0"); return; }
-    const priceUSD = (displaySymbol === "Rp.") ? price / usdIdr : price;
-    const newStub = { id: `${p.source || 'manual'}:${p.symbol||p.id}:${Date.now()}`, type: p.type, symbol: p.symbol, name: p.display, coingeckoId: p.type === 'crypto' ? p.id : undefined };
+    const priceUSD = (displaySymbol === "Rp") ? price / usdIdr : price;
+    const newStub = { id: `${p.source || 'manual'}:${p.symbol||p.id}`, type: p.type, symbol: p.symbol, name: p.display, image: p.image, coingeckoId: p.type === 'crypto' ? p.id : undefined };
     if (handleBuy(newStub, qty, priceUSD)) {
-      setAddAssetModalOpen(false);
-      setQuery('');
-      setSelectedSuggestion(null);
+      setAddAssetModalOpen(false); setQuery(''); setSelectedSuggestion(null); setSuggestions([]);
     }
   };
 
@@ -294,208 +380,195 @@ export default function PortfolioDashboard() {
     const name = nlName.trim(), qty = toNum(nlQty), priceIn = toNum(nlPrice);
     if (!name || qty <= 0 || priceIn <= 0) { alert("Name, quantity, and price must be filled."); return; }
     const priceUSD = nlPriceCcy === 'IDR' ? priceIn / usdIdr : priceIn;
-    const newAssetStub = { id: `nonliquid:${name.replace(/\s/g,'_')}:${Date.now()}`, type: 'nonliquid', symbol: name.slice(0,8).toUpperCase(), name, purchaseDate: nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now(), nonLiquidYoy: toNum(nlYoy), description: nlDesc };
+    const newAssetStub = { id: `nonliquid:${name.replace(/\s/g,'_')}`, type: 'nonliquid', symbol: name.slice(0,8).toUpperCase(), name, purchaseDate: nlPurchaseDate ? new Date(nlPurchaseDate).getTime() : Date.now(), nonLiquidYoy: toNum(nlYoy), description: nlDesc };
     if (handleBuy(newAssetStub, qty, priceUSD)) {
       setAddAssetModalOpen(false); setNlName(''); setNlQty(''); setNlPrice(''); setNlPurchaseDate(''); setNlDesc('');
     }
   };
-
+  
   const handleAddBalance = (amount) => {
-    const amountIDR = displaySymbol === "Rp." ? amount : amount * usdIdr;
-    setTradingBalance(b => b + amountIDR);
-    setTotalDeposits(d => d + amountIDR);
+    const amountIDR = toNum(amount);
+    const tx = { id: `tx:${Date.now()}`, type: "deposit", amount: amountIDR, date: Date.now() };
+    addTransaction(tx);
     setBalanceModalOpen(false);
   };
   const handleWithdraw = (amount) => {
-    const amountIDR = displaySymbol === "Rp." ? amount : amount * usdIdr;
-    if (amountIDR > tradingBalance) { alert("Withdrawal amount exceeds balance."); return; }
-    setTradingBalance(b => b - amountIDR);
+    const amountIDR = toNum(amount);
+    if (amountIDR > financialSummaries.tradingBalance) { alert("Withdrawal amount exceeds balance."); return; }
+    const tx = { id: `tx:${Date.now()}`, type: "withdraw", amount: amountIDR, date: Date.now() };
+    addTransaction(tx);
     setBalanceModalOpen(false);
   };
 
+  const handleExport = () => {
+    if (transactions.length === 0) {
+      alert("No transactions to export.");
+      return;
+    }
+    // Simple CSV export for now. Can be made more robust.
+    const header = Object.keys(transactions[0]).join(',') + '\n';
+    const rows = transactions.map(tx => Object.values(tx).map(val => `"${val}"`).join(',')).join('\n');
+    const csvContent = header + rows;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `transactions_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setManagePortfolioOpen(false);
+  };
+
+  const handleImportClick = () => {
+    importInputRef.current.click();
+    setManagePortfolioOpen(false);
+  };
+
+  const handleFileImport = (event) => {
+      // Import logic needs to be carefully considered with the new transaction-based system
+      alert("Import feature is being re-evaluated for the new transaction-based system.");
+  };
+
   /* ===================== Derived Data ===================== */
-  const { rows, totals, totalEquity, tradeStats } = useMemo(() => {
-    const calculatedRows = assets.map(a => {
+  const { tradingBalance, realizedUSD, totalDeposits, totalWithdrawals } = financialSummaries;
+  const derivedData = useMemo(() => {
+    const rows = assets.map(a => {
       const effectiveLastPriceUSD = a.lastPriceUSD > 0 ? a.lastPriceUSD : a.avgPrice;
-      const market = a.shares * effectiveLastPriceUSD;
-      const pnl = market - a.investedUSD;
-      const pnlPct = a.investedUSD > 0 ? (pnl / a.investedUSD) * 100 : 0;
-      return { 
-        ...a, 
-        lastPriceUSD: effectiveLastPriceUSD,
-        marketValueUSD: market, 
-        pnlUSD: pnl, 
-        pnlPct 
-      };
+      const marketValueUSD = a.shares * effectiveLastPriceUSD;
+      const pnlUSD = marketValueUSD - a.investedUSD;
+      const pnlPct = a.investedUSD > 0 ? (pnlUSD / a.investedUSD) * 100 : 0;
+      return { ...a, lastPriceUSD: effectiveLastPriceUSD, marketValueUSD, pnlUSD, pnlPct };
     });
-    const invested = calculatedRows.reduce((s, r) => s + r.investedUSD, 0);
-    const market = calculatedRows.reduce((s, r) => s + r.marketValueUSD, 0);
-    const pnl = market - invested;
-    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
-    const totalEq = (market * usdIdr) + tradingBalance;
+    
+    const investedUSD = rows.reduce((s, r) => s + r.investedUSD, 0);
+    const marketValueUSD = rows.reduce((s, r) => s + r.marketValueUSD, 0);
+    const unrealizedPnlUSD = marketValueUSD - investedUSD;
+    const unrealizedPnlPct = investedUSD > 0 ? (unrealizedPnlUSD / investedUSD) * 100 : 0;
+    
+    const totalEquity = (marketValueUSD * usdIdr) + tradingBalance;
+    
     const sells = transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete');
     const wins = sells.filter(tx => tx.realized > 0);
     const losses = sells.filter(tx => tx.realized <= 0);
-    const tStats = {
+    
+    const tradeStats = {
       trades: sells.length,
       wins: wins.length,
       losses: losses.length,
       winRate: sells.length > 0 ? (wins.length / sells.length) * 100 : 0,
-      maxProfit: wins.length ? Math.max(...wins.map(tx => tx.realized)) : 0,
-      maxLoss: losses.length ? Math.min(...losses.map(tx => tx.realized)) : 0,
+      maxProfit: wins.length ? Math.max(0, ...wins.map(tx => tx.realized)) : 0,
+      maxLoss: losses.length ? Math.min(0, ...losses.map(tx => tx.realized)) : 0,
       avgProfit: wins.length ? wins.reduce((s, tx) => s + tx.realized, 0) / wins.length : 0,
       avgLoss: losses.length ? losses.reduce((s, tx) => s + tx.realized, 0) / losses.length : 0,
       totalRealizedGain: realizedUSD
     };
-    return { rows: calculatedRows, totals: { invested, market, pnl, pnlPct }, totalEquity: totalEq, tradeStats: tStats };
-  }, [assets, transactions, usdIdr, tradingBalance, realizedUSD]);
+    
+    const netDeposit = totalDeposits - totalWithdrawals;
+    const totalPnlUSD = unrealizedPnlUSD + realizedUSD;
+    const equityVsDeposit = totalEquity - netDeposit;
+    
+    const totalValueForBreakdown = tradingBalance + (marketValueUSD * usdIdr);
+    const cashPct = totalValueForBreakdown > 0 ? (tradingBalance / totalValueForBreakdown) * 100 : 100;
+    const investedPct = totalValueForBreakdown > 0 ? ((marketValueUSD * usdIdr) / totalValueForBreakdown) * 100 : 0;
+
+    return { 
+      rows, 
+      totals: { investedUSD, marketValueUSD, unrealizedPnlUSD, unrealizedPnlPct }, 
+      totalEquity, tradeStats, netDeposit, totalPnlUSD,
+      equityVsDeposit, cashPct, investedPct 
+    };
+  }, [assets, tradingBalance, realizedUSD, totalDeposits, totalWithdrawals, transactions, usdIdr]);
 
   /* ===================== Equity Timeline ===================== */
   const equitySeries = useMemo(() => {
-    const buysCost = transactions.filter(t => t.type === 'buy').reduce((s, t) => s + (t.cost || 0), 0);
-    const sellsProceeds = transactions.filter(t => t.type === 'sell' || t.type === 'delete').reduce((s, t) => s + (t.proceeds || 0), 0);
-    const initialCashIdr = tradingBalance + Math.round(buysCost * usdIdr) - Math.round(sellsProceeds * usdIdr);
-    const sorted = [...transactions].sort((a,b) => a.date - b.date);
-    let cash = initialCashIdr;
-    let holdings = {};
+    const sortedTx = [...transactions].sort((a, b) => a.date - b.date);
+    if (sortedTx.length === 0) return [{ t: Date.now() - 86400000, v: 0 }, { t: Date.now(), v: 0 }];
+
     const points = [];
-    const startTime = sorted.length ? sorted[0].date : Date.now() - 365*24*3600*1000;
-    const addPoint = (t) => {
-      const marketUSD = Object.values(holdings).reduce((s,h) => s + (h.shares * (h.lastPriceUSD || h.avgPriceUSD || 0)), 0);
-      const marketIdr = Math.round(marketUSD * usdIdr);
-      points.push({ t, v: cash + marketIdr });
-    };
-    addPoint(startTime - 1000);
-    for (const tx of sorted) {
-      if (tx.type === 'buy') {
-        const costIdr = Math.round((tx.cost || 0) * usdIdr);
-        cash -= costIdr;
-        const key = tx.symbol;
-        if (!holdings[key]) holdings[key] = { shares: 0, avgPriceUSD: 0, investedUSD: 0, lastPriceUSD: 0 };
-        holdings[key].shares += tx.qty;
-        holdings[key].investedUSD += (tx.cost || 0);
-        holdings[key].avgPriceUSD = holdings[key].investedUSD / holdings[key].shares;
-        const a = assets.find(x => x.symbol === key);
-        if (a) holdings[key].lastPriceUSD = a.lastPriceUSD || holdings[key].avgPriceUSD;
-      } else if (tx.type === 'sell' || tx.type === 'delete') {
-        const proceedsIdr = Math.round((tx.proceeds || 0) * usdIdr);
-        cash += proceedsIdr;
-        const key = tx.symbol;
-        if (!holdings[key]) holdings[key] = { shares:0, avgPriceUSD:0, investedUSD:0, lastPriceUSD:0 };
-        holdings[key].shares -= tx.qty;
-        holdings[key].investedUSD -= (tx.qty * (tx.pricePerUnit || 0));
-        if (holdings[key].shares <= 0) delete holdings[key];
-        else holdings[key].avgPriceUSD = holdings[key].investedUSD / holdings[key].shares;
-        const a = assets.find(x => x.symbol === key);
-        if (a) holdings[key].lastPriceUSD = a.lastPriceUSD || holdings[key].avgPriceUSD;
-      }
-      addPoint(tx.date);
-    }
-    const now = Date.now();
-    const finalMarketUSD = assets.reduce((s,a) => s + a.shares * (a.lastPriceUSD > 0 ? a.lastPriceUSD : a.avgPrice), 0);
-    const finalMarketIdr = Math.round(finalMarketUSD * usdIdr);
-    points.push({ t: now, v: tradingBalance + finalMarketIdr });
-    const unique = [];
-    const seen = new Set();
-    for (const p of points) {
-      if (!seen.has(p.t)) { unique.push(p); seen.add(p.t); }
-    }
-    return unique.length ? unique : [{ t: now - 1000, v: 0 }, { t: now, v: finalMarketIdr + tradingBalance }];
-  }, [transactions, assets, tradingBalance, usdIdr]);
+    let currentCash = 0;
+    let currentHoldings = {}; // { [assetId]: { shares, avgPrice } }
 
-  /* ===================== CSV ===================== */
-  const exportCSV = () => {
-    const pad = s => `"${String(s||"").replace(/"/g,'""')}"`;
-    const assetHeaders = ["id","type","symbol","name","shares","avgPriceUSD","investedUSD","lastPriceUSD"];
-    const assetsCsv = [assetHeaders.join(",")].concat(assets.map(a => assetHeaders.map(h => pad(a[h])).join(","))).join("\n");
-    const txHeaders = ["id","type","assetId","symbol","qty","pricePerUnit","cost","proceeds","realized","date","note"];
-    const txCsv = [txHeaders.join(",")].concat(transactions.map(t => txHeaders.map(h => pad(t[h])).join(","))).join("\n");
-    const blob = new Blob([`# assets\n${assetsCsv}\n\n# transactions\n${txCsv}`], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `bloomboard_export_${Date.now()}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const importCSV = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target.result;
-      try {
-        const parts = text.split(/\r?\n/);
-        let assetsBlock = [], txBlock = [], mode = null;
-        for (let line of parts) {
-          line = line.trim();
-          if (!line) continue;
-          if (line.startsWith("# assets")) { mode = "assets"; continue; }
-          if (line.startsWith("# transactions")) { mode = "tx"; continue; }
-          if (line.startsWith("#")) { mode = null; continue; }
-          if (!mode) continue;
-          if (mode === "assets") assetsBlock.push(line);
-          if (mode === "tx") txBlock.push(line);
-        }
-        if (assetsBlock.length > 0) {
-          const header = assetsBlock[0].split(",").map(h => h.replace(/"/g,'').trim());
-          const rows = assetsBlock.slice(1).map(r => {
-            const vals = r.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-            const obj = {}; header.forEach((h,i) => obj[h] = (vals[i] || "").replace(/^"|"$/g, "")); return obj;
-          });
-          const importedAssets = rows.map(r => ensureNumericAsset({
-            id: r.id || `imp:${r.symbol}:${Date.now()}`,
-            type: r.type || "stock",
-            symbol: r.symbol,
-            name: r.name || r.symbol,
-            shares: toNum(r.shares),
-            avgPrice: toNum(r.avgPriceUSD),
-            investedUSD: toNum(r.investedUSD),
-            lastPriceUSD: toNum(r.lastPriceUSD)
-          }));
-          setAssets(prev => {
-            const merged = [...prev];
-            for (const a of importedAssets) {
-              const found = merged.find(x => x.symbol === a.symbol);
-              if (!found) merged.push(a);
+    for (const tx of sortedTx) {
+        if (tx.type === 'deposit') {
+            currentCash += tx.amount;
+        } else if (tx.type === 'withdraw') {
+            currentCash -= tx.amount;
+        } else if (tx.type === 'buy') {
+            const costIDR = tx.cost * usdIdr;
+            currentCash -= costIDR;
+            const asset = currentHoldings[tx.assetId] || { shares: 0, avgPrice: 0, invested: 0 };
+            const newInvested = asset.invested + tx.cost;
+            const newShares = asset.shares + tx.qty;
+            asset.invested = newInvested;
+            asset.shares = newShares;
+            asset.avgPrice = newShares > 0 ? newInvested / newShares : 0;
+            currentHoldings[tx.assetId] = asset;
+        } else if (tx.type === 'sell' || tx.type === 'delete') {
+            const proceedsIDR = tx.proceeds * usdIdr;
+            currentCash += proceedsIDR;
+            if (currentHoldings[tx.assetId]) {
+                const asset = currentHoldings[tx.assetId];
+                const costOfSold = asset.avgPrice * tx.qty;
+                asset.invested -= costOfSold;
+                asset.shares -= tx.qty;
             }
-            return merged;
-          });
         }
-        if (txBlock.length > 0) {
-          const header = txBlock[0].split(",").map(h => h.replace(/"/g,'').trim());
-          const rows = txBlock.slice(1).map(r => {
-            const vals = r.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-            const obj = {}; header.forEach((h,i) => obj[h] = (vals[i] || "").replace(/^"|"$/g, "")); return obj;
-          });
-          const importedTx = rows.map(r => ({
-            id: r.id || `imp:tx:${Date.now()}`,
-            type: r.type,
-            assetId: r.assetId,
-            symbol: r.symbol,
-            qty: toNum(r.qty),
-            pricePerUnit: toNum(r.pricePerUnit),
-            cost: toNum(r.cost),
-            proceeds: toNum(r.proceeds),
-            realized: toNum(r.realized),
-            date: toNum(r.date) || Date.now(),
-            note: r.note
-          }));
-          setTransactions(prev => [...importedTx, ...prev]);
+        
+        // Find latest prices for current holdings to calculate market value
+        let holdingsValueUSD = 0;
+        for (const assetId in currentHoldings) {
+            const holding = currentHoldings[assetId];
+            const liveAsset = assets.find(a => a.id === assetId);
+            const price = liveAsset ? liveAsset.lastPriceUSD : holding.avgPrice;
+            holdingsValueUSD += holding.shares * price;
         }
-        alert("CSV imported (best-effort). Check your portfolio.");
-      } catch (err) {
-        alert("Failed to import CSV. Make sure it matches expected format.");
-      } finally {
-        e.target.value = '';
-      }
-    };
-    reader.readAsText(file);
-  };
+
+        const totalEquity = currentCash + (holdingsValueUSD * usdIdr);
+        points.push({ t: tx.date, v: totalEquity });
+    }
+    
+    if (points.length === 0) return [{ t: Date.now() - 86400000, v: 0 }, { t: Date.now(), v: derivedData.totalEquity }];
+
+    return [{ t: points[0].t - 86400000, v: 0 }, ...points, {t: Date.now(), v: derivedData.totalEquity}];
+  }, [transactions, assets, usdIdr, derivedData.totalEquity]);
+
+  const equityReturnData = useMemo(() => {
+    const data = equitySeries;
+    if (data.length < 2) return [];
+    let periodData = {};
+    for (let i = 1; i < data.length; i++) {
+        const currentDate = new Date(data[i].t);
+        const key = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+        if (!periodData[key]) {
+            periodData[key] = { startEquity: data[i-1].v, endEquity: data[i].v, endDate: currentDate };
+        } else {
+            periodData[key].endEquity = data[i].v;
+            periodData[key].endDate = currentDate;
+        }
+    }
+    return Object.keys(periodData).map(key => {
+        const item = periodData[key];
+        const pnl = item.endEquity - item.startEquity;
+        const date = new Date(item.endDate);
+        const dateLabel = date.toLocaleString('default', { month: 'short', year: 'numeric' });
+        return { date: dateLabel, equity: item.endEquity, pnl, rawDate: item.endDate }
+    }).sort((a,b) => b.rawDate - a.rawDate);
+  }, [equitySeries]);
+
 
   /* ================ Render ================ */
   if (view === 'performance') {
-    return <PerformancePage totals={totals} totalEquity={totalEquity} tradeStats={tradeStats} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} portfolioData={rows} transactions={transactions} equitySeries={equitySeries} />;
+    return <PerformancePage {...derivedData} setView={setView} usdIdr={usdIdr} displaySymbol={displaySymbol} portfolioData={derivedData.rows} transactions={transactions} equitySeries={equitySeries} onDeleteTransaction={handleDeleteTransaction} initialTab={initialPerformanceTab} />;
   }
+  if (view === 'equityDetail') {
+    return <EquityDetailView setView={setView} totalEquity={derivedData.totalEquity} equitySeries={equitySeries} displaySymbol={displaySymbol} equityReturnData={equityReturnData} usdIdr={usdIdr} />;
+  }
+  if (view === 'allocationDetail') {
+      return <AllocationDetailView setView={setView} portfolioData={derivedData.rows} displaySymbol={displaySymbol} usdIdr={usdIdr} />;
+  }
+
 
   return (
     <div className="bg-black text-gray-300 min-h-screen font-sans">
@@ -503,241 +576,174 @@ export default function PortfolioDashboard() {
         <header className="p-4 flex justify-between items-center sticky top-0 bg-black z-10">
           <div className="flex items-center gap-3">
             <UserAvatar />
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-2 flex items-center gap-2">
-                <img src="/tether.png" alt="Tether" className="w-5 h-5" />
-                <div className={`font-semibold text-xs tabular-nums transition-colors duration-500 ${
-                    priceDirection === 'up' ? 'text-emerald-400' : priceDirection === 'down' ? 'text-red-400' : 'text-white'
-                }`}>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex items-center gap-2">
+                <img src="https://assets.coingecko.com/coins/images/325/small/Tether.png?1696501661" alt="Tether" className="w-5 h-5" />
+                <div className={`font-semibold text-xs tabular-nums transition-colors duration-500 ${priceDirection === 'up' ? 'text-emerald-400' : priceDirection === 'down' ? 'text-red-400' : 'text-white'}`}>
                   {isFxLoading ? '...' : `Rp ${new Intl.NumberFormat('id-ID').format(usdIdr)}`}
                 </div>
-                {!isFxLoading && (
-                  <div className={`flex items-center text-xs font-semibold ${usdIdrChange24h >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className={`mr-1 ${usdIdrChange24h < 0 ? 'transform rotate-180' : ''}`}>
-                      <path d="M7 14l5-5 5 5z"/>
-                    </svg>
-                    {usdIdrChange24h.toFixed(2)}%
-                  </div>
-                )}
-              </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-gray-400">IDR</span>
-              <div
-                role="switch"
-                aria-checked={displaySymbol === "$"}
-                onClick={() => setDisplaySymbol(prev => prev === "Rp." ? "$" : "Rp.")}
-                className={`relative w-12 h-6 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-gray-700'}`}
-                title="Toggle display currency"
-              >
-                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div>
-              </div>
-              <span className="text-xs font-semibold text-gray-400">USD</span>
+                {!isFxLoading && (<div className={`flex items-center text-xs font-semibold ${usdIdrChange24h >= 0 ? 'text-emerald-500' : 'text-red-500'}`}><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className={`mr-1 ${usdIdrChange24h < 0 ? 'transform rotate-180' : ''}`}><path d="M7 14l5-5 5 5z"/></svg>{usdIdrChange24h.toFixed(2)}%</div>)}
             </div>
-
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2"><span className="text-xs font-semibold text-gray-400">IDR</span><div role="switch" aria-checked={displaySymbol === "$"} onClick={() => setDisplaySymbol(prev => prev === "Rp" ? "$" : "Rp")} className={`relative w-12 h-6 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-zinc-700'}`} title="Toggle display currency"><div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div></div><span className="text-xs font-semibold text-gray-400">USD</span></div>
+            <button onClick={() => setAddAssetModalOpen(true)} className="text-gray-400 hover:text-white"><SearchIcon /></button>
             <button onClick={() => setManagePortfolioOpen(true)} className="text-gray-400 hover:text-white"><MoreVerticalIcon /></button>
           </div>
         </header>
 
         <main>
-          <div className="border-b border-gray-800 px-4">
-            <nav className="flex space-x-6 py-2"></nav>
-          </div>
-
           <section className="p-4">
-            <div className="grid grid-cols-3 gap-px bg-[#0a0a0a] p-px">
-              <div className="bg-black p-2">
-                <p className="text-xs text-gray-500">Cash</p>
-                <p className="font-semibold text-xs text-white">
-                  {displaySymbol === "Rp." ? formatMoney(tradingBalance, "Rp.") : formatMoney(tradingBalance / usdIdr, "$")}
-                </p>
-              </div>
-
-              <div className="bg-black p-2">
-                <p className="text-xs text-gray-500">Invested</p>
-                <p className="font-semibold text-xs text-white">
-                  {displaySymbol === "Rp." ? formatMoney(totals.invested * usdIdr, "Rp.") : formatMoney(totals.invested, "$")}
-                </p>
-              </div>
-
-              <div className="bg-black p-2">
-                <p className="text-xs text-gray-500">Total Equity</p>
-                <p className="font-semibold text-xs text-white">
-                  {displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}
-                </p>
-              </div>
-
-              <div className="bg-black p-2">
-                <p className="text-xs text-gray-500">Gain P&L</p>
-                <p className={`font-semibold text-xs ${totals.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {totals.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(totals.pnl * usdIdr, "Rp.") : formatMoney(totals.pnl, "$")} ({(totals.pnlPct || 0).toFixed(2)}%)
-                </p>
-              </div>
-              
-              <div className="bg-black p-2">
-                <p className="text-xs text-gray-500">Deposit</p>
-                <p className="font-semibold text-xs text-white">
-                  {displaySymbol === "Rp." ? formatMoney(totalDeposits, "Rp.") : formatMoney(totalDeposits / usdIdr, "$")}
-                </p>
-              </div>
-
-              <div className="bg-black p-2">
-                <p className="text-xs text-gray-500">Realized P&L</p>
-                <p className={`font-semibold text-xs ${realizedUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {realizedUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(realizedUSD * usdIdr, "Rp.") : formatMoney(realizedUSD, "$")}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 text-right">
-              <div className="text-sm text-white cursor-pointer inline-flex items-center gap-2" onClick={() => setView('performance')}>View Performance <ArrowRightIconSimple /></div>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                <div onClick={() => setView('equityDetail')} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-between cursor-pointer hover:border-zinc-700 transition-colors">
+                    <div className="flex-grow">
+                        <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
+                        <p className="text-xl sm:text-3xl font-bold text-white leading-tight">{formatCurrency(derivedData.totalEquity, false, displaySymbol, usdIdr)}</p>
+                        <p className="text-xs text-gray-500">{formatCurrency(derivedData.totalEquity, false, displaySymbol === 'Rp' ? '$' : 'Rp', usdIdr)}</p>
+                        <div className="h-10 w-full mt-2 opacity-70">
+                            <MiniAreaChart data={equitySeries} />
+                        </div>
+                    </div>
+                    <div className="mt-2 border-t border-zinc-800 pt-2 text-[11px] sm:text-xs space-y-1">
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Net Deposit</span><span className="font-semibold text-white">{derivedData.netDeposit >= 0 ? '+' : ''}{formatCurrency(derivedData.netDeposit, false, displaySymbol, usdIdr)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Total G/L</span><span className={`font-semibold ${derivedData.totalPnlUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.totalPnlUSD >= 0 ? '+' : ''}{formatCurrency(derivedData.totalPnlUSD, true, displaySymbol, usdIdr)}</span></div>
+                    </div>
+                </div>
+                <div onClick={() => setView('allocationDetail')} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center cursor-pointer hover:border-zinc-700 transition-colors">
+                    <div className="flex items-center justify-around">
+                        <div className="text-center">
+                           <p className="text-gray-400 text-[11px] sm:text-xs">Cash</p>
+                           <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(tradingBalance, false, displaySymbol, usdIdr)}</p>
+                           <p className="text-[11px] sm:text-xs text-gray-300">{derivedData.cashPct.toFixed(0)}%</p>
+                        </div>
+                         <div className="w-16 h-16">
+                            <MiniDonutChart cashPct={derivedData.cashPct} investedPct={derivedData.investedPct} />
+                        </div>
+                        <div className="text-center">
+                           <p className="text-gray-400 text-[11px] sm:text-xs">Invested</p>
+                           <p className={`font-semibold ${displaySymbol === 'Rp' ? 'text-xs sm:text-base' : 'text-sm sm:text-lg'}`}>{formatCurrency(derivedData.totals.marketValueUSD, true, displaySymbol, usdIdr)}</p>
+                           <p className="text-[11px] sm:text-xs text-gray-300">{derivedData.investedPct.toFixed(0)}%</p>
+                        </div>
+                    </div>
+                </div>
+                <div onClick={() => { setView('performance'); setInitialPerformanceTab('history'); }} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg cursor-pointer hover:border-zinc-700 transition-colors">
+                    <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs space-y-2">
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Deposit</span><span className="font-medium">{formatCurrency(totalDeposits, false, displaySymbol, usdIdr)}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Withdraw</span><span className="font-medium">{formatCurrency(totalWithdrawals, false, displaySymbol, usdIdr)}</span></div>
+                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Realized P&L</span><span className={`font-semibold ${realizedUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{realizedUSD >= 0 ? '+' : ''}{formatCurrency(realizedUSD, true, displaySymbol, usdIdr)}</span></div>
+                    </div>
+                </div>
+                <div onClick={() => { setView('performance'); setInitialPerformanceTab('trade'); }} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg cursor-pointer hover:border-zinc-700 transition-colors">
+                    <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs space-y-2">
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Unrealized P&L</span><span className={`font-semibold ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.totals.unrealizedPnlUSD >= 0 ? '+' : ''}{formatCurrency(derivedData.totals.unrealizedPnlUSD, true, displaySymbol, usdIdr)} ({derivedData.totals.unrealizedPnlPct.toFixed(2)}%)</span></div>
+                        <div className="flex justify-between items-center border-t border-zinc-800 pt-2 mt-2"><span className="text-gray-400">Equity vs Deposit</span><span className={`font-semibold ${derivedData.equityVsDeposit >= 0 ? 'text-[#20c997]' : 'text-red-400'}`}>{derivedData.equityVsDeposit >= 0 ? '+' : ''}{formatCurrency(derivedData.equityVsDeposit, false, displaySymbol, usdIdr)}</span></div>
+                    </div>
+                </div>
             </div>
           </section>
-
           <div className="h-2 bg-[#0a0a0a]"></div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-gray-500 text-xs font-semibold">
-                <tr>
-                  <th className="p-3 pt-4">
-                    <div>Code</div>
-                    <div className="font-normal text-gray-600">Qty</div>
-                  </th>
-                  <th className="p-3 pt-4 text-right">
-                    <div>Invested</div>
-                    <div className="font-normal text-gray-600">Avg Price</div>
-                  </th>
-                  <th className="p-3 pt-4 text-right">
-                    <div>Market</div>
-                    <div className="font-normal text-gray-600">Current Price</div>
-                  </th>
-                  <th className="p-3 pt-4 text-right">
-                    <div>Gain P&L</div>
-                    <div className="font-normal text-gray-600">%</div>
-                  </th>
-                </tr>
-              </thead>
+              <thead className="text-left text-gray-500 text-xs font-semibold"><tr><th className="p-3 pt-4"><div>Code</div><div className="font-normal text-gray-600">Qty</div></th><th className="p-3 pt-4 text-right"><div>Invested</div><div className="font-normal text-gray-600">Avg Price</div></th><th className="p-3 pt-4 text-right"><div>Market</div><div className="font-normal text-gray-600">Current Price</div></th><th className="p-3 pt-4 text-right"><div>Gain P&L</div><div className="font-normal text-gray-600">%</div></th></tr></thead>
               <tbody>
-                {rows.map(r => {
-                  return (
-                    <tr key={r.id} className="border-t border-gray-800 hover:bg-gray-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}>
-                      <td className="p-3">
-                        <div className="font-semibold text-sm text-white">{r.symbol}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div>
-                      </td>
-
-                      <td className="p-3 text-right tabular-nums">
-                        <div className="font-semibold text-xs text-white">{displaySymbol === "Rp." ? formatMoney(r.investedUSD * usdIdr, "Rp.") : formatMoney(r.investedUSD, "$")}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.avgPrice * usdIdr, "Rp.") : formatMoney(r.avgPrice, "$")}</div>
-                      </td>
-
-                      <td className="p-3 text-right tabular-nums">
-                        <div className="font-semibold text-xs text-white">{displaySymbol === "Rp." ? formatMoney(r.marketValueUSD * usdIdr, "Rp.") : formatMoney(r.marketValueUSD, "$")}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{displaySymbol === "Rp." ? formatMoney(r.lastPriceUSD * usdIdr, "Rp.") : formatMoney(r.lastPriceUSD, "$")}</div>
-                      </td>
-
-                      <td className="p-3 text-right tabular-nums">
-                        <div className={`font-semibold text-xs ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(r.pnlUSD * usdIdr, "Rp.") : formatMoney(r.pnlUSD, "$")}</div>
-                        <div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{r.pnlPct.toFixed(2)}%</div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {derivedData.rows.map(r => (<tr key={r.id} className="border-t border-zinc-800 hover:bg-zinc-900/50 cursor-pointer" onClick={() => setTradeModal({ open: true, asset: r })}><td className="p-3"><div className="font-semibold text-sm text-white">{r.symbol}</div><div className="text-xs text-gray-400 mt-0.5">{formatQty(r.shares)}</div></td><td className="p-3 text-right tabular-nums"><div className="font-semibold text-xs text-white">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</div><div className="text-xs text-gray-400 mt-0.5">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div></td><td className="p-3 text-right tabular-nums"><div className="font-semibold text-xs text-white">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</div><div className="text-xs text-gray-400 mt-0.5">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div></td><td className="p-3 text-right tabular-nums"><div className={`font-semibold text-xs ${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnlUSD >= 0 ? '+' : ''}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)}</div><div className={`${r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'} text-xs mt-0.5`}>{r.pnlPct.toFixed(2)}%</div></td></tr>))}
               </tbody>
             </table>
-
-            {rows.length === 0 && <p className="text-center py-8 text-gray-500">No assets in portfolio.</p>}
-
-            <div className="p-4 text-center">
-              <button onClick={() => setAddAssetModalOpen(true)} className="text-emerald-400 font-semibold text-sm">+ Add new asset</button>
-            </div>
+            {derivedData.rows.length === 0 && <p className="text-center py-8 text-gray-500">No assets in portfolio.</p>}
+            <div className="p-4 text-center"><button onClick={() => setAddAssetModalOpen(true)} className="text-emerald-400 font-semibold text-sm">+ Add new asset</button></div>
           </div>
         </main>
-
-        <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)}>
-          <AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, usdIdr, displaySymbol}} />
-        </Modal>
-
-        <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)}>
-          <BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} displaySymbol={displaySymbol} />
-        </Modal>
-
+        <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)}><AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, usdIdr, displaySymbol}} /></Modal>
+        <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)}><BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} displaySymbol={displaySymbol} /></Modal>
         <TradeModal isOpen={tradeModal.open} onClose={() => setTradeModal({ open: false, asset: null })} asset={tradeModal.asset} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
-
-        <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}>
-          <ManagePortfolioSheet onImportClick={importCSV} onExportClick={exportCSV} onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data?")) { setAssets([]); setTransactions([]); setTradingBalance(0); setRealizedUSD(0); setTotalDeposits(0); } }} />
-        </BottomSheet>
+        <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}><ManagePortfolioSheet onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data? This cannot be undone.")) { setTransactions([]); } setManagePortfolioOpen(false); }} onExport={handleExport} onImport={handleImportClick} /></BottomSheet>
+        <input type="file" ref={importInputRef} onChange={handleFileImport} className="hidden" accept=".csv" />
       </div>
     </div>
   );
 }
 
+/* ===================== Detail Views ===================== */
+const EquityDetailView = ({ setView, totalEquity, equitySeries, displaySymbol, usdIdr }) => {
+    const [chartRange, setChartRange] = useState("All");
+    const [returnPeriod, setReturnPeriod] = useState('Monthly');
+
+    const equityReturnData = useMemo(() => {
+        const data = equitySeries;
+        if (data.length < 2) return [];
+        let periodData = {};
+        for (let i = 1; i < data.length; i++) {
+            const currentDate = new Date(data[i].t);
+            let key;
+            if(returnPeriod === 'Daily'){ key = currentDate.toISOString().split('T')[0]; } 
+            else if(returnPeriod === 'Monthly'){ key = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`; } 
+            else { key = `${currentDate.getFullYear()}`; }
+            if (!periodData[key]) {
+                periodData[key] = { startEquity: data[i-1].v, endEquity: data[i].v, endDate: currentDate };
+            } else {
+                periodData[key].endEquity = data[i].v;
+                periodData[key].endDate = currentDate;
+            }
+        }
+        return Object.keys(periodData).map(key => {
+            const item = periodData[key];
+            const pnl = item.endEquity - item.startEquity;
+            const pnlPct = item.startEquity > 0 ? (pnl / item.startEquity) * 100 : 0;
+            const date = new Date(item.endDate);
+            let dateLabel = key;
+            if(returnPeriod === 'Monthly') dateLabel = date.toLocaleString('default', { month: 'short', year: 'numeric' });
+            else if(returnPeriod === 'Daily') dateLabel = date.toLocaleString('default', { month: 'short', day: 'numeric' });
+            return { date: dateLabel, equity: item.endEquity, pnl, pnlPct, rawDate: item.endDate }
+        }).sort((a,b) => b.rawDate - a.rawDate);
+    }, [equitySeries, returnPeriod]);
+
+    return (
+        <div className="bg-black text-gray-300 min-h-screen font-sans">
+            <div className="max-w-4xl mx-auto">
+                <header className="p-4 flex items-center gap-4 sticky top-0 bg-black z-10">
+                    <button onClick={() => setView('main')} className="text-white"><BackArrowIcon /></button>
+                    <h1 className="text-lg font-semibold text-white">Equity Growth</h1>
+                </header>
+                <div className="p-4">
+                    <div>
+                        <p className="text-sm text-gray-400">Total Equity</p>
+                        <p className="text-3xl font-bold text-white mb-1">{formatCurrency(totalEquity, false, displaySymbol, usdIdr)}</p>
+                    </div>
+                    <div className="mt-6"><AreaChart data={equitySeries} displaySymbol={displaySymbol} range={chartRange} setRange={setChartRange} /></div>
+                    <div className="mt-8">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-base font-semibold text-white">Total Equity Return</h3>
+                            <div className="flex items-center gap-2 text-sm">{['Daily', 'Monthly', 'Yearly'].map(p => (<button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full text-xs ${returnPeriod === p ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{p}</button>))}</div>
+                        </div>
+                        <table className="w-full text-sm">
+                            <thead className="text-left text-gray-500 text-xs"><tr><th className="p-2 font-normal">Date</th><th className="p-2 font-normal text-right">Equity</th><th className="p-2 font-normal text-right">P&L</th></tr></thead>
+                            <tbody>{equityReturnData.map((item, index) => (<tr key={index} className="border-t border-zinc-800"><td className="p-2 text-white">{item.date}</td><td className="p-2 text-white text-right">{formatCurrency(item.equity, false, displaySymbol, usdIdr)}</td><td className={`p-2 text-right ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{item.pnl >= 0 ? '+' : ''}{formatCurrency(item.pnl, false, displaySymbol, usdIdr)} ({item.pnlPct.toFixed(2)}%)</td></tr>))}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const AllocationDetailView = ({ setView, portfolioData, displaySymbol, usdIdr }) => (
+    <div className="bg-black text-gray-300 min-h-screen font-sans">
+        <div className="max-w-4xl mx-auto">
+            <header className="p-4 flex items-center gap-4 sticky top-0 bg-black z-10">
+                <button onClick={() => setView('main')} className="text-white"><BackArrowIcon /></button>
+                <h1 className="text-lg font-semibold text-white">Portfolio Allocation</h1>
+            </header>
+            <div className="p-4">
+                <PortfolioAllocation data={portfolioData} displaySymbol={displaySymbol} usdIdr={usdIdr} />
+            </div>
+        </div>
+    </div>
+);
+
+
 /* ===================== Performance & Subcomponents ===================== */
-
-const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats }) => {
-  const [activeTab, setActiveTab] = useState('portfolio');
-  const [chartRange, setChartRange] = useState("YTD");
-  const [returnPeriod, setReturnPeriod] = useState('Monthly');
-
-  const { equityReturnData } = useMemo(() => {
-    const data = equitySeries;
-    if (data.length < 2) return { equityReturnData: [] };
-
-    let periodData = {};
-
-    for (let i = 1; i < data.length; i++) {
-        const currentDate = new Date(data[i].t);
-        let key;
-        if(returnPeriod === 'Daily'){
-          key = currentDate.toISOString().split('T')[0];
-        } else if(returnPeriod === 'Monthly'){
-          key = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-        } else { // Yearly
-          key = `${currentDate.getFullYear()}`;
-        }
-        
-        if (!periodData[key]) {
-            periodData[key] = {
-                startDate: new Date(data[i-1].t),
-                startEquity: data[i-1].v,
-                endDate: currentDate,
-                endEquity: data[i].v,
-            };
-        } else {
-            periodData[key].endDate = currentDate;
-            periodData[key].endEquity = data[i].v;
-        }
-    }
-
-    const equityReturnData = Object.keys(periodData).map(key => {
-        const item = periodData[key];
-        const pnl = item.endEquity - item.startEquity;
-        const pnlPct = item.startEquity > 0 ? (pnl / item.startEquity) * 100 : 0;
-        
-        let dateLabel = key;
-        if(returnPeriod === 'Monthly'){
-          const date = new Date(item.endDate);
-          dateLabel = date.toLocaleString('default', { month: 'short' }) + ' ' + String(date.getDate()).padStart(2, '0');
-        } else if(returnPeriod === 'Daily') {
-          const date = new Date(item.endDate);
-          dateLabel = date.toLocaleString('default', { month: 'short' }) + ' ' + String(date.getDate()).padStart(2, '0');
-        }
-
-        return {
-            date: dateLabel,
-            equity: item.endEquity,
-            pnl: pnl,
-            pnlPct: pnlPct,
-            rawDate: item.endDate
-        }
-    }).sort((a,b) => b.rawDate - a.rawDate);
-    
-    return { equityReturnData };
-}, [equitySeries, returnPeriod]);
-
-
+const PerformancePage = ({ setView, usdIdr, displaySymbol, portfolioData, transactions, equitySeries, tradeStats, totalEquity, onDeleteTransaction, initialTab }) => {
+  const [activeTab, setActiveTab] = useState(initialTab || 'portfolio');
+  
   return (
     <div className="bg-black text-gray-300 min-h-screen font-sans">
       <div className="max-w-4xl mx-auto">
@@ -745,66 +751,13 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
           <button onClick={() => setView('main')} className="text-white"><BackArrowIcon /></button>
           <h1 className="text-lg font-semibold text-white">Performance</h1>
         </header>
-
-        <div className="border-b border-gray-800 px-4">
-          <nav className="flex space-x-6">
-            <button onClick={() => setActiveTab('portfolio')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'portfolio' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PORTFOLIO</button>
-            <button onClick={() => setActiveTab('trade')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'trade' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>TRADE</button>
-            <button onClick={() => setActiveTab('history')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'history' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>HISTORY</button>
-          </nav>
-        </div>
-
+        <div className="border-b border-zinc-800 px-4"><nav className="flex space-x-6"><button onClick={() => setActiveTab('portfolio')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'portfolio' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>PORTFOLIO</button><button onClick={() => setActiveTab('trade')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'trade' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>TRADE</button><button onClick={() => setActiveTab('history')} className={`py-2 px-1 border-b-2 font-semibold text-sm ${activeTab === 'history' ? 'border-emerald-400 text-white' : 'border-transparent text-gray-500'}`}>HISTORY</button></nav></div>
         {activeTab === 'portfolio' ? (
-          <div className="p-4">
-            <div>
-              <p className="text-sm text-gray-400">Total Equity</p>
-              <p className="text-3xl font-bold text-white mb-1">{displaySymbol === "Rp." ? formatMoney(totalEquity, "Rp.") : formatMoney(totalEquity / usdIdr, "$")}</p>
-            </div>
-
-            <div className="mt-6">
-              <AreaChart equityData={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} range={chartRange} setRange={setChartRange} />
-            </div>
-
-            <div className="mt-8">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-base font-semibold text-white">Total Equity Return</h3>
-                <div className="flex items-center gap-2 text-sm">
-                  {['Daily', 'Monthly', 'Yearly'].map(p => (
-                    <button key={p} onClick={() => setReturnPeriod(p)} className={`px-3 py-1 rounded-full ${returnPeriod === p ? 'bg-gray-700 text-white' : 'text-gray-400'}`}>{p}</button>
-                  ))}
-                </div>
-              </div>
-              <table className="w-full text-sm">
-                <thead className="text-left text-gray-500 text-xs">
-                  <tr>
-                    <th className="p-2 font-normal">Date</th>
-                    <th className="p-2 font-normal text-right">Equity</th>
-                    <th className="p-2 font-normal text-right">P&L</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {equityReturnData.map((item, index) => (
-                    <tr key={index} className="border-t border-gray-800">
-                      <td className="p-2 text-white">{item.date}</td>
-                      <td className="p-2 text-white text-right">{displaySymbol === "Rp." ? formatMoney(item.equity, "Rp.") : formatMoney(item.equity / usdIdr, "$")}</td>
-                      <td className={`p-2 text-right ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {item.pnl >= 0 ? '+' : ''}{displaySymbol === "Rp." ? formatMoney(item.pnl, "Rp.") : formatMoney(item.pnl / usdIdr, "$")} ({item.pnlPct.toFixed(2)}%)
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            
-            <div className="mt-8">
-              <PortfolioAllocation data={portfolioData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
-            </div>
-
-          </div>
+            <EquityDetailView setView={setView} totalEquity={totalEquity} equitySeries={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} />
         ) : activeTab === 'trade' ? (
-          <TradeStatsView stats={tradeStats} transactions={transactions} assets={portfolioData} displayCcySymbol={displaySymbol} usdIdr={usdIdr} />
+          <TradeStatsView stats={tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} />
         ) : (
-          <HistoryView transactions={transactions} usdIdr={usdIdr} displayCcySymbol={displaySymbol} />
+          <HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={onDeleteTransaction} />
         )}
       </div>
     </div>
@@ -812,265 +765,180 @@ const PerformancePage = ({ totals, totalEquity, setView, usdIdr, displaySymbol, 
 };
 
 
-const TradeStatsView = ({ stats, transactions, assets, displayCcySymbol, usdIdr }) => {
-  const getVal = (val) => displayCcySymbol === "Rp." ? val * usdIdr : val;
-  
-  const realizedGainSeries = useMemo(() => {
-    const sorted = [...transactions.filter(t => t.type === 'sell' || t.type === 'delete')].sort((a,b) => a.date - b.date);
-    let cumulativeGain = 0;
-    const points = sorted.map(tx => {
-      cumulativeGain += tx.realized || 0;
-      return {t: tx.date, v: cumulativeGain};
-    });
-     if (points.length > 0) {
-      points.unshift({t: points[0].t - 86400000, v: 0}); // Add a point at the beginning
-    }
-    return points.length ? points : [{t: Date.now(), v:0}];
-  }, [transactions]);
-  
-  const sells = useMemo(() => transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete'), [transactions]);
-  const realizedGainOnly = useMemo(() => sells.filter(tx => tx.realized > 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
-  const realizedLossOnly = useMemo(() => sells.filter(tx => tx.realized < 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
+const TradeStatsView = ({ stats, transactions, displaySymbol, usdIdr }) => {
+    const [chartRange, setChartRange] = useState("All");
+    
+    const { maxProfitPct, maxLossPct } = useMemo(() => {
+        const maxProfitTx = transactions.find(tx => tx.realized === stats.maxProfit);
+        const profitPct = maxProfitTx && maxProfitTx.costOfSold > 0 ? (maxProfitTx.realized / maxProfitTx.costOfSold) * 100 : 0;
+        const maxLossTx = transactions.find(tx => tx.realized === stats.maxLoss);
+        const lossPct = maxLossTx && maxLossTx.costOfSold > 0 ? (maxLossTx.realized / maxLossTx.costOfSold) * 100 : 0;
+        return { maxProfitPct: profitPct, maxLossPct: lossPct };
+    }, [transactions, stats.maxProfit, stats.maxLoss]);
+    
+    const realizedGainSeries = useMemo(() => {
+        const sorted = [...transactions.filter(t => t.type === 'sell' || t.type === 'delete')].sort((a, b) => a.date - b.date);
+        let cumulativeGain = 0;
+        const points = sorted.map(tx => {
+            cumulativeGain += tx.realized || 0;
+            const displayValue = displaySymbol === '$' ? cumulativeGain : cumulativeGain * usdIdr;
+            return { t: tx.date, v: displayValue };
+        });
+        if (points.length > 0) points.unshift({ t: points[0].t - 86400000, v: 0 });
+        return points.length ? points : [{ t: Date.now() - 1000, v: 0 }, {t: Date.now(), v:0}];
+    }, [transactions, displaySymbol, usdIdr]);
+    
+    const sells = useMemo(() => transactions.filter(tx => tx.type === 'sell' || tx.type === 'delete'), [transactions]);
+    const realizedGainOnly = useMemo(() => sells.filter(tx => tx.realized > 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
+    const realizedLossOnly = useMemo(() => sells.filter(tx => tx.realized < 0).reduce((sum, tx) => sum + tx.realized, 0), [sells]);
 
-  const {maxProfitPct, maxLossPct} = useMemo(() => {
-      const maxProfitTx = transactions.find(tx => tx.realized === stats.maxProfit);
-      let maxProfitCost = 0;
-      if(maxProfitTx) {
-          const asset = assets.find(a => a.id === maxProfitTx.assetId);
-          maxProfitCost = maxProfitTx.qty * (asset ? asset.avgPrice : maxProfitTx.pricePerUnit);
-      }
-      const maxProfitPercentage = maxProfitCost > 0 ? (stats.maxProfit / maxProfitCost) * 100 : 0;
+    const topGainers = useMemo(() => {
+        const gainers = {};
+        sells.forEach(tx => {
+            if (!gainers[tx.symbol]) gainers[tx.symbol] = { trades: 0, pnl: 0, cost: 0 };
+            gainers[tx.symbol].trades++;
+            gainers[tx.symbol].pnl += tx.realized;
+            gainers[tx.symbol].cost += tx.costOfSold || 0;
+        });
+        return Object.entries(gainers)
+            .map(([symbol, data]) => ({ symbol, ...data, pnlPct: data.cost > 0 ? (data.pnl / data.cost) * 100 : 0 }))
+            .sort((a, b) => b.pnl - a.pnl).slice(0, 5);
+    }, [sells]);
+    
+    if (!stats) return <div className="p-4 text-center text-gray-500">No trade data available.</div>;
 
-      const maxLossTx = transactions.find(tx => tx.realized === stats.maxLoss);
-      let maxLossCost = 0;
-      if(maxLossTx){
-         const asset = assets.find(a => a.id === maxLossTx.assetId);
-         maxLossCost = maxLossTx.qty * (asset ? asset.avgPrice : maxLossTx.pricePerUnit);
-      }
-      const maxLossPercentage = maxLossCost > 0 ? (stats.maxLoss / maxLossCost) * 100 : 0;
-      
-      return {maxProfitPct: maxProfitPercentage, maxLossPct: maxLossPercentage};
-  }, [transactions, assets, stats.maxProfit, stats.maxLoss]);
-
-  
-  const topGainers = useMemo(() => {
-    const gainers = {};
-    sells.forEach(tx => {
-      if(!gainers[tx.symbol]){
-        gainers[tx.symbol] = {trades:0, pnl: 0, cost: 0, proceeds: 0};
-      }
-      const asset = assets.find(a => a.id === tx.assetId);
-      gainers[tx.symbol].trades++;
-      gainers[tx.symbol].pnl += tx.realized;
-      gainers[tx.symbol].cost += tx.qty * (asset?.avgPrice || tx.pricePerUnit);
-      gainers[tx.symbol].proceeds += tx.proceeds;
-    });
-    return Object.entries(gainers)
-      .map(([symbol, data]) => ({
-        symbol, ...data, 
-        pnlPct: data.cost > 0 ? (data.pnl/data.cost)*100 : 0
-      }))
-      .sort((a,b) => b.pnl - a.pnl).slice(0,5);
-  }, [transactions, assets]);
-
-  return (
-    <div className="p-4 space-y-6">
-      <div className="bg-gray-900 p-4 rounded-lg">
-        <h3 className="font-semibold text-white mb-2">Win Rate</h3>
-        <div className="flex items-center justify-between">
-          <span className="text-3xl font-bold text-white">{stats.winRate.toFixed(2)}%</span>
-          <div className="relative w-24 h-24">
-            <svg className="w-full h-full transform -rotate-90"><circle cx="50%" cy="50%" r="45%" stroke="#374151" strokeWidth="8" fill="transparent"/><circle cx="50%" cy="50%" r="45%" stroke="#22c55e" strokeWidth="8" fill="transparent" strokeDasharray={`${Math.PI * 45 * 2 * (stats.winRate/100)}, ${Math.PI * 45 * 2}`} /></svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-xs">
-              <div>{stats.trades} Trades</div>
-              <div className="text-emerald-400">{stats.wins} Wins</div>
-              <div className="text-red-400">{stats.losses} Losses</div>
+    return (
+        <div className="p-4 space-y-6">
+            <div className="bg-zinc-900 border border-zinc-800/50 p-4 rounded-lg">
+                <div className="flex items-center justify-between">
+                    <div><p className="text-sm text-gray-400">Win Rate</p><p className="text-3xl font-bold text-white mt-1">{stats.winRate.toFixed(2)}%</p></div>
+                    <div className="relative w-24 h-24"><svg className="w-full h-full transform -rotate-90"><circle cx="50%" cy="50%" r="45%" stroke="#3f3f46" strokeWidth="8" fill="transparent" /><circle cx="50%" cy="50%" r="45%" stroke="#10B981" strokeWidth="8" fill="transparent" strokeDasharray={`${Math.PI * 2 * 45 * (stats.winRate / 100)}, ${Math.PI * 2 * 45}`} strokeLinecap="round"/></svg><div className="absolute inset-0 flex flex-col items-center justify-center text-xs text-center"><div className="font-semibold">{stats.trades}</div><div className="text-gray-400">Trades</div><div className="mt-1 flex gap-2"><div><span className="text-emerald-400">{stats.wins}</span> W</div><div><span className="text-red-400">{stats.losses}</span> L</div></div></div></div>
+                </div>
             </div>
-          </div>
+            <div className="grid grid-cols-2 gap-4">
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-base font-semibold text-white mt-1">{formatCurrency(stats.maxProfit, true, displaySymbol, usdIdr)}</p><p className="text-sm text-emerald-400">+{maxProfitPct.toFixed(2)}%</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-base font-semibold text-white mt-1">{formatCurrency(stats.maxLoss, true, displaySymbol, usdIdr)}</p><p className="text-sm text-red-400">{maxLossPct.toFixed(2)}%</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><AvgProfitIcon className="text-gray-400 w-4 h-4"/>Avg. Profit</p><p className="text-base font-semibold text-white mt-1">{formatCurrency(stats.avgProfit, true, displaySymbol, usdIdr)}</p></div>
+                <div className="bg-zinc-900 border border-zinc-800/50 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><AvgLossIcon className="text-gray-400 w-4 h-4"/>Avg. Loss</p><p className="text-base font-semibold text-white mt-1">{formatCurrency(stats.avgLoss, true, displaySymbol, usdIdr)}</p></div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800/50 p-4 rounded-lg">
+                <h3 className="font-semibold text-white flex items-center gap-1">Total Realized Gain <InfoIcon className="text-gray-400 w-3 h-3" /></h3>
+                <p className={`text-2xl font-bold mt-1 ${stats.totalRealizedGain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{stats.totalRealizedGain >= 0 ? '+' : ''}{formatCurrency(stats.totalRealizedGain, true, displaySymbol, usdIdr)}</p>
+                <div className="h-48 mt-2"><AreaChart data={realizedGainSeries} displaySymbol={displaySymbol} range={chartRange} setRange={setChartRange} showTimeframes={false}/></div>
+                <div className="mt-2 text-xs text-gray-400 border-t border-zinc-800 pt-2 space-y-1">
+                    <div className="flex justify-between"><span>Realized Gain</span> <span className="text-emerald-400 font-semibold">{formatCurrency(realizedGainOnly, true, displaySymbol, usdIdr)}</span></div>
+                    <div className="flex justify-between"><span>Realized Loss</span> <span className="text-red-400 font-semibold">{formatCurrency(realizedLossOnly, true, displaySymbol, usdIdr)}</span></div>
+                </div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800/50 p-4 rounded-lg">
+                <h3 className="font-semibold text-white mb-2">Top Gainer ({displaySymbol})</h3>
+                <table className="w-full text-sm">
+                    <thead className="text-gray-400 text-xs font-light"><tr><th className="text-left font-normal py-1">Code</th><th className="text-center font-normal py-1">Trades</th><th className="text-right font-normal py-1">P&L</th></tr></thead>
+                    <tbody>{topGainers.map(g => (<tr key={g.symbol} className="border-t border-zinc-800"><td className="py-2 flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{g.symbol.charAt(0)}</div>{g.symbol}</td><td className="text-center py-2">{g.trades}</td><td className={`text-right py-2 font-semibold ${g.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{g.pnl >= 0 ? '+' : ''}{formatCurrency(g.pnl, true, displaySymbol, usdIdr)} ({g.pnlPct.toFixed(2)}%)</td></tr>))}</tbody>
+                </table>
+            </div>
         </div>
-      </div>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowUpIcon className="text-emerald-400"/>Max Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxProfit), "Rp.") : formatMoney(getVal(stats.maxProfit), "$")}</p><p className="text-sm text-emerald-400">{maxProfitPct.toFixed(2)}%</p></div>
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400 flex items-center gap-1"><ArrowDownIcon className="text-red-400"/>Max Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.maxLoss), "Rp.") : formatMoney(getVal(stats.maxLoss), "$")}</p><p className="text-sm text-red-400">{maxLossPct.toFixed(2)}%</p></div>
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Profit</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgProfit), "Rp.") : formatMoney(getVal(stats.avgProfit), "$")}</p></div>
-        <div className="bg-gray-900 p-3 rounded-lg"><p className="text-sm text-gray-400">Avg. Loss</p><p className="text-lg font-semibold text-white mt-1">{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.avgLoss), "Rp.") : formatMoney(getVal(stats.avgLoss), "$")}</p></div>
-      </div>
-
-      <div className="bg-gray-900 p-4 rounded-lg">
-        <h3 className="font-semibold text-white flex items-center gap-1">Total Realized Gain <InfoIcon className="text-gray-400" /></h3>
-        <p className={`text-2xl font-bold mt-1 ${stats.totalRealizedGain >=0 ? 'text-emerald-400' : 'text-red-400'}`}>{stats.totalRealizedGain >=0 ? '+' : ''}{displayCcySymbol === "Rp." ? formatMoney(getVal(stats.totalRealizedGain), "Rp.") : formatMoney(getVal(stats.totalRealizedGain), "$")}</p>
-        <div className="h-40 mt-2">
-            <AreaChart equityData={realizedGainSeries.map(p => ({...p, v: getVal(p.v)}))} displaySymbol={displayCcySymbol} usdIdr={usdIdr} range="All" setRange={()=>{}} />
-        </div>
-        <div className="mt-2 text-xs text-gray-400 border-t border-gray-700 pt-2">
-            <div className="flex justify-between"><span>Total Equity Realized Gain</span> <span className="text-white">{formatMoney(getVal(stats.totalRealizedGain), displayCcySymbol)}</span></div>
-            <div className="flex justify-between"><span>Realized Gain</span> <span className="text-emerald-400">{formatMoney(getVal(realizedGainOnly), displayCcySymbol)}</span></div>
-            <div className="flex justify-between"><span>Realized Loss</span> <span className="text-red-400">{formatMoney(getVal(realizedLossOnly), displayCcySymbol)}</span></div>
-        </div>
-      </div>
-      
-      <div className="bg-gray-900 p-4 rounded-lg">
-        <h3 className="font-semibold text-white mb-2">Top Gainer ({displayCcySymbol === 'Rp.' ? 'Rp' : '$'})</h3>
-        <table className="w-full text-sm">
-          <thead className="text-gray-400 text-xs">
-            <tr><th className="text-left font-normal py-1">Code</th><th className="text-center font-normal py-1">Trades</th><th className="text-right font-normal py-1">P&L</th></tr>
-          </thead>
-          <tbody>
-            {topGainers.map(g => (
-              <tr key={g.symbol}>
-                <td className="py-1 flex items-center gap-2">
-                   <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center font-bold text-white text-xs">{g.symbol.charAt(0)}</div>
-                   {g.symbol}
-                </td>
-                <td className="text-center py-1">{g.trades}</td>
-                <td className={`text-right py-1 ${g.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {g.pnl >= 0 ? '+' : ''}{formatMoney(getVal(g.pnl), displayCcySymbol)} ({g.pnlPct.toFixed(2)}%)
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+    );
 };
 
-const HistoryView = ({ transactions, usdIdr, displayCcySymbol }) => {
-  return (
+const HistoryView = ({ transactions, usdIdr, displaySymbol, onDeleteTransaction }) => (
     <div className="p-4">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="text-left text-gray-500 text-xs">
-            <tr>
-              <th className="p-3">Time</th>
-              <th className="p-3">Type</th>
-              <th className="p-3">Symbol</th>
-              <th className="p-3 text-right">Qty</th>
-              <th className="p-3 text-right">Price</th>
-              <th className="p-3 text-right">Nominal</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.map(tx => (
-              <tr key={tx.id} className="border-t border-gray-800">
-                <td className="p-3 text-gray-400">{new Date(tx.date).toLocaleString()}</td>
-                <td className="p-3">{tx.type}</td>
-                <td className="p-3 font-semibold">{tx.symbol}</td>
-                <td className="p-3 text-right">{formatQty(tx.qty)}</td>
-                <td className="p-3 text-right text-gray-400">{displayCcySymbol === "Rp." ? formatMoney((tx.pricePerUnit || tx.price || 0) * usdIdr, "Rp.") : formatMoney((tx.pricePerUnit || tx.price || 0), "$")}</td>
-                <td className="p-3 text-right">{displayCcySymbol === "Rp." ? formatMoney((tx.cost || tx.proceeds || 0) * usdIdr, "Rp.") : formatMoney((tx.cost || tx.proceeds || 0), "$")}</td>
-              </tr>
-            ))}
-            {transactions.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-gray-500">No history</td></tr>}
-          </tbody>
-        </table>
-      </div>
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+                <thead className="text-left text-gray-500 text-xs">
+                    <tr>
+                        <th className="p-3">Time</th>
+                        <th className="p-3">Type</th>
+                        <th className="p-3">Detail</th>
+                        <th className="p-3 text-right">Nominal</th>
+                        <th className="p-3 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {[...transactions].sort((a,b) => b.date - a.date).map(tx => (
+                        <tr key={tx.id} className="border-t border-zinc-800">
+                            <td className="p-3 text-gray-400 text-xs">{new Date(tx.date).toLocaleString()}</td>
+                            <td className="p-3 capitalize font-semibold">{tx.type}</td>
+                            <td className="p-3 text-xs">
+                                {tx.type === 'buy' || tx.type === 'sell' || tx.type === 'delete' ? (
+                                    <>
+                                        <div><strong>{tx.symbol}</strong></div>
+                                        <div>{formatQty(tx.qty)} @ {formatCurrency(tx.pricePerUnit, true, displaySymbol, usdIdr)}</div>
+                                    </>
+                                ) : (
+                                    <span>-</span>
+                                )}
+                            </td>
+                            <td className="p-3 text-right">
+                                {formatCurrency(
+                                    tx.type === 'deposit' || tx.type === 'withdraw' ? tx.amount : (tx.cost || tx.proceeds || 0) * usdIdr,
+                                    false, 'Rp', 1
+                                )}
+                            </td>
+                            <td className="p-3 text-right">
+                                <button onClick={() => onDeleteTransaction(tx.id)} className="text-red-500 hover:text-red-400">
+                                    <TrashIcon className="w-4 h-4" />
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                    {transactions.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-gray-500">No history</td></tr>}
+                </tbody>
+            </table>
+        </div>
     </div>
-  );
-};
+);
+
 
 /* ===================== Forms & Modals ===================== */
-
 const BalanceManager = ({ onConfirm, displaySymbol }) => {
   const [amount, setAmount] = useState('');
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onConfirm(toNum(amount)); }} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-400">Amount ({displaySymbol})</label>
-        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-gray-900 px-3 py-2 rounded border border-gray-700 text-white" placeholder={displaySymbol === "Rp." ? "e.g. 1000000" : "e.g. 100"} />
-      </div>
+    <form onSubmit={(e) => { e.preventDefault(); onConfirm(amount); }} className="space-y-4">
+      <div><label className="block text-sm font-medium mb-1 text-gray-400">Amount (dalam Rupiah)</label><input type="number" step="any" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" placeholder="e.g. 1000000" /></div>
       <button type="submit" className="w-full py-2.5 rounded font-semibold bg-emerald-600 text-white hover:bg-emerald-500">Confirm</button>
     </form>
   );
 };
 
-const ManagePortfolioSheet = ({ onImportClick, onExportClick, onAddBalance, onWithdraw, onClearAll }) => ( 
+const ManagePortfolioSheet = ({ onAddBalance, onWithdraw, onClearAll, onExport, onImport }) => ( 
   <div className="p-4 text-white text-sm">
     <h3 className="text-base font-semibold mb-4 px-2">Manage Portfolio</h3>
     <div className="space-y-1">
-      <button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Add Balance</button>
-      <button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Withdraw</button>
-      <label className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300 block cursor-pointer">Import CSV<input type="file" accept=".csv" onChange={onImportClick} className="hidden" /></label>
-      <button onClick={onExportClick} className="w-full text-left p-2 rounded hover:bg-gray-700/50 text-gray-300">Export CSV</button>
-      <button onClick={onClearAll} className="w-full text-left p-2 rounded hover:bg-red-700/20 text-red-400">Erase all data</button>
+        <button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Add Balance</button>
+        <button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Withdraw</button>
+        <div className="border-t border-zinc-700 my-2"></div>
+        <button onClick={onExport} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Export as CSV</button>
+        <button onClick={onImport} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Import from CSV</button>
+        <div className="border-t border-zinc-700 my-2"></div>
+        <button onClick={onClearAll} className="w-full text-left p-2 rounded hover:bg-red-700/20 text-red-400">Erase all data</button>
     </div>
   </div>
 );
 
-const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, setSuggestions, selectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol }) => {
+const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol }) => {
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [total, setTotal] = useState('');
-
   const handleInputChange = (field, value) => {
-    if (field === 'shares') {
-      setShares(value);
-      const num = toNum(price) * toNum(value);
-      setTotal(num ? `${Math.round(num)}` : '');
-    } else if (field === 'price') {
-      setPrice(value);
-      const num = toNum(value) * toNum(shares);
-      setTotal(num ? `${Math.round(num)}` : '');
-    } else if (field === 'total') {
-      setTotal(value);
-      const nTotal = toNum(value), nShares = toNum(shares);
-      if (nShares > 0) setPrice(String(Math.round(nTotal / nShares)));
-    }
+    if (field === 'shares') { setShares(value); const num = toNum(price) * toNum(value); setTotal(num > 0 ? `${num}` : ''); } 
+    else if (field === 'price') { setPrice(value); const num = toNum(value) * toNum(shares); setTotal(num > 0 ? `${num}` : ''); } 
+    else if (field === 'total') { setTotal(value); const nTotal = toNum(value), nShares = toNum(shares); if (nShares > 0) setPrice(String(nTotal / nShares)); }
   };
-
   return (
     <div className="space-y-4">
-      <div className="flex border-b border-gray-700">
-        {[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (
-          <button key={item.key} onClick={() => setSearchMode(item.key)} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>
-        ))}
-      </div>
-
+      <div className="flex border-b border-zinc-800">{[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (<button key={item.key} onClick={() => setSearchMode(item.key)} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>))}</div>
       {searchMode !== 'nonliquid' ? (
         <div className="space-y-4">
-          <div className="relative">
-            <input value={query} onChange={e => { setQuery(e.target.value); setSelectedSuggestion(null); }} placeholder="Search by code or name..." className="w-full rounded bg-gray-900 px-3 py-2 text-sm outline-none border border-gray-600 text-white" />
-            {suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-[#1e1e1e] border border-gray-700 rounded max-h-56 overflow-auto">
-              {suggestions.map((s, i) => (<button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(`${s.symbol} — ${s.display}`); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-gray-700"><div className="font-medium text-gray-100">{s.symbol}</div><div className="text-xs text-gray-400">{s.display}</div></button>))}
-            </div>}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-400">Qty</label>
-              <input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-400">Price ({displaySymbol})</label>
-              <input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-gray-400">Total Value ({displaySymbol})</label>
-            <input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" type="text" />
-          </div>
-
-          <div className="flex justify-end">
-            <button onClick={() => addAssetWithInitial(toNum(shares), toNum(price))} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button>
-          </div>
+          <div className="relative"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by code or name..." className="w-full rounded bg-zinc-800 px-3 py-2 text-sm outline-none border border-zinc-700 text-white" />{suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full bg-zinc-800 border border-zinc-700 rounded max-h-56 overflow-auto">{suggestions.map((s, i) => (<button key={i} onClick={() => { setSelectedSuggestion(s); setQuery(s.display); setSuggestions([]); }} className="w-full px-3 py-2 text-left hover:bg-zinc-700 flex items-center gap-3"><img src={s.image} alt={s.symbol} className="w-6 h-6 rounded-full bg-zinc-700" onError={(e) => e.target.style.display='none'} /><div className="flex-1 overflow-hidden"><div className="font-medium text-gray-100 truncate">{s.display}</div><div className="text-xs text-gray-400">{s.exchange}</div></div></button>))}</div>}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div><label className="text-xs text-gray-400">Qty</label><input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div><div><label className="text-xs text-gray-400">Price ({displaySymbol})</label><input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div></div>
+          <div><label className="text-xs text-gray-400">Total Value ({displaySymbol})</label><input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div>
+          <div className="flex justify-end"><button onClick={() => addAssetWithInitial(shares, price)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div>
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input value={nlName} onChange={e => setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlQty} onChange={e => setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlPrice} onChange={e => setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <select value={nlPriceCcy} onChange={e => setNlPriceCcy(e.target.value)} className="rounded bg-gray-900 px-2 py-2 text-sm border border-gray-600 text-white">
-              <option value="IDR">IDR</option>
-              <option value="USD">USD</option>
-            </select>
-            <input type="date" value={nlPurchaseDate} onChange={e => setNlPurchaseDate(e.target.value)} className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-            <input value={nlYoy} onChange={e => setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
-          </div>
-
-          <input value={nlDesc} onChange={e => setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-gray-900 px-3 py-2 text-sm border border-gray-600 text-white" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><input value={nlName} onChange={e => setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlQty} onChange={e => setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlPrice} onChange={e => setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><select value={nlPriceCcy} onChange={e => setNlPriceCcy(e.target.value)} className="rounded bg-zinc-800 px-2 py-2 text-sm border border-zinc-700 text-white"><option value="IDR">IDR</option><option value="USD">USD</option></select><input type="date" value={nlPurchaseDate} onChange={e => setNlPurchaseDate(e.target.value)} className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlYoy} onChange={e => setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /></div>
+          <input value={nlDesc} onChange={e => setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" />
           <div className="flex justify-end"><button onClick={addNonLiquidAsset} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div>
         </div>
       )}
@@ -1083,312 +951,218 @@ const TradeModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, d
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
   const [total, setTotal] = useState('');
-
   useEffect(() => {
     if (asset) {
-      const priceVal = displaySymbol === "Rp." ? asset.lastPriceUSD * usdIdr : asset.lastPriceUSD;
+      const priceVal = displaySymbol === "Rp" ? asset.lastPriceUSD * usdIdr : asset.lastPriceUSD;
       setPrice(String(isFinite(priceVal) ? (displaySymbol === "$" ? priceVal.toFixed(3) : Math.round(priceVal)) : ''));
-      setShares('');
-      setTotal('');
+      setShares(''); setTotal('');
     }
-  }, [asset, usdIdr, displaySymbol]);
-
+  }, [asset, usdIdr, displaySymbol, mode]);
   if (!isOpen || !asset) return null;
-
   const handleInputChange = (field, value) => {
-    if (field === 'shares') {
-      setShares(value);
-      const nPrice = toNum(price), nShares = toNum(value);
-      if (nPrice > 0 && nShares > 0) setTotal((nPrice * nShares).toString());
-      else setTotal('');
-    } else if (field === 'price') {
-      setPrice(value);
-      const nPrice = toNum(value), nShares = toNum(shares);
-      if (nPrice > 0 && nShares > 0) setTotal((nPrice * nShares).toString());
-      else setTotal('');
-    } else if (field === 'total') {
-      setTotal(value);
-      const nTotal = toNum(value), nShares = toNum(shares);
-      if (nShares > 0 && nTotal > 0) setPrice(String(Math.round(nTotal / nShares)));
-    }
+    if (field === 'shares') { setShares(value); const nPrice = toNum(price), nShares = toNum(value); setTotal(nPrice > 0 && nShares > 0 ? (nPrice * nShares).toString() : ''); } 
+    else if (field === 'price') { setPrice(value); const nPrice = toNum(value), nShares = toNum(shares); setTotal(nPrice > 0 && nShares > 0 ? (nPrice * nShares).toString() : ''); } 
+    else if (field === 'total') { setTotal(value); const nTotal = toNum(value), nShares = toNum(shares); if (nShares > 0 && nTotal > 0) setPrice(String((nTotal / nShares).toFixed(3))); }
   };
-
-  const priceUSD = (displaySymbol === 'Rp.') ? toNum(price) / usdIdr : toNum(price);
-
-  const doSubmit = () => {
-    if (mode === 'buy') onBuy(asset, toNum(shares), priceUSD);
-    else if (mode === 'sell') onSell(asset, toNum(shares), priceUSD);
-  };
-
+  const priceUSD = (displaySymbol === 'Rp') ? toNum(price) / usdIdr : toNum(price);
+  const doSubmit = () => { if (mode === 'buy') onBuy(asset, shares, priceUSD); else if (mode === 'sell') onSell(asset, shares, priceUSD); };
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={asset.symbol}>
       <div className="space-y-4">
-        <div className="flex bg-gray-800 rounded-full p-1">
-          <button onClick={() => setMode('buy')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'buy' ? 'bg-emerald-600 text-white' : 'text-gray-300'}`}>Buy</button>
-          <button onClick={() => setMode('sell')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'sell' ? 'bg-red-600 text-white' : 'text-gray-300'}`}>Sell</button>
-        </div>
-
-        <div>
-          <label className="text-xs text-gray-400">Qty</label>
-          <input type="text" value={shares} onChange={e=>handleInputChange('shares', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
-        </div>
-
-        <div>
-          <label className="text-xs text-gray-400">Price ({displaySymbol})</label>
-          <input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
-        </div>
-
-        <div>
-          <label className="text-xs text-gray-400">Total ({displaySymbol})</label>
-          <input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full mt-1 bg-gray-900 px-3 py-2 rounded border border-gray-600 text-white" />
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={doSubmit} className={`flex-1 py-2.5 rounded font-semibold text-white ${mode === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}</button>
-          <button onClick={() => onDelete(asset)} title="Delete (liquidate)" className="py-2.5 px-3 rounded bg-gray-700 hover:bg-gray-600 text-white flex items-center gap-2">
-            <TrashIcon className="text-white" />
-          </button>
-        </div>
+        <div className="flex bg-zinc-800 rounded-full p-1"><button onClick={() => setMode('buy')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'buy' ? 'bg-emerald-600 text-white' : 'text-gray-300'}`}>Buy</button><button onClick={() => setMode('sell')} className={`w-1/2 py-2 text-sm font-semibold rounded-full ${mode === 'sell' ? 'bg-red-600 text-white' : 'text-gray-300'}`}>Sell</button></div>
+        <div><label className="text-xs text-gray-400">Qty</label><input type="text" value={shares} onChange={e=>handleInputChange('shares', e.target.value)} className="w-full mt-1 bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" /></div>
+        <div><label className="text-xs text-gray-400">Price ({displaySymbol})</label><input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full mt-1 bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" /></div>
+        <div><label className="text-xs text-gray-400">Total ({displaySymbol})</label><input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full mt-1 bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" /></div>
+        <div className="flex gap-2"><button onClick={doSubmit} className={`flex-1 py-2.5 rounded font-semibold text-white ${mode === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}</button><button onClick={() => onDelete(asset)} title="Delete (liquidate)" className="py-2.5 px-3 rounded bg-zinc-700 hover:bg-zinc-600 text-white flex items-center gap-2"><TrashIcon className="text-white" /></button></div>
       </div>
     </Modal>
   );
 };
 
 /* ===================== Charts ===================== */
-const AreaChart = ({ equityData, displaySymbol, usdIdr, range, setRange }) => {
+const MiniAreaChart = ({ data }) => {
+    if (!data || data.length < 2) return null;
+    const width = 100, height = 40;
+    const yValues = data.map(d => d.v);
+    const minVal = Math.min(...yValues);
+    const maxVal = Math.max(...yValues);
+    const valRange = maxVal - minVal || 1;
+    const timeStart = data[0].t;
+    const timeEnd = data[data.length - 1].t;
+    const xScale = (t) => ((t - timeStart) / (timeEnd - timeStart || 1)) * width;
+    const yScale = (v) => (1 - (v - minVal) / valRange) * height;
+    const path = data.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
+    const areaPath = `${path} L${width},${height} L0,${height} Z`;
+    const isUp = data[data.length - 1].v >= data[0].v;
+    const strokeColor = isUp ? "#10B981" : "#F87171";
+    const gradientColor = isUp ? "#10B981" : "#F87171";
+
+    return (
+        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+            <defs>
+                <linearGradient id="miniAreaGradient" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor={gradientColor} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={gradientColor} stopOpacity={0} />
+                </linearGradient>
+            </defs>
+            <path d={areaPath} fill="url(#miniAreaGradient)" />
+            <path d={path} fill="none" stroke={strokeColor} strokeWidth="1" strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
+    );
+};
+
+const MiniDonutChart = ({ cashPct, investedPct }) => {
+    const size = 64; // Corresponds to w-16 h-16
+    const strokeWidth = 8;
+    const radius = (size / 2) - (strokeWidth / 2);
+    const circumference = 2 * Math.PI * radius;
+
+    const cashArc = (circumference * cashPct) / 100;
+    const investedArc = (circumference * investedPct) / 100;
+    
+    return (
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#3f3f46" strokeWidth={strokeWidth} />
+            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#0ea5e9" strokeWidth={strokeWidth} strokeDasharray={`${cashArc} ${circumference}`} strokeLinecap="round" />
+            <circle cx={size/2} cy={size/2} r={radius} fill="transparent" stroke="#14b8a6" strokeWidth={strokeWidth} strokeDasharray={`${investedArc} ${circumference}`} strokeDashoffset={-cashArc} strokeLinecap="round" />
+        </svg>
+    );
+};
+
+
+const AreaChart = ({ data: chartData, displaySymbol, range, setRange, showTimeframes = true }) => {
   const [hoverData, setHoverData] = useState(null);
   const svgRef = useRef(null);
-
   const now = new Date();
   let startTime;
   switch (range) {
-    case '1W': startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+    case '1W': startTime = new Date(now.getTime() - 7 * 24 * 3600 * 1000); break;
     case '1M': startTime = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()); break;
     case '3M': startTime = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()); break;
     case '1Y': startTime = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); break;
-    case 'All': startTime = equityData.length > 1 ? new Date(equityData[0].t) : new Date(0); break;
-    case 'YTD':
-    default: startTime = new Date(now.getFullYear(), 0, 1); break;
+    case 'All': startTime = chartData.length > 1 ? new Date(chartData[0].t) : new Date(0); break;
+    case 'YTD': default: startTime = new Date(now.getFullYear(), 0, 1); break;
   }
   
-  const filteredData = equityData.filter(d => d.t >= startTime.getTime());
-  const data = filteredData.length > 1 ? [{t: startTime.getTime(), v: filteredData.length > 0 ? filteredData[0].v : 0}, ...filteredData] : [{t:Date.now()-1000, v:0}, {t:Date.now(), v:0}];
+  const filteredData = chartData.filter(d => d.t >= startTime.getTime());
+  const data = useMemo(() => {
+      if(filteredData.length === 0) return [{t: startTime.getTime(), v: 0}, {t: now.getTime(), v: 0}];
+      if(filteredData[0].t > startTime.getTime() && filteredData.length > 0){
+          return [{t: startTime.getTime(), v: filteredData[0].v}, ...filteredData];
+      }
+      return filteredData;
+  }, [filteredData, startTime, now]);
 
   const height = 220, width = 700, padding = { top: 20, bottom: 40, left: 0, right: 80 };
-  const minVal = Math.min(...data.map(d => d.v));
-  const maxVal = Math.max(...data.map(d => d.v));
+  const yValues = data.map(d => d.v);
+  const minVal = Math.min(...yValues);
+  const maxVal = Math.max(...yValues);
   const valRange = maxVal - minVal || 1;
   const timeStart = data[0].t;
   const timeEnd = data[data.length - 1].t;
-  
   const xScale = (t) => padding.left + ((t - timeStart) / (timeEnd - timeStart || 1)) * (width - padding.left - padding.right);
   const yScale = (v) => padding.top + (1 - (v - minVal) / valRange) * (height - padding.top - padding.bottom);
-  
   const path = data.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.t)},${yScale(p.v)}`).join(' ');
   const areaPath = `${path} L${xScale(timeEnd)},${height - padding.bottom} L${xScale(timeStart)},${height - padding.bottom} Z`;
+  const yAxisLabels = Array.from({length: 5}, (_, i) => minVal + (valRange / 4) * i);
   
-  const yAxisLabels = [minVal, minVal + valRange * 0.25, minVal + valRange * 0.5, minVal + valRange * 0.75, maxVal];
-  
-  const formatValue = (v) => {
-    if (v >= 1e6) return `${(v / 1e6).toFixed(2)} M`;
-    if (v >= 1e3) return `${(v / 1e3).toFixed(1)} K`;
+  const formatValueForChart = (v) => {
+    if (Math.abs(v) >= 1e9) return `${(v / 1e9).toFixed(1)}M`;
+    if (Math.abs(v) >= 1e6) return `${(v / 1e6).toFixed(1)}jt`;
+    if (Math.abs(v) >= 1e3) return `${(v / 1e3).toFixed(0)}rb`;
     return Math.round(v);
   }
-  const fmtYLabel = (v) => displaySymbol === "Rp." ? formatValue(v) : `$ ${formatValue(v / usdIdr)}`;
-
-  const xAxisLabels = () => {
-    const labels = [];
-    const count = 5;
-    for (let i = 0; i < count; i++) {
-        const t = timeStart + (i / (count - 1)) * (timeEnd - timeStart);
-        labels.push({t: t, label: new Date(t).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})});
-    }
-    return labels;
-  }
+  const fmtYLabel = (v) => `${displaySymbol === 'Rp' ? 'Rp' : '$'}${formatValueForChart(v)}`;
+  const xAxisLabels = () => Array.from({length: 5}, (_, i) => {
+      const t = timeStart + (i / 4) * (timeEnd - timeStart);
+      return {t, label: new Date(t).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})};
+  });
   
   const handleMouseMove = (event) => {
     if (!svgRef.current || data.length < 2) return;
     const svg = svgRef.current;
     const rect = svg.getBoundingClientRect();
     const x = event.clientX - rect.left;
-
     const time = timeStart + ((x - padding.left) / (width - padding.left - padding.right)) * (timeEnd - timeStart);
-
     let closestPoint = data.reduce((prev, curr) => Math.abs(curr.t - time) < Math.abs(prev.t - time) ? curr : prev);
-    
-    if (closestPoint) {
-        setHoverData({
-            point: closestPoint,
-            x: xScale(closestPoint.t),
-            y: yScale(closestPoint.v),
-        });
-    }
-  };
-
-  const handleMouseLeave = () => {
-      setHoverData(null);
+    if (closestPoint) setHoverData({ point: closestPoint, x: xScale(closestPoint.t), y: yScale(closestPoint.v) });
   };
 
   return (
     <div>
-        <div className="relative">
-            <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
-            <defs>
-                <linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#22c55e" stopOpacity={0.24} />
-                <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
-                </linearGradient>
-            </defs>
-            <path d={areaPath} fill="url(#areaGradient2)" />
-            <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-            {yAxisLabels.map((v, idx) => (
-                <g key={idx}>
-                <line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" />
-                <text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text>
-                </g>
-            ))}
-            {xAxisLabels().map((item, idx) => (
-                <text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>
-            ))}
-            {hoverData && (
-                <g>
-                    <line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" />
-                    <circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#22c55e" stroke="white" strokeWidth="2" />
-                </g>
-            )}
-            <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
-            </svg>
-            {hoverData && (
-                 <div className="absolute p-2 rounded-lg bg-gray-800 text-white text-xs pointer-events-none" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}>
-                    <div>{new Date(hoverData.point.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                    <div className="font-bold">{displaySymbol === 'Rp.' ? formatMoney(hoverData.point.v, 'Rp.') : formatMoney(hoverData.point.v / usdIdr, '$')}</div>
-                </div>
-            )}
-        </div>
-        <div className="flex justify-center gap-2 mt-2">
-            {['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (
-                <button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-gray-700 text-white' : 'text-gray-400'}`}>{r}</button>
-            ))}
-        </div>
+      <div className="relative">
+        <svg ref={svgRef} width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="rounded" onMouseMove={handleMouseMove} onMouseLeave={() => setHoverData(null)}>
+          <defs><linearGradient id="areaGradient2" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#10B981" stopOpacity={0.3} /><stop offset="100%" stopColor="#10B981" stopOpacity={0.05} /></linearGradient></defs>
+          <path d={areaPath} fill="url(#areaGradient2)" /><path d={path} fill="none" stroke="#10B981" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          {yAxisLabels.map((v, idx) => (<g key={idx}><line x1={padding.left} x2={width - padding.right} y1={yScale(v)} y2={yScale(v)} stroke="rgba(255,255,255,0.08)" strokeDasharray="2,2" /><text x={width - padding.right + 6} y={yScale(v) + 4} fontSize="11" fill="#6B7280">{fmtYLabel(v)}</text></g>))}
+          {xAxisLabels().map((item, idx) => (<text key={idx} x={xScale(item.t)} y={height - padding.bottom + 15} textAnchor="middle" fontSize="11" fill="#6B7280">{item.label}</text>))}
+          {hoverData && (<g><line y1={padding.top} y2={height - padding.bottom} x1={hoverData.x} x2={hoverData.x} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="3,3" /><circle cx={hoverData.x} cy={hoverData.y} r="4" fill="#10B981" stroke="white" strokeWidth="2" /></g>)}
+          <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height-padding.top-padding.bottom} fill="transparent" />
+        </svg>
+        {hoverData && (<div className="absolute p-2 rounded-lg bg-zinc-800 text-white text-xs pointer-events-none" style={{ left: `${hoverData.x / width * 100}%`, top: `${padding.top-10}px`, transform: `translateX(-50%)` }}><div>{new Date(hoverData.point.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div><div className="font-bold">{formatCurrency(hoverData.point.v, false, displaySymbol, 1)}</div></div>)}
+      </div>
+      {showTimeframes && <div className="flex justify-center gap-2 mt-2">{['1W', '1M', '3M', 'YTD', '1Y', 'All'].map(r => (<button key={r} onClick={() => setRange(r)} className={`px-3 py-1 text-xs rounded-full ${range === r ? 'bg-zinc-700 text-white' : 'text-gray-400'}`}>{r}</button>))}</div>}
     </div>
   );
 };
 
-const PortfolioAllocation = ({ data: fullAssetData, displayCcySymbol, usdIdr }) => {
+const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => {
   const [activeTab, setActiveTab] = useState('Equity');
   const [hoveredSegment, setHoveredSegment] = useState(null);
 
-  const equityData = useMemo(() => 
-    fullAssetData.filter(d => d.type === 'stock' || d.type === 'crypto')
-    .map(d => ({ name: d.symbol, value: d.marketValueUSD }))
-    .sort((a,b)=>b.value-a.value), [fullAssetData]);
-  
-  const sectorData = useMemo(() => {
-    const sectors = {
-        'Equity': { value: 0, color: '#10B981', count: 0 },
-        'Crypto': { value: 0, color: '#3B82F6', count: 0 },
-        'Non-Liquid': { value: 0, color: '#F97316', count: 0 }
+  const { equityData, sectorData } = useMemo(() => {
+    const eqData = fullAssetData
+      .filter(d => d.type === 'stock' || d.type === 'crypto')
+      .map(d => ({ name: d.symbol, value: d.marketValueUSD, image: d.image, type: d.type }))
+      .sort((a,b)=>b.value-a.value);
+
+    const secData = {
+      'Equity': { value: 0, color: '#10B981', icon: <EquityIcon /> },
+      'Crypto': { value: 0, color: '#3B82F6', icon: <CryptoIcon /> },
+      'Non-Liquid': { value: 0, color: '#F97316', icon: <NonLiquidIcon /> }
     };
     fullAssetData.forEach(asset => {
-        if (asset.type === 'stock') {
-            sectors['Equity'].value += asset.marketValueUSD;
-            sectors['Equity'].count++;
-        } else if (asset.type === 'crypto') {
-            sectors['Crypto'].value += asset.marketValueUSD;
-            sectors['Crypto'].count++;
-        } else if (asset.type === 'nonliquid') {
-            sectors['Non-Liquid'].value += asset.marketValueUSD;
-            sectors['Non-Liquid'].count++;
-        }
+      if (asset.type === 'stock') secData['Equity'].value += asset.marketValueUSD;
+      else if (asset.type === 'crypto') secData['Crypto'].value += asset.marketValueUSD;
+      else if (asset.type === 'nonliquid') secData['Non-Liquid'].value += asset.marketValueUSD;
     });
-    return Object.entries(sectors)
-        .map(([name, data]) => ({ name, ...data }))
-        .filter(d => d.value > 0);
+    
+    return { 
+      equityData: eqData,
+      sectorData: Object.entries(secData).map(([name, data]) => ({ name, ...data })).filter(d => d.value > 0)
+    };
   }, [fullAssetData]);
 
   const data = activeTab === 'Equity' ? equityData : sectorData;
   const totalValueUSD = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
   
-  if (!totalValueUSD) return null;
+  if (!totalValueUSD) return <div className="mt-8 text-center text-gray-500">No assets to show in allocation.</div>;
 
-  const totalValueDisplay = displayCcySymbol === "Rp." ? totalValueUSD * usdIdr : totalValueUSD;
-  const assetCount = data.length;
-
+  const totalValueDisplay = displaySymbol === "Rp" ? totalValueUSD * usdIdr : totalValueUSD;
   const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth;
   const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"];
-
   let accumulatedAngle = 0;
 
   return (
     <div className="mt-8">
       <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3>
-      <div className="flex gap-2 mb-4">
-        <button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Equity</button>
-        <button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}>Sub-Sector</button>
-      </div>
-
+      <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div>
       <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           {data.map((d, i) => {
-            const percentage = d.value / totalValueUSD;
-            const angle = percentage * 360;
-            const isHovered = hoveredSegment === d.name;
-            
-            const segment = (
-              <circle
-                key={i}
-                cx={size/2} cy={size/2} r={innerRadius}
-                fill="transparent"
-                stroke={d.color || colors[i % colors.length]}
-                strokeWidth={strokeWidth + (isHovered ? 4 : 0)}
-                strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`}
-                strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180}
-                className="transition-all duration-300"
-                onMouseOver={() => setHoveredSegment(d.name)}
-                onMouseOut={() => setHoveredSegment(null)}
-              />
-            );
-            accumulatedAngle += angle;
-            return segment;
+            const angle = (d.value / totalValueUSD) * 360;
+            const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color || colors[i % colors.length]} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>);
+            accumulatedAngle += angle; return segment;
           })}
         </svg>
-        <div className="absolute flex flex-col items-center justify-center pointer-events-none">
-          <div className="text-xl font-bold text-white">{formatMoney(totalValueDisplay, displayCcySymbol)}</div>
-          <div className="text-sm text-gray-400">{assetCount} {activeTab === 'Equity' ? 'Items' : 'Sectors'}</div>
+        <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{formatCurrency(totalValueDisplay, false, displaySymbol, 1)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div>
+      </div>
+      <div className="space-y-2">{data.map((d, i) => { const percentage = (d.value / totalValueUSD) * 100; const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">
+          {d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}
         </div>
-      </div>
-      
-      <div className="space-y-2">
-        {data.map((d, i) => {
-          const percentage = (d.value / totalValueUSD) * 100;
-          const valueDisplay = d.value * (displayCcySymbol === "Rp." ? usdIdr : 1);
-          const isHovered = hoveredSegment === d.name;
-          return (
-            <div 
-              key={i}
-              className={`p-2 rounded-lg transition-colors duration-300 ${isHovered ? 'bg-gray-800' : ''}`}
-              onMouseOver={() => setHoveredSegment(d.name)}
-              onMouseOut={() => setHoveredSegment(null)}
-            >
-              <div className="flex justify-between items-center text-sm mb-1">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center font-bold text-white">{d.name.charAt(0)}</div>
-                  <div>
-                    <div className="font-semibold text-white">{d.name}</div>
-                    <div className="text-xs text-gray-400">{formatMoney(valueDisplay, displayCcySymbol)}</div>
-                  </div>
-                </div>
-                <div className="text-white font-semibold">{percentage.toFixed(2)}%</div>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
-                <div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+        <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div>
     </div>
   );
 };
-
 
