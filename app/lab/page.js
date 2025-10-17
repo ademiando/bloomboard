@@ -368,24 +368,32 @@ export default function PortfolioDashboard() {
         <main>
           <section className="p-4">
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                {/* Card Total Equity - START */}
                 <div onClick={() => setIsEquityModalOpen(true)} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-between cursor-pointer hover:border-zinc-700 transition-colors overflow-hidden">
-                    <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
-                    <p className="text-xl sm:text-3xl font-bold text-white">{formatCurrency(derivedData.totalEquity, false, displaySymbol, usdIdr)}</p>
-                    <p className="text-xs text-gray-400 -mt-1">{displaySymbol === 'Rp' ? formatCurrency(derivedData.totalEquity, false, '$', usdIdr) : formatCurrency(derivedData.totalEquity, true, 'Rp', usdIdr, usdIdr)}</p>
+                    <div>
+                        <p className="text-gray-500 text-[10px] sm:text-xs">Total Equity</p>
+                        <p className="text-xl sm:text-3xl font-bold text-white">{formatCurrency(derivedData.totalEquity, false, displaySymbol, usdIdr)}</p>
+                        <p className="text-xs text-gray-400 mt-1">{displaySymbol === 'Rp' ? formatCurrency(derivedData.totalEquity, false, '$', usdIdr) : formatCurrency(derivedData.totalEquity, false, 'Rp', usdIdr)}</p>
+                    </div>
                      <div className="text-[10px] sm:text-xs mt-2 space-y-1 text-gray-400 border-t border-zinc-800/50 pt-2">
                         <div className="flex justify-between">
-                            <span>Net Deposit</span>
-                            <span className="font-medium text-gray-300">{formatCurrency(derivedData.netDeposit, false, displaySymbol, usdIdr)}</span>
+                            <span>Unrealized P&L</span>
+                            <span className={`font-semibold ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {formatCurrency(derivedData.totals.unrealizedPnlUSD, true, displaySymbol, usdIdr)}
+                            </span>
                         </div>
                         <div className="flex justify-between">
-                            <span>Total G/L</span>
-                            <span className={`font-semibold ${derivedData.totalPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {formatCurrency(derivedData.totalPnlUSD, true, displaySymbol, usdIdr)}
+                            <span>&nbsp;</span>
+                            <span className={`font-semibold text-right block ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {derivedData.totals.unrealizedPnlUSD >= 0 ? '+' : ''}{derivedData.totals.unrealizedPnlPct.toFixed(2)}%
                             </span>
                         </div>
                     </div>
-                    <div className="h-16 -mb-4 -mx-4 mt-2"><AreaChart data={equitySeries} simplified={true}/></div>
+                    <div className="h-16 -mb-4 -mx-4 mt-auto pt-2"><AreaChart data={equitySeries} simplified={true}/></div>
                 </div>
+                {/* Card Total Equity - END */}
+
+                {/* Card Cash vs Invested - START */}
                 <div onClick={() => setIsAllocationModalOpen(true)} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg flex flex-col justify-center cursor-pointer hover:border-zinc-700 transition-colors">
                     <div className="grid grid-cols-2 text-center gap-1">
                         <p className="text-gray-400 text-[11px] sm:text-xs">Cash</p>
@@ -401,16 +409,21 @@ export default function PortfolioDashboard() {
                             {derivedData.investedPct > 15 && `${derivedData.investedPct.toFixed(0)}%`}
                         </div>
                     </div>
-                    <div className="text-center text-gray-400 mt-1">
-                        <p className="text-[10px] sm:text-xs">Unrealized P&L</p>
-                        <p className={`font-semibold text-sm ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {formatCurrency(derivedData.totals.unrealizedPnlUSD, true, displaySymbol, usdIdr)}
-                        </p>
-                        <p className={`font-semibold text-xs ${derivedData.totals.unrealizedPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {derivedData.totals.unrealizedPnlUSD >= 0 ? '+' : ''}{derivedData.totals.unrealizedPnlPct.toFixed(2)}%
-                        </p>
+                    <div className="text-[10px] sm:text-xs mt-2 space-y-1 text-gray-400 border-t border-zinc-800/50 pt-2">
+                        <div className="flex justify-between">
+                            <span>Net Deposit</span>
+                            <span className="font-medium text-gray-300">{formatCurrency(derivedData.netDeposit, false, displaySymbol, usdIdr)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>Total G/L</span>
+                            <span className={`font-semibold ${derivedData.totalPnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {formatCurrency(derivedData.totalPnlUSD, true, displaySymbol, usdIdr)}
+                            </span>
+                        </div>
                     </div>
                 </div>
+                 {/* Card Cash vs Invested - END */}
+
                 <div onClick={() => setIsHistoryModalOpen(true)} className="bg-zinc-900 border border-zinc-800/50 p-3 sm:p-4 rounded-xl shadow-lg cursor-pointer hover:border-zinc-700 transition-colors">
                      <p className="text-gray-500 text-[10px] sm:text-xs mb-2">Summary</p>
                     <div className="text-[11px] sm:text-xs space-y-2">
@@ -600,5 +613,4 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
     const totalValueDisplay = displaySymbol === "Rp" ? totalValueUSD * usdIdr : totalValueUSD; const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth; const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"]; let accumulatedAngle = 0;
     return ( <div className="p-1 max-h-[70vh] overflow-y-auto"> <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3> <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div> <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}> <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90"> {data.map((d, i) => { const angle = totalValueUSD > 0 ? (d.value / totalValueUSD) * 360 : 0; const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color || colors[i % colors.length]} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); accumulatedAngle += angle; return segment; })} </svg> <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{formatCurrencyShort(totalValueDisplay, false, displaySymbol, 1)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div> </div> <div className="space-y-2">{data.map((d, i) => { const percentage = totalValueUSD > 0 ? (d.value / totalValueUSD) * 100 : 0; const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3"> <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}</div> <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div> </div> );
 };
-
 
