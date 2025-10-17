@@ -147,7 +147,7 @@ export default function PortfolioDashboard() {
   const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
   const [isAssetOptionsOpen, setIsAssetOptionsOpen] = useState(false);
   const [assetSortBy, setAssetSortBy] = useState('default'); // 'default', 'allocation', 'purchaseDate'
-  const [assetDisplayAs, setAssetDisplayAs] = useState('card'); // 'card', 'table'
+  const [assetDisplayAs, setAssetDisplayAs] = useState(() => isBrowser ? (localStorage.getItem(`pf_asset_display_as_${STORAGE_VERSION}`) || 'card') : 'card');
 
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
@@ -194,6 +194,7 @@ export default function PortfolioDashboard() {
   useEffect(() => { if (isBrowser) localStorage.setItem(`pf_display_sym_${STORAGE_VERSION}`, displaySymbol); }, [displaySymbol]);
   useEffect(() => { if (isBrowser) localStorage.setItem(`pf_watched_assets_${STORAGE_VERSION}`, JSON.stringify(watchedAssetIds)); }, [watchedAssetIds]);
   useEffect(() => { if (isBrowser) localStorage.setItem(`pf_price_history_${STORAGE_VERSION}`, JSON.stringify(priceHistory)); }, [priceHistory]);
+  useEffect(() => { if (isBrowser) localStorage.setItem(`pf_asset_display_as_${STORAGE_VERSION}`, assetDisplayAs); }, [assetDisplayAs]);
 
 
   useEffect(() => {
@@ -1089,15 +1090,25 @@ const AssetOptionsPanel = ({ sortBy, setSortBy, displayAs, setDisplayAs, onClose
 const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
     return (
         <div className="overflow-x-auto">
-            {/* Base font size for the table is now text-xs */}
-            <table className="w-full text-xs text-left">
-                {/* Header font size is now smaller, and labels are changed */}
-                <thead className="text-[11px] text-gray-400 font-normal">
+            <table className="w-full text-sm text-left">
+                <thead className="text-xs text-gray-400 font-normal">
                     <tr>
-                        <th scope="col" className="px-4 py-3">Asset</th>
-                        <th scope="col" className="px-4 py-3 text-right">Invested</th>
-                        <th scope="col" className="px-4 py-3 text-right">Market</th>
-                        <th scope="col" className="px-4 py-3 text-right">Gain/Loss</th>
+                        <th scope="col" className="px-4 py-3">
+                            <div>Code</div>
+                            <div className="text-[10px] font-normal -mt-1">Qty</div>
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right">
+                            <div>Invested</div>
+                            <div className="text-[10px] font-normal -mt-1">Avg Price</div>
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right">
+                            <div>Market</div>
+                            <div className="text-[10px] font-normal -mt-1">Current Price</div>
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right">
+                            <div>Gain P&L</div>
+                            <div className="text-[10px] font-normal -mt-1">%</div>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1106,26 +1117,21 @@ const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
                         const pnlPrefix = r.pnlUSD > 0 ? '+' : '';
                         return (
                             <tr key={r.id} onClick={() => onRowClick(r)} className="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer">
-                                {/* Column 1: Code and Qty */}
                                 <td className="px-4 py-3 align-top">
                                     <div className="font-medium text-white">{r.symbol}</div>
-                                    {/* Sub-text font size is now smaller */}
-                                    <div className="text-[10px] text-gray-400">{formatQty(r.shares)}</div>
+                                    <div className="text-xs text-gray-400">{formatQty(r.shares)}</div>
                                 </td>
-                                {/* Column 2: Invested and Avg Price */}
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
-                                    <div className="font-medium text-white">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className="text-[10px] text-gray-400">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div>
+                                    <div className="font-medium text-white text-xs">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-[11px] text-gray-400">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div>
                                 </td>
-                                {/* Column 3: Market Value and Current Price */}
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
-                                    <div className="font-medium text-white">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className="text-[10px] text-gray-400">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="font-medium text-white text-xs">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-[11px] text-gray-400">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div>
                                 </td>
-                                {/* Column 4: P&L value and percentage */}
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
-                                    <div className={`font-medium ${pnlColor}`}>{pnlPrefix}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className={`text-[10px] ${pnlColor}`}>{pnlPrefix}{r.pnlPct.toFixed(2)}%</div>
+                                    <div className={`font-medium ${pnlColor} text-xs`}>{pnlPrefix}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className={`text-[11px] ${pnlColor}`}>{pnlPrefix}{r.pnlPct.toFixed(2)}%</div>
                                 </td>
                             </tr>
                         )
@@ -1135,3 +1141,5 @@ const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
         </div>
     );
 }
+
+
