@@ -1089,13 +1089,15 @@ const AssetOptionsPanel = ({ sortBy, setSortBy, displayAs, setDisplayAs, onClose
 const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
     return (
         <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-                <thead className="text-xs text-gray-400 font-normal">
+            {/* Base font size for the table is now text-xs */}
+            <table className="w-full text-xs text-left">
+                {/* Header font size is now smaller, and labels are changed */}
+                <thead className="text-[11px] text-gray-400 font-normal">
                     <tr>
-                        <th scope="col" className="px-4 py-3">Code/Qty</th>
-                        <th scope="col" className="px-4 py-3 text-right">Invested/Avg Price</th>
-                        <th scope="col" className="px-4 py-3 text-right">Market/Current Price</th>
-                        <th scope="col" className="px-4 py-3 text-right">Gain P&L/%</th>
+                        <th scope="col" className="px-4 py-3">Asset</th>
+                        <th scope="col" className="px-4 py-3 text-right">Invested</th>
+                        <th scope="col" className="px-4 py-3 text-right">Market</th>
+                        <th scope="col" className="px-4 py-3 text-right">Gain/Loss</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1104,21 +1106,26 @@ const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
                         const pnlPrefix = r.pnlUSD > 0 ? '+' : '';
                         return (
                             <tr key={r.id} onClick={() => onRowClick(r)} className="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer">
+                                {/* Column 1: Code and Qty */}
                                 <td className="px-4 py-3 align-top">
                                     <div className="font-medium text-white">{r.symbol}</div>
-                                    <div className="text-xs text-gray-400">{formatQty(r.shares)}</div>
+                                    {/* Sub-text font size is now smaller */}
+                                    <div className="text-[10px] text-gray-400">{formatQty(r.shares)}</div>
                                 </td>
+                                {/* Column 2: Invested and Avg Price */}
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
                                     <div className="font-medium text-white">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className="text-xs text-gray-400">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-[10px] text-gray-400">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div>
                                 </td>
+                                {/* Column 3: Market Value and Current Price */}
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
                                     <div className="font-medium text-white">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className="text-xs text-gray-400">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-[10px] text-gray-400">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div>
                                 </td>
+                                {/* Column 4: P&L value and percentage */}
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
                                     <div className={`font-medium ${pnlColor}`}>{pnlPrefix}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className={`text-xs ${pnlColor}`}>{pnlPrefix}{r.pnlPct.toFixed(2)}%</div>
+                                    <div className={`text-[10px] ${pnlColor}`}>{pnlPrefix}{r.pnlPct.toFixed(2)}%</div>
                                 </td>
                             </tr>
                         )
@@ -1128,5 +1135,3 @@ const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
         </div>
     );
 }
-
-
