@@ -14,6 +14,7 @@ const ArrowDownIcon = ({className}) => <svg className={className} width="1em" he
 const InfoIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
 const FullscreenIcon = ({className}) => (<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>);
 const ExitFullscreenIcon = ({ className }) => (<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 0-2-2h-3M3 16h3a2 2 0 0 0 2 2v3"/></svg>);
+const PencilIcon = (props) => (<svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>);
 const AvgProfitIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20V16"/></svg>;
 const AvgLossIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v10"/><path d="M18 4v16"/><path d="M6 4v8"/></svg>;
 const EquityIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M7 16V8l4 4 4-4v8"/></svg>;
@@ -130,7 +131,6 @@ export default function PortfolioDashboard() {
   const [priceHistory, setPriceHistory] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_price_history_${STORAGE_VERSION}`) || "{}") : {});
   const [priceFlashes, setPriceFlashes] = useState({});
 
-  const [view, setView] = useState('main');
   const [isAddAssetModalOpen, setAddAssetModalOpen] = useState(false);
   const [searchMode, setSearchMode] = useState("stock");
   const [query, setQuery] = useState("");
@@ -144,6 +144,11 @@ export default function PortfolioDashboard() {
   const [isEquityModalOpen, setIsEquityModalOpen] = useState(false);
   const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
+  const [isAssetOptionsOpen, setIsAssetOptionsOpen] = useState(false);
+  const [assetSortBy, setAssetSortBy] = useState('default'); // 'default', 'allocation', 'purchaseDate'
+  const [assetDisplayAs, setAssetDisplayAs] = useState('card'); // 'card', 'table'
+
 
   const [nlName, setNlName] = useState(""), [nlQty, setNlQty] = useState(""), [nlPrice, setNlPrice] = useState(""), [nlPriceCcy, setNlPriceCcy] = useState("IDR"), [nlPurchaseDate, setNlPurchaseDate] = useState(""), [nlYoy, setNlYoy] = useState("5"), [nlDesc, setNlDesc] = useState("");
   const importInputRef = useRef(null);
@@ -430,6 +435,18 @@ export default function PortfolioDashboard() {
     return { rows, totals: { investedUSD, marketValueUSD, unrealizedPnlUSD, unrealizedPnlPct }, totalEquity, tradeStats, netDeposit, totalPnlUSD, cashPct, investedPct };
   }, [assets, tradingBalance, realizedUSD, totalDeposits, totalWithdrawals, transactions, usdIdr]);
 
+  const sortedAssets = useMemo(() => {
+    const assetsToSort = [...derivedData.rows];
+    if (assetSortBy === 'allocation') {
+        return assetsToSort.sort((a,b) => b.marketValueUSD - a.marketValueUSD);
+    }
+    if (assetSortBy === 'purchaseDate') {
+        return assetsToSort.sort((a,b) => a.purchaseDate - b.purchaseDate);
+    }
+    return assetsToSort; // default
+  }, [derivedData.rows, assetSortBy]);
+
+
   const equitySeries = useMemo(() => {
     const sortedTx = [...transactions].sort((a, b) => a.date - b.date);
     if (sortedTx.length === 0) return [{ t: Date.now() - 86400000, v: 0 }, { t: Date.now(), v: 0 }];
@@ -462,7 +479,21 @@ export default function PortfolioDashboard() {
     return [{ t: points[0].t - 86400000, v: 0 }, ...points, {t: Date.now(), v: derivedData.totalEquity}];
   }, [transactions, assets, usdIdr, derivedData.totalEquity]);
 
-  if (view === 'performance') { return <PerformancePage setView={setView} tradeStats={derivedData.tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} />; }
+  const handleWatchedAssetClick = (data) => {
+    const assetStub = {
+        id: `watched:${data.id}`,
+        symbol: data.symbol,
+        name: data.name,
+        type: 'crypto',
+        coingeckoId: data.id,
+        lastPriceUSD: data.price_usd,
+        change24hUSD: data.price_usd * (data.change_24h / 100),
+        change24hPct: data.change_24h,
+        shares: 0, // Key indicator that it's not owned
+    };
+    setSelectedAssetForDetail(assetStub);
+    setAssetDetailModalOpen(true);
+  };
 
   return (
     <div className="bg-black text-gray-300 min-h-screen font-sans main-background">
@@ -485,6 +516,7 @@ export default function PortfolioDashboard() {
         @keyframes flash-red { 0% { background-color: rgba(239, 68, 68, 0.5); } 100% { background-color: transparent; } }
         .flash-up { animation: flash-green 0.7s ease-out; }
         .flash-down { animation: flash-red 0.7s ease-out; }
+        .tradingview-widget-container:fullscreen { background-color: #131722; }
       `}</style>
       <div className="max-w-4xl mx-auto">
         <header className="p-4 flex justify-between items-center sticky top-0 bg-black/50 backdrop-blur-sm z-10">
@@ -562,7 +594,7 @@ export default function PortfolioDashboard() {
                         if (!data) return <div key={id} className="flex-1 glass-card p-2 animate-pulse"></div>;
                         const change = data.change_24h || 0;
                         return (
-                            <div key={id} className="flex-1 glass-card p-2 flex items-center justify-between">
+                            <div key={id} onClick={() => handleWatchedAssetClick(data)} className="flex-1 glass-card p-2 flex items-center justify-between cursor-pointer hover:border-white/20 transition-all">
                                 <div className="flex items-center gap-2">
                                     <img src={data.image} alt={data.name} className="w-6 h-6"/>
                                     <div><p className="text-xs font-semibold text-white">{data.symbol}</p><p className="text-[10px] text-gray-400">{data.name}</p></div>
@@ -576,51 +608,62 @@ export default function PortfolioDashboard() {
                     })}
                 </div>
             </div>
-            <div className="mt-4 text-right"><div className="text-sm text-white cursor-pointer inline-flex items-center gap-2" onClick={() => setView('performance')}>View Trade Performance <ArrowRightIconSimple /></div></div>
+            <div className="mt-4 px-2 flex justify-between items-center">
+                <button onClick={() => setIsAssetOptionsOpen(true)} className="text-gray-400 hover:text-white p-1" title="Filter and View Options">
+                    <PencilIcon width="16" height="16" />
+                </button>
+                <div className="text-sm text-white cursor-pointer inline-flex items-center gap-2" onClick={() => setIsPerformanceModalOpen(true)}>
+                    View Trade Performance <ArrowRightIconSimple />
+                </div>
+            </div>
           </section>
           
           <div className="p-2 space-y-2">
-            {derivedData.rows.map(r => {
-                const pnlColor = r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400';
-                const changeColor = r.change24hPct >= 0 ? 'text-emerald-400' : 'text-red-400';
-                const flashClass = priceFlashes[r.id] === 'up' ? 'flash-up' : priceFlashes[r.id] === 'down' ? 'flash-down' : '';
+             {assetDisplayAs === 'card' ? (
+                sortedAssets.map(r => {
+                    const pnlColor = r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400';
+                    const changeColor = r.change24hPct >= 0 ? 'text-emerald-400' : 'text-red-400';
+                    const flashClass = priceFlashes[r.id] === 'up' ? 'flash-up' : priceFlashes[r.id] === 'down' ? 'flash-down' : '';
 
-                return (
-                    <div key={r.id} className="glass-card p-3 cursor-pointer hover:border-white/20 transition-all" onClick={() => { setSelectedAssetForDetail(r); setAssetDetailModalOpen(true); }}>
-                        <div className="flex justify-between items-center mb-3">
-                            <div>
-                                <h3 className="text-lg font-bold text-white">{r.symbol}</h3>
-                                <p className="text-xs text-gray-400 truncate max-w-[120px]">{r.name}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-20 h-8">
-                                    <Sparkline data={priceHistory[r.id] || []} color={r.change24hPct >= 0 ? '#10B981' : '#EF4444'} />
+                    return (
+                        <div key={r.id} className="glass-card p-3 cursor-pointer hover:border-white/20 transition-all" onClick={() => { setSelectedAssetForDetail(r); setAssetDetailModalOpen(true); }}>
+                            <div className="flex justify-between items-center mb-3">
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">{r.symbol}</h3>
+                                    <p className="text-xs text-gray-400 truncate max-w-[120px]">{r.name}</p>
                                 </div>
-                                <div className={`text-right p-1 rounded-md ${flashClass}`}>
-                                    <p className="text-base font-semibold text-white tabular-nums">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</p>
-                                    <p className={`text-xs font-semibold tabular-nums ${changeColor}`}>
-                                        {r.change24hUSD >= 0 ? '+' : ''}{formatCurrency(r.change24hUSD, true, displaySymbol, usdIdr)} ({r.change24hPct?.toFixed(2) ?? '0.00'}%)
-                                    </p>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-20 h-8">
+                                        <Sparkline data={priceHistory[r.id] || []} color={r.change24hPct >= 0 ? '#10B981' : '#EF4444'} />
+                                    </div>
+                                    <div className={`text-right p-1 rounded-md ${flashClass}`}>
+                                        <p className="text-base font-semibold text-white tabular-nums">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</p>
+                                        <p className={`text-xs font-semibold tabular-nums ${changeColor}`}>
+                                            {r.change24hUSD >= 0 ? '+' : ''}{formatCurrency(r.change24hUSD, true, displaySymbol, usdIdr)} ({r.change24hPct?.toFixed(2) ?? '0.00'}%)
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 text-xs pt-3 border-t border-white/10">
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-center"><span className="text-gray-400">Qty</span><span className="font-medium text-gray-200">{formatQty(r.shares)}</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-gray-400">Invested</span><span className="font-medium text-gray-200">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-gray-400">Avg Price</span><span className="font-medium text-gray-200">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</span></div>
+                                </div>
+                                <div className="space-y-1 text-right">
+                                    <div className="flex justify-between items-center"><span className="text-gray-400">Gain P&L</span><span className={`font-semibold ${pnlColor}`}>{r.pnlUSD >= 0 ? '+' : ''}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)} ({r.pnlPct.toFixed(1)}%)</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-gray-400">Market</span><span className="font-semibold text-gray-200">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-gray-400">Current Price</span><span className="font-semibold text-gray-200">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</span></div>
                                 </div>
                             </div>
                         </div>
-
-                        <div className="grid grid-cols-2 gap-4 text-xs pt-3 border-t border-white/10">
-                            <div className="space-y-1">
-                                <div className="flex justify-between items-center"><span className="text-gray-400">Qty</span><span className="font-medium text-gray-200">{formatQty(r.shares)}</span></div>
-                                <div className="flex justify-between items-center"><span className="text-gray-400">Invested</span><span className="font-medium text-gray-200">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</span></div>
-                                <div className="flex justify-between items-center"><span className="text-gray-400">Avg Price</span><span className="font-medium text-gray-200">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</span></div>
-                            </div>
-                            <div className="space-y-1 text-right">
-                                <div className="flex justify-between items-center"><span className="text-gray-400">Gain P&L</span><span className={`font-semibold ${pnlColor}`}>{r.pnlUSD >= 0 ? '+' : ''}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)} ({r.pnlPct.toFixed(1)}%)</span></div>
-                                <div className="flex justify-between items-center"><span className="text-gray-400">Market</span><span className="font-semibold text-gray-200">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</span></div>
-                                <div className="flex justify-between items-center"><span className="text-gray-400">Current Price</span><span className="font-semibold text-gray-200">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</span></div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })}
-            {derivedData.rows.length === 0 && <p className="text-center py-8 text-gray-500">No assets in portfolio.</p>}
+                    );
+                })
+            ) : (
+                <AssetTableView rows={sortedAssets} displaySymbol={displaySymbol} usdIdr={usdIdr} onRowClick={(r) => { setSelectedAssetForDetail(r); setAssetDetailModalOpen(true); }} />
+            )}
+            {sortedAssets.length === 0 && <p className="text-center py-8 text-gray-500">No assets in portfolio.</p>}
             <div className="p-4 text-center"><button onClick={() => setAddAssetModalOpen(true)} className="text-emerald-400 font-semibold text-sm">+ Add new asset</button></div>
           </div>
 
@@ -631,6 +674,20 @@ export default function PortfolioDashboard() {
         <Modal title="Portfolio Growth" isOpen={isEquityModalOpen} onClose={() => setIsEquityModalOpen(false)}><EquityGrowthView equitySeries={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} totalEquity={derivedData.totalEquity} /></Modal>
         <Modal title="Portfolio Allocation" isOpen={isAllocationModalOpen} onClose={() => setIsAllocationModalOpen(false)}><PortfolioAllocation data={derivedData.rows} tradingBalance={financialSummaries.tradingBalance} displaySymbol={displaySymbol} usdIdr={usdIdr}/></Modal>
         <Modal title="Transaction History" isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)}><HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={handleDeleteTransaction} /></Modal>
+        <Modal title="Trade Performance" isOpen={isPerformanceModalOpen} onClose={() => setIsPerformanceModalOpen(false)} size="2xl">
+            <div className="max-h-[80vh] overflow-y-auto">
+                <TradeStatsView stats={derivedData.tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} />
+            </div>
+        </Modal>
+        <Modal title="Asset Options" isOpen={isAssetOptionsOpen} onClose={() => setIsAssetOptionsOpen(false)} size="lg">
+            <AssetOptionsPanel 
+                sortBy={assetSortBy}
+                setSortBy={setAssetSortBy}
+                displayAs={assetDisplayAs}
+                setDisplayAs={setAssetDisplayAs}
+                onClose={() => setIsAssetOptionsOpen(false)}
+            />
+        </Modal>
         <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}><ManagePortfolioSheet onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data? This cannot be undone.")) { setTransactions([]); } setManagePortfolioOpen(false); }} onExport={handleExport} onImport={handleImportClick} /></BottomSheet>
         <input type="file" ref={importInputRef} onChange={handleFileImport} className="hidden" accept=".csv" />
       </div>
@@ -746,9 +803,6 @@ const AreaChart = ({ data: chartData, simplified = false, displaySymbol, range, 
 };
 
 /* ===================== Sub-Components & Pages ===================== */
-const PerformancePage = ({ setView, tradeStats, transactions, displaySymbol, usdIdr }) => {
-    return ( <div className="bg-black text-gray-300 min-h-screen font-sans main-background"> <div className="max-w-4xl mx-auto"> <header className="p-4 flex items-center gap-4 sticky top-0 bg-black/50 backdrop-blur-sm z-10"> <button onClick={() => setView('main')} className="text-white"><BackArrowIcon /></button> <h1 className="text-lg font-semibold text-white">Trade Performance</h1> </header> <TradeStatsView stats={tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} /> </div> </div> );
-};
 const EquityGrowthView = ({ equitySeries, displaySymbol, usdIdr, totalEquity }) => {
     const [chartRange, setChartRange] = useState("All"); const [returnPeriod, setReturnPeriod] = useState('Monthly');
     const equityReturnData = useMemo(() => {
@@ -795,9 +849,11 @@ const AssetDetailModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usd
         <Modal isOpen={isOpen} onClose={onClose} title={`${asset.symbol} - ${asset.name}`} size="3xl">
             <div className="space-y-4">
                 <TradingViewWidget asset={asset} />
-                <div className="border-t border-white/10 pt-4">
-                  <TradeForm asset={asset} onBuy={onBuy} onSell={onSell} onDelete={onDelete} usdIdr={usdIdr} displaySymbol={displaySymbol} />
-                </div>
+                {asset.shares > 0 && (
+                    <div className="border-t border-white/10 pt-4">
+                      <TradeForm asset={asset} onBuy={onBuy} onSell={onSell} onDelete={onDelete} usdIdr={usdIdr} displaySymbol={displaySymbol} />
+                    </div>
+                )}
             </div>
         </Modal>
     );
@@ -879,11 +935,11 @@ const TradingViewWidget = ({ asset }) => {
   }, [asset]);
 
   if (!asset) return null;
-  const uniqueId = `tradingview-widget-container-${asset.id}`;
+  const uniqueId = `tradingview-widget-container-${asset.id || asset.symbol}`;
   
   return (
     <div ref={widgetContainerRef} className="tradingview-widget-container relative bg-zinc-900 rounded-lg overflow-hidden aspect-[16/9]">
-      <button onClick={handleToggleFullscreen} className="absolute top-2 right-12 z-10 p-1.5 bg-zinc-800/70 rounded-md hover:bg-zinc-700 transition-colors" aria-label="Toggle Fullscreen">
+      <button onClick={handleToggleFullscreen} className="absolute top-2 right-2 z-10 p-1.5 bg-zinc-800/70 rounded-md hover:bg-zinc-700 transition-colors" aria-label="Toggle Fullscreen">
           {isFullscreen ? <ExitFullscreenIcon className="text-gray-300" /> : <FullscreenIcon className="text-gray-300"/>}
       </button>
       <div id={uniqueId} ref={containerRef} className="w-full h-full"></div>
@@ -1004,5 +1060,73 @@ const PortfolioAllocation = ({ data: fullAssetData, tradingBalance, displaySymbo
         </div> 
     );
 };
+
+const AssetOptionsPanel = ({ sortBy, setSortBy, displayAs, setDisplayAs, onClose }) => {
+    return (
+        <div className="space-y-6 text-gray-300">
+            <div>
+                <h3 className="font-semibold text-white mb-3">Sort Assets By</h3>
+                <div className="space-y-2">
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="sort" value="default" checked={sortBy === 'default'} onChange={(e) => setSortBy(e.target.value)} className="accent-emerald-500" /> Default</label>
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="sort" value="allocation" checked={sortBy === 'allocation'} onChange={(e) => setSortBy(e.target.value)} className="accent-emerald-500" /> Allocation (High to Low)</label>
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="sort" value="purchaseDate" checked={sortBy === 'purchaseDate'} onChange={(e) => setSortBy(e.target.value)} className="accent-emerald-500" /> Purchase Date (Oldest First)</label>
+                </div>
+            </div>
+            <div>
+                <h3 className="font-semibold text-white mb-3">Display As</h3>
+                <div className="space-y-2">
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="display" value="card" checked={displayAs === 'card'} onChange={(e) => setDisplayAs(e.target.value)} className="accent-emerald-500" /> Cards</label>
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="display" value="table" checked={displayAs === 'table'} onChange={(e) => setDisplayAs(e.target.value)} className="accent-emerald-500" /> Table</label>
+                </div>
+            </div>
+            <div className="pt-4 border-t border-white/10 flex justify-end">
+                <button onClick={onClose} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold text-sm">Done</button>
+            </div>
+        </div>
+    );
+};
+
+const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+                <thead className="text-xs text-gray-400 font-normal">
+                    <tr>
+                        <th scope="col" className="px-4 py-3">Code/Qty</th>
+                        <th scope="col" className="px-4 py-3 text-right">Invested/Avg Price</th>
+                        <th scope="col" className="px-4 py-3 text-right">Market/Current Price</th>
+                        <th scope="col" className="px-4 py-3 text-right">Gain P&L/%</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map(r => {
+                        const pnlColor = r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400';
+                        const pnlPrefix = r.pnlUSD > 0 ? '+' : '';
+                        return (
+                            <tr key={r.id} onClick={() => onRowClick(r)} className="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer">
+                                <td className="px-4 py-3 align-top">
+                                    <div className="font-medium text-white">{r.symbol}</div>
+                                    <div className="text-xs text-gray-400">{formatQty(r.shares)}</div>
+                                </td>
+                                <td className="px-4 py-3 text-right align-top tabular-nums">
+                                    <div className="font-medium text-white">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-xs text-gray-400">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div>
+                                </td>
+                                <td className="px-4 py-3 text-right align-top tabular-nums">
+                                    <div className="font-medium text-white">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-xs text-gray-400">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div>
+                                </td>
+                                <td className="px-4 py-3 text-right align-top tabular-nums">
+                                    <div className={`font-medium ${pnlColor}`}>{pnlPrefix}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className={`text-xs ${pnlColor}`}>{pnlPrefix}{r.pnlPct.toFixed(2)}%</div>
+                                </td>
+                            </tr>
+                        )
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
 
 
