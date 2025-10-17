@@ -285,9 +285,116 @@ export default function PortfolioDashboard() {
     const amountIDR = toNum(amount); if (amountIDR > financialSummaries.tradingBalance) { alert("Withdrawal amount exceeds balance."); return; }
     addTransaction({ id: `tx:${Date.now()}`, type: "withdraw", amount: amountIDR, date: Date.now() }); setBalanceModalOpen(false);
   };
-  const handleExport = () => { if (transactions.length === 0) return; const header = Object.keys(transactions[0]).join(',') + '\n'; const rows = transactions.map(tx => Object.values(tx).map(val => `"${val}"`).join(',')).join('\n'); const csvContent = header + rows; const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `transactions_${new Date().toISOString().split('T')[0]}.csv`; document.body.appendChild(link); link.click(); document.body.removeChild(link); setManagePortfolioOpen(false); };
-  const handleImportClick = () => { importInputRef.current.click(); setManagePortfolioOpen(false); };
-  const handleFileImport = () => alert("Import feature coming soon.");
+  
+  const handleExport = () => {
+    if (transactions.length === 0) {
+        alert("No transactions to export.");
+        return;
+    }
+
+    const formatCsvCell = (cellData) => {
+        const stringData = String(cellData ?? '');
+        if (stringData.includes(',') || stringData.includes('"') || stringData.includes('\n')) {
+            return `"${stringData.replace(/"/g, '""')}"`;
+        }
+        return stringData;
+    };
+    
+    const headers = [
+        'id', 'date', 'type', 'symbol', 'name', 'qty', 'pricePerUnit', 
+        'cost', 'proceeds', 'realized', 'amount', 'assetId', 'note',
+        'assetStub_id', 'assetStub_type', 'assetStub_symbol', 'assetStub_name', 
+        'assetStub_image', 'assetStub_coingeckoId'
+    ];
+
+    const headerRow = headers.join(',') + '\n';
+    
+    const rows = transactions.map(tx => {
+        const rowData = headers.map(header => {
+            if (header.startsWith('assetStub_')) {
+                const key = header.replace('assetStub_', '');
+                return tx.assetStub ? tx.assetStub[key] : '';
+            }
+            return tx[header];
+        });
+        return rowData.map(formatCsvCell).join(',');
+    }).join('\n');
+
+    const csvContent = headerRow + rows;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    setManagePortfolioOpen(false);
+  };
+
+  const handleImportClick = () => { importInputRef.current.click(); };
+
+  const handleFileImport = (event) => {
+    const file = event.target.files[0];
+    if (!file) { return; }
+
+    if (!confirm("Mengimpor file baru akan menggantikan semua transaksi saat ini. Apakah Anda yakin ingin melanjutkan?")) {
+        event.target.value = null;
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const text = e.target.result;
+            const lines = text.split(/\r\n|\n/);
+            
+            if (lines.length < 2) throw new Error("File CSV kosong atau hanya berisi header.");
+
+            const headerLine = lines.shift();
+            const headers = headerLine.split(',').map(h => h.trim());
+
+            const newTransactions = lines.filter(line => line.trim() !== '').map(line => {
+                const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(val => val.startsWith('"') && val.endsWith('"') ? val.slice(1, -1).replace(/""/g, '"') : val);
+                
+                const tx = {};
+                headers.forEach((header, index) => {
+                    if (values[index] !== undefined) tx[header] = values[index];
+                });
+
+                if (tx.type === 'buy' && tx.assetStub_symbol) {
+                    tx.assetStub = {
+                        id: tx.assetStub_id, type: tx.assetStub_type,
+                        symbol: tx.assetStub_symbol, name: tx.assetStub_name,
+                        image: tx.assetStub_image, coingeckoId: tx.assetStub_coingeckoId,
+                    };
+                }
+                
+                Object.keys(tx).forEach(key => { if (key.startsWith('assetStub_')) delete tx[key]; });
+
+                const numericFields = ['date', 'qty', 'pricePerUnit', 'cost', 'proceeds', 'realized', 'amount'];
+                numericFields.forEach(field => { if (tx[field]) tx[field] = toNum(tx[field]); });
+                
+                return tx;
+            });
+
+            setTransactions(newTransactions);
+            alert("Transaksi berhasil diimpor!");
+
+        } catch (error) {
+            console.error("Gagal mengimpor CSV:", error);
+            alert(`Terjadi kesalahan saat mengimpor file: ${error.message}`);
+        } finally {
+            event.target.value = null;
+        }
+    };
+    reader.readAsText(file);
+    setManagePortfolioOpen(false);
+  };
+
   const handleSetWatchedAsset = (cryptoId) => {
     setWatchedAssetIds(prev => {
         if (prev.includes(cryptoId)) return prev.filter(id => id !== cryptoId);
@@ -613,4 +720,5 @@ const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => 
     const totalValueDisplay = displaySymbol === "Rp" ? totalValueUSD * usdIdr : totalValueUSD; const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth; const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"]; let accumulatedAngle = 0;
     return ( <div className="p-1 max-h-[70vh] overflow-y-auto"> <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3> <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div> <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}> <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90"> {data.map((d, i) => { const angle = totalValueUSD > 0 ? (d.value / totalValueUSD) * 360 : 0; const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color || colors[i % colors.length]} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); accumulatedAngle += angle; return segment; })} </svg> <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{formatCurrencyShort(totalValueDisplay, false, displaySymbol, 1)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div> </div> <div className="space-y-2">{data.map((d, i) => { const percentage = totalValueUSD > 0 ? (d.value / totalValueUSD) * 100 : 0; const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3"> <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}</div> <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div> </div> );
 };
+
 
