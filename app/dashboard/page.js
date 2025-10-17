@@ -891,33 +891,62 @@ const TradingViewWidget = ({ asset }) => {
   );
 };
 const PortfolioAllocation = ({ data: fullAssetData, tradingBalance, displaySymbol, usdIdr }) => {
-    const [activeTab, setActiveTab] = useState('Sector'); 
+    const [activeTab, setActiveTab] = useState('Asset');
     const [hoveredSegment, setHoveredSegment] = useState(null);
 
     const { equityData, sectorData } = useMemo(() => {
         const tradingBalanceUSD = tradingBalance / usdIdr;
-        
-        const eqData = fullAssetData
-            .filter(d => d.type === 'stock' || d.type === 'crypto')
-            .map(d => ({ name: d.symbol, value: d.marketValueUSD, image: d.image, type: d.type }))
-            .sort((a,b) => b.value - a.value);
+        const colors = ["#10B981", "#60a5fa", "#F97316", "#8B5CF6", "#F59E0B", "#ec4899", "#ef4444"];
 
-        const secData = {
+        // --- Sector Data Calculation ---
+        const secDataMap = {
             'Cash': { value: tradingBalanceUSD, color: '#38bdf8', icon: <CashIcon /> },
             'Equity': { value: 0, color: '#10B981', icon: <EquityIcon /> }, 
             'Crypto': { value: 0, color: '#60a5fa', icon: <CryptoIcon /> }, 
             'Non-Liquid': { value: 0, color: '#F97316', icon: <NonLiquidIcon /> }
         }; 
         fullAssetData.forEach(asset => { 
-            if (asset.type === 'stock') secData['Equity'].value += asset.marketValueUSD; 
-            else if (asset.type === 'crypto') secData['Crypto'].value += asset.marketValueUSD; 
-            else if (asset.type === 'nonliquid') secData['Non-Liquid'].value += asset.marketValueUSD; 
+            if (asset.type === 'stock') secDataMap['Equity'].value += asset.marketValueUSD; 
+            else if (asset.type === 'crypto') secDataMap['Crypto'].value += asset.marketValueUSD; 
+            else if (asset.type === 'nonliquid') secDataMap['Non-Liquid'].value += asset.marketValueUSD; 
         }); 
+        const finalSectorData = Object.entries(secDataMap).map(([name, data]) => ({ name, ...data })).filter(d => d.value > 0.01);
 
-        return { 
-            equityData: eqData, 
-            sectorData: Object.entries(secData).map(([name, data]) => ({ name, ...data })).filter(d => d.value > 0.01)
-        };
+        // --- Equity Data Calculation with Grouping ---
+        const allAssets = [
+            ...fullAssetData.map(d => ({ name: d.symbol, value: d.marketValueUSD, image: d.image, type: d.type })),
+            { name: 'Cash', value: tradingBalanceUSD, image: null, type: 'cash' }
+        ].filter(a => a.value > 0.01).sort((a, b) => b.value - a.value);
+
+        let finalEquityData;
+        if (allAssets.length > 8) {
+            const top7 = allAssets.slice(0, 7);
+            const others = allAssets.slice(7);
+            const othersValue = others.reduce((sum, item) => sum + item.value, 0);
+            finalEquityData = [ ...top7, { name: 'Lainnya', value: othersValue, type: 'other' } ];
+        } else {
+            finalEquityData = allAssets;
+        }
+
+        finalEquityData = finalEquityData.map((d, i) => {
+            let icon, color;
+            if (d.type === 'cash') {
+                icon = <CashIcon />;
+                color = '#38bdf8';
+            } else if (d.type === 'other') {
+                icon = <MoreVerticalIcon />;
+                color = '#64748b';
+            } else if (d.type === 'stock') {
+                icon = <EquityIcon />;
+                color = colors[i % colors.length];
+            } else {
+                icon = d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : <CryptoIcon />;
+                color = colors[i % colors.length];
+            }
+            return { ...d, icon, color };
+        });
+
+        return { equityData: finalEquityData, sectorData: finalSectorData };
     }, [fullAssetData, tradingBalance, usdIdr]);
 
     const data = activeTab === 'Asset' ? equityData : sectorData;
@@ -931,32 +960,32 @@ const PortfolioAllocation = ({ data: fullAssetData, tradingBalance, displaySymbo
     return ( 
         <div className="p-1 max-h-[70vh] overflow-y-auto">
             <div className="flex gap-2 mb-4">
-                <button onClick={() => setActiveTab('Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button>
                 <button onClick={() => setActiveTab('Asset')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Asset' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button>
+                <button onClick={() => setActiveTab('Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button>
             </div> 
             <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}> 
                 <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90"> 
-                    {data.map((d, i) => { 
+                    {data.map((d) => { 
                         const angle = totalValueUSD > 0 ? (d.value / totalValueUSD) * 360 : 0; 
-                        const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); 
+                        const segment = (<circle key={d.name} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); 
                         accumulatedAngle += angle; 
                         return segment; 
                     })} 
                 </svg> 
                 <div className="absolute flex flex-col items-center justify-center pointer-events-none">
                     <div className="text-xl font-bold text-white">{formatCurrencyShort(totalValueDisplay, false, displaySymbol, 1)}</div>
-                    <div className="text-sm text-gray-400">{data.length} {activeTab === 'Asset' ? 'Assets' : 'Sectors'}</div>
+                    <div className="text-sm text-gray-400">{data.length} {activeTab === 'Asset' ? 'Items' : 'Sectors'}</div>
                 </div> 
             </div> 
-            <div className="space-y-3">{data.map((d, i) => { 
+            <div className="space-y-3">{data.map((d) => { 
                 const percentage = totalValueUSD > 0 ? (d.value / totalValueUSD) * 100 : 0; 
                 const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); 
                 return (
-                    <div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-black/20' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}>
+                    <div key={d.name} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-black/20' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}>
                         <div className="flex justify-between items-center text-sm">
                             <div className="flex items-center gap-3 w-2/5">
                                 <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs flex-shrink-0">
-                                    {d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || d.name.charAt(0)}
+                                    {d.icon}
                                 </div>
                                 <div className="flex-1 truncate">
                                     <div className="font-semibold text-white truncate">{d.name}</div>
