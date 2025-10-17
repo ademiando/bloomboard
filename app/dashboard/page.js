@@ -18,6 +18,7 @@ const AvgProfitIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill
 const AvgLossIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v10"/><path d="M18 4v16"/><path d="M6 4v8"/></svg>;
 const EquityIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><path d="M7 16V8l4 4 4-4v8"/></svg>;
 const CryptoIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8.5 14.5h7M8.5 9.5h7M12 17.5v-11"/></svg>;
+const CashIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><circle cx="12" cy="12" r="4"></circle></svg>;
 const NonLiquidIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
 const SearchIcon = (props) => (<svg {...props} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" ><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>);
 const StarIcon = ({ isFilled, ...props }) => (<svg {...props} width="20" height="20" viewBox="0 0 24 24" fill={isFilled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>);
@@ -118,7 +119,7 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
 
 /* ===================== Main Component ===================== */
 export default function PortfolioDashboard() {
-  const STORAGE_VERSION = "v25"; 
+  const STORAGE_VERSION = "v26"; 
   const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_assets_${STORAGE_VERSION}`) || "[]").map(ensureNumericAsset) : []);
   const [transactions, setTransactions] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_transactions_${STORAGE_VERSION}`) || "[]") : []);
   const [financialSummaries, setFinancialSummaries] = useState({ realizedUSD: 0, tradingBalance: 0, totalDeposits: 0, totalWithdrawals: 0, });
@@ -628,7 +629,7 @@ export default function PortfolioDashboard() {
         <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)} size="lg"><AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol, handleSetWatchedAsset, watchedAssetIds}} /></Modal>
         <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)} size="lg"><BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} /></Modal>
         <Modal title="Portfolio Growth" isOpen={isEquityModalOpen} onClose={() => setIsEquityModalOpen(false)}><EquityGrowthView equitySeries={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} totalEquity={derivedData.totalEquity} /></Modal>
-        <Modal title="Portfolio Allocation" isOpen={isAllocationModalOpen} onClose={() => setIsAllocationModalOpen(false)}><PortfolioAllocation data={derivedData.rows} displaySymbol={displaySymbol} usdIdr={usdIdr}/></Modal>
+        <Modal title="Portfolio Allocation" isOpen={isAllocationModalOpen} onClose={() => setIsAllocationModalOpen(false)}><PortfolioAllocation data={derivedData.rows} tradingBalance={financialSummaries.tradingBalance} displaySymbol={displaySymbol} usdIdr={usdIdr}/></Modal>
         <Modal title="Transaction History" isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)}><HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={handleDeleteTransaction} /></Modal>
         <BottomSheet isOpen={isManagePortfolioOpen} onClose={() => setManagePortfolioOpen(false)}><ManagePortfolioSheet onAddBalance={() => { setManagePortfolioOpen(false); setBalanceModalMode('Add'); setBalanceModalOpen(true); }} onWithdraw={() => { setManagePortfolioOpen(false); setBalanceModalMode('Withdraw'); setBalanceModalOpen(true); }} onClearAll={() => { if(confirm("Erase all portfolio data? This cannot be undone.")) { setTransactions([]); } setManagePortfolioOpen(false); }} onExport={handleExport} onImport={handleImportClick} /></BottomSheet>
         <input type="file" ref={importInputRef} onChange={handleFileImport} className="hidden" accept=".csv" />
@@ -851,7 +852,7 @@ const TradingViewWidget = ({ asset }) => {
             new window.TradingView.widget({
                 autosize: true,
                 symbol: formatSymbolForTV(asset),
-                interval: "240", // 4 Hours timeframe
+                interval: "240",
                 timezone: "Asia/Jakarta",
                 theme: "dark",
                 style: "1",
@@ -881,21 +882,98 @@ const TradingViewWidget = ({ asset }) => {
   const uniqueId = `tradingview-widget-container-${asset.id}`;
   
   return (
-    <div ref={widgetContainerRef} className="tradingview-widget-container relative bg-zinc-900 rounded-lg overflow-hidden" style={{ height: "400px", width: "100%" }}>
+    <div ref={widgetContainerRef} className="tradingview-widget-container relative bg-zinc-900 rounded-lg overflow-hidden aspect-[16/9]">
       <button onClick={handleToggleFullscreen} className="absolute top-2 right-12 z-10 p-1.5 bg-zinc-800/70 rounded-md hover:bg-zinc-700 transition-colors" aria-label="Toggle Fullscreen">
           {isFullscreen ? <ExitFullscreenIcon className="text-gray-300" /> : <FullscreenIcon className="text-gray-300"/>}
       </button>
-      <div id={uniqueId} ref={containerRef} style={{ height: "100%", width: "100%" }}></div>
+      <div id={uniqueId} ref={containerRef} className="w-full h-full"></div>
     </div>
   );
 };
-const PortfolioAllocation = ({ data: fullAssetData, displaySymbol, usdIdr }) => {
-    const [activeTab, setActiveTab] = useState('Equity'); const [hoveredSegment, setHoveredSegment] = useState(null);
-    const { equityData, sectorData } = useMemo(() => { const eqData = fullAssetData.filter(d => d.type === 'stock' || d.type === 'crypto').map(d => ({ name: d.symbol, value: d.marketValueUSD, image: d.image, type: d.type })).sort((a,b)=>b.value-a.value); const secData = {'Equity': { value: 0, color: '#10B981', icon: <EquityIcon /> }, 'Crypto': { value: 0, color: '#3B82F6', icon: <CryptoIcon /> }, 'Non-Liquid': { value: 0, color: '#F97316', icon: <NonLiquidIcon /> }}; fullAssetData.forEach(asset => { if (asset.type === 'stock') secData['Equity'].value += asset.marketValueUSD; else if (asset.type === 'crypto') secData['Crypto'].value += asset.marketValueUSD; else if (asset.type === 'nonliquid') secData['Non-Liquid'].value += asset.marketValueUSD; }); return { equityData: eqData, sectorData: Object.entries(secData).map(([name, data]) => ({ name, ...data })).filter(d => d.value > 0) }; }, [fullAssetData]);
-    const data = activeTab === 'Equity' ? equityData : sectorData; const totalValueUSD = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
+const PortfolioAllocation = ({ data: fullAssetData, tradingBalance, displaySymbol, usdIdr }) => {
+    const [activeTab, setActiveTab] = useState('Sector'); 
+    const [hoveredSegment, setHoveredSegment] = useState(null);
+
+    const { equityData, sectorData } = useMemo(() => {
+        const tradingBalanceUSD = tradingBalance / usdIdr;
+        
+        const eqData = fullAssetData
+            .filter(d => d.type === 'stock' || d.type === 'crypto')
+            .map(d => ({ name: d.symbol, value: d.marketValueUSD, image: d.image, type: d.type }))
+            .sort((a,b) => b.value - a.value);
+
+        const secData = {
+            'Cash': { value: tradingBalanceUSD, color: '#38bdf8', icon: <CashIcon /> },
+            'Equity': { value: 0, color: '#10B981', icon: <EquityIcon /> }, 
+            'Crypto': { value: 0, color: '#60a5fa', icon: <CryptoIcon /> }, 
+            'Non-Liquid': { value: 0, color: '#F97316', icon: <NonLiquidIcon /> }
+        }; 
+        fullAssetData.forEach(asset => { 
+            if (asset.type === 'stock') secData['Equity'].value += asset.marketValueUSD; 
+            else if (asset.type === 'crypto') secData['Crypto'].value += asset.marketValueUSD; 
+            else if (asset.type === 'nonliquid') secData['Non-Liquid'].value += asset.marketValueUSD; 
+        }); 
+
+        return { 
+            equityData: eqData, 
+            sectorData: Object.entries(secData).map(([name, data]) => ({ name, ...data })).filter(d => d.value > 0.01)
+        };
+    }, [fullAssetData, tradingBalance, usdIdr]);
+
+    const data = activeTab === 'Asset' ? equityData : sectorData;
+    const totalValueUSD = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
+
     if (!totalValueUSD) return <div className="mt-8 text-center text-gray-500">No assets to show in allocation.</div>;
-    const totalValueDisplay = displaySymbol === "Rp" ? totalValueUSD * usdIdr : totalValueUSD; const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth; const colors = ["#10B981", "#3B82F6", "#F97316", "#8B5CF6", "#F59E0B", "#64748B"]; let accumulatedAngle = 0;
-    return ( <div className="p-1 max-h-[70vh] overflow-y-auto"> <h3 className="text-base font-semibold text-white mb-4">Portfolio Allocation</h3> <div className="flex gap-2 mb-4"><button onClick={() => setActiveTab('Equity')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Equity' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button><button onClick={() => setActiveTab('Sub-Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sub-Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button></div> <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}> <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90"> {data.map((d, i) => { const angle = totalValueUSD > 0 ? (d.value / totalValueUSD) * 360 : 0; const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color || colors[i % colors.length]} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); accumulatedAngle += angle; return segment; })} </svg> <div className="absolute flex flex-col items-center justify-center pointer-events-none"><div className="text-xl font-bold text-white">{formatCurrencyShort(totalValueUSD, true, displaySymbol, 1)}</div><div className="text-sm text-gray-400">{data.length} {activeTab === 'Equity' ? 'Assets' : 'Sectors'}</div></div> </div> <div className="space-y-2">{data.map((d, i) => { const percentage = totalValueUSD > 0 ? (d.value / totalValueUSD) * 100 : 0; const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); return (<div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-zinc-800' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}><div className="flex justify-between items-center text-sm mb-1"><div className="flex items-center gap-3"> <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs">{d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || (d.type === 'stock' ? <EquityIcon /> : d.name.charAt(0))}</div> <div><div className="font-semibold text-white">{d.name}</div><div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div></div></div><div className="text-white font-semibold">{percentage.toFixed(2)}%</div></div><div className="w-full bg-zinc-700 rounded-full h-1.5 mt-1"><div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color || colors[i % colors.length] }}></div></div></div>); })}</div> </div> );
+    const totalValueDisplay = totalValueUSD * (displaySymbol === "Rp" ? usdIdr : 1); 
+    const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth; 
+    let accumulatedAngle = 0;
+
+    return ( 
+        <div className="p-1 max-h-[70vh] overflow-y-auto">
+            <div className="flex gap-2 mb-4">
+                <button onClick={() => setActiveTab('Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button>
+                <button onClick={() => setActiveTab('Asset')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Asset' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button>
+            </div> 
+            <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}> 
+                <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90"> 
+                    {data.map((d, i) => { 
+                        const angle = totalValueUSD > 0 ? (d.value / totalValueUSD) * 360 : 0; 
+                        const segment = (<circle key={i} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={d.color} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); 
+                        accumulatedAngle += angle; 
+                        return segment; 
+                    })} 
+                </svg> 
+                <div className="absolute flex flex-col items-center justify-center pointer-events-none">
+                    <div className="text-xl font-bold text-white">{formatCurrencyShort(totalValueDisplay, false, displaySymbol, 1)}</div>
+                    <div className="text-sm text-gray-400">{data.length} {activeTab === 'Asset' ? 'Assets' : 'Sectors'}</div>
+                </div> 
+            </div> 
+            <div className="space-y-3">{data.map((d, i) => { 
+                const percentage = totalValueUSD > 0 ? (d.value / totalValueUSD) * 100 : 0; 
+                const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); 
+                return (
+                    <div key={i} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-black/20' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}>
+                        <div className="flex justify-between items-center text-sm">
+                            <div className="flex items-center gap-3 w-2/5">
+                                <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center font-bold text-white text-xs flex-shrink-0">
+                                    {d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : d.icon || d.name.charAt(0)}
+                                </div>
+                                <div className="flex-1 truncate">
+                                    <div className="font-semibold text-white truncate">{d.name}</div>
+                                    <div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 w-3/5">
+                                <div className="w-full bg-zinc-700 rounded-full h-1.5 flex-grow">
+                                    <div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: d.color }}></div>
+                                </div>
+                                <div className="text-white font-semibold text-xs w-12 text-right">{percentage.toFixed(1)}%</div>
+                            </div>
+                        </div>
+                    </div>); 
+            })}</div> 
+        </div> 
+    );
 };
 
 
