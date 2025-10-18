@@ -501,10 +501,6 @@ export default function PortfolioDashboard() {
       <style>{`
         body, .main-background {
           background-color: #000000;
-          background-image: 
-            radial-gradient(at 4% 14%, hsla(215,98%,61%,0.3) 0px, transparent 50%),
-            radial-gradient(at 94% 88%, hsla(125,98%,72%,0.2) 0px, transparent 50%),
-            radial-gradient(at 74% 23%, hsla(333,98%,65%,0.2) 0px, transparent 50%);
         }
         .glass-card {
           background: rgba(28, 28, 32, 0.6);
@@ -1122,16 +1118,16 @@ const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
                                     <div className="text-xs text-gray-400">{formatQty(r.shares)}</div>
                                 </td>
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
-                                    <div className="font-medium text-white text-xs">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className="text-[11px] text-gray-400">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div>
+                                    <div className="font-medium text-white text-[11px]">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-[10px] text-gray-400">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div>
                                 </td>
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
-                                    <div className="font-medium text-white text-xs">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className="text-[11px] text-gray-400">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="font-medium text-white text-[11px]">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-[10px] text-gray-400">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div>
                                 </td>
                                 <td className="px-4 py-3 text-right align-top tabular-nums">
-                                    <div className={`font-medium ${pnlColor} text-xs`}>{pnlPrefix}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)}</div>
-                                    <div className={`text-[11px] ${pnlColor}`}>{pnlPrefix}{r.pnlPct.toFixed(2)}%</div>
+                                    <div className={`font-medium ${pnlColor} text-[11px]`}>{pnlPrefix}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className={`text-[10px] ${pnlColor}`}>{pnlPrefix}{r.pnlPct.toFixed(2)}%</div>
                                 </td>
                             </tr>
                         )
@@ -1141,5 +1137,4 @@ const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
         </div>
     );
 }
-
 
