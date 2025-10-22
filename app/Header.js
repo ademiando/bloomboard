@@ -33,13 +33,14 @@ export default function Header() {
 
   return (
     <>
-      {/* Tombol Profile (Bulat, Putih, Lebih Kecil) */}
+      {/* Tombol Profile (Final: Kecil, Rapi, Interaktif) */}
       <button
         onClick={toggleMenu}
-        className={`fixed top-3 left-3 z-[60] w-9 h-9 p-2 flex justify-center items-center 
+        className={`fixed top-3 left-3 z-[60] w-8 h-8 p-1.5 flex justify-center items-center 
                    bg-white text-black rounded-full shadow-lg
-                   transition-all duration-300 ease-in-out
-                   ${isOpen ? "bg-white/80" : ""}`} 
+                   transition-all duration-200 ease-in-out
+                   hover:scale-110 active:scale-95
+                   ${isOpen ? "bg-white/80 scale-95" : ""}`} // Sedikit mengecil saat menu aktif
         aria-label="Toggle menu"
       >
         <ProfileIcon className="w-full h-full" />
