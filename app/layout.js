@@ -1,10 +1,10 @@
 import "./globals.css";
 import Image from "next/image";
 import Link from "next/link";
-import Header from "./Header"; // <-- Header hamburger Anda
+import Header from "./Header";
 
 export const metadata = {
-  title: "Bloomboard",
+  title: "Omnifolio", // <-- DIUBAH
   description: "Portfolio tracker & trading lab",
 };
 
@@ -17,13 +17,12 @@ export default function RootLayout({ children }) {
         <main>{children}</main>
 
         {/* Footer */}
-        {/* DIUBAH: bg-[#07102a] menjadi bg-black */}
         <footer className="bg-black border-t border-gray-800 mt-16">
           <div className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm text-gray-400">
             <div>
-              <Image src="/logo.svg" alt="Bloomboard" width={120} height={30} />
+              <Image src="/logo.svg" alt="Omnifolio" width={120} height={30} /> {/* <-- DIUBAH */}
               <p className="mt-3 text-xs leading-relaxed">
-                Bloomboard is your all-in-one portfolio tracker.
+                Omnifolio is your all-in-one portfolio tracker. {/* <-- DIUBAH */}
                 Designed for investors who want clarity and control.
               </p>
             </div>
@@ -69,7 +68,7 @@ export default function RootLayout({ children }) {
             </div>
           </div>
           <div className="border-t border-gray-800 text-center py-4 text-xs text-gray-500">
-            © 2025 Bloomboard. All rights reserved.
+            © 2025 Omnifolio. All rights reserved. {/* <-- DIUBAH */}
           </div>
         </footer>
       </body>
