@@ -1,8 +1,24 @@
 "use client";
 
 import { useState } from "react";
-// Image dan komponen Ikon dihapus karena tidak lagi digunakan di header ini
 import Link from "next/link";
+
+// Ikon Profile SVG berdasarkan gambar yang Anda berikan
+const ProfileIcon = (props) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    {...props}
+  >
+    <path
+      fillRule="evenodd"
+      d="M18.685 19.027a.75.75 0 011.086.745c-.328 1.1-.96 2.03-1.843 2.768a16.828 16.828 0 01-5.467 1.152c-2.433 0-4.782-.445-6.892-1.272a.75.75 0 01.385-1.46c2.015.797 4.382 1.205 6.818 1.205 1.765 0 3.492-.262 5.093-.76a15.352 15.352 0 001.203-.432A.75.75 0 0118.685 19.027zM12 11.25a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5zM12 9.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5zM12 12.75c3.55 0 6.786 1.114 9.172 2.903.684.512 1.054 1.34 1.054 2.247v1.5a.75.75 0 01-.75.75H1.5a.75.75 0 01-.75-.75v-1.5c0-.907.37-1.735 1.054-2.247C5.214 13.864 8.45 12.75 12 12.75z"
+      clipRule="evenodd"
+    />
+  </svg>
+);
+
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
@@ -17,29 +33,15 @@ export default function Header() {
 
   return (
     <>
-      {/* Tombol Hamburger (Lebih kecil dan lebih ke atas/kiri) */}
+      {/* Tombol Profile (berfungsi sebagai tombol menu) */}
       <button
         onClick={toggleMenu}
-        className="fixed top-3 left-3 z-[60] w-10 h-10 p-2.5 space-y-1 flex flex-col justify-center items-center 
+        className={`fixed top-3 left-3 z-[60] w-10 h-10 p-2.5 flex justify-center items-center 
                    bg-black/30 backdrop-blur-sm border border-white/20 rounded-lg text-white
-                   transition-all duration-300"
+                   transition-all duration-300 ${isOpen ? "opacity-60" : ""}`} {/* opacity berkurang saat terbuka */}
         aria-label="Toggle menu"
       >
-        <span
-          className={`block w-full h-0.5 bg-white transition-all duration-300 ease-in-out ${
-            isOpen ? "transform rotate-45 translate-y-[6px]" : "" // Disesuaikan
-          }`}
-        ></span>
-        <span
-          className={`block w-full h-0.5 bg-white transition-all duration-300 ease-in-out ${
-            isOpen ? "opacity-0" : ""
-          }`}
-        ></span>
-        <span
-          className={`block w-full h-0.5 bg-white transition-all duration-300 ease-in-out ${
-            isOpen ? "transform -rotate-45 -translate-y-[6px]" : "" // Disesuaikan
-          }`}
-        ></span>
+        <ProfileIcon className="w-full h-full" /> {/* Menggunakan ikon Profile */}
       </button>
 
       {/* Panel Menu (Overlay + Glassmorphism + Font Besar) */}
@@ -52,8 +54,6 @@ export default function Header() {
           {/* Konten Atas & Tengah (Hanya Nav) */}
           <div className="flex-grow flex flex-col items-center justify-center text-center">
             
-            {/* Logo (DIHAPUS SESUAI PERMINTAAN) */}
-
             {/* Navbar (Font Besar & Bold) */}
             <nav className="flex flex-col items-center gap-8 text-4xl font-bold text-white">
               <Link
@@ -88,8 +88,6 @@ export default function Header() {
               </a>
             </nav>
           </div>
-
-          {/* Ikon Sosial (DIHAPUS SESUAI PERMINTAAN) */}
         </div>
       </div>
     </>
