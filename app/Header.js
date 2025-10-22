@@ -3,12 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 
-// Ikon Profile SVG
+// Ikon Profile SVG dengan warna abu-abu spesifik
 const ProfileIcon = (props) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 24 24"
-    fill="currentColor"
+    fill="#8E8E93" // <-- Warna abu-abu spesifik dari gambar Anda
     {...props}
   >
     <path
@@ -33,14 +33,14 @@ export default function Header() {
 
   return (
     <>
-      {/* Tombol Profile (Final: Kecil, Rapi, Interaktif) */}
+      {/* Tombol Profile (Sangat Kecil, Bulat, Warna Abu, Transparan) */}
       <button
         onClick={toggleMenu}
-        className={`fixed top-3 left-3 z-[60] w-8 h-8 p-1.5 flex justify-center items-center 
-                   bg-white text-black rounded-full shadow-lg
+        className={`fixed top-3 left-3 z-[60] w-7 h-7 p-1 flex justify-center items-center 
+                   bg-black/30 backdrop-blur-sm border border-white/10 rounded-full
                    transition-all duration-200 ease-in-out
                    hover:scale-110 active:scale-95
-                   ${isOpen ? "bg-white/80 scale-95" : ""}`} // Sedikit mengecil saat menu aktif
+                   ${isOpen ? "scale-90 opacity-0" : ""}`} // Tombol menghilang saat menu terbuka, seperti di gambar
         aria-label="Toggle menu"
       >
         <ProfileIcon className="w-full h-full" />
