@@ -38,10 +38,10 @@ export default function Header() {
         onClick={toggleMenu}
         className={`fixed top-3 left-3 z-[60] w-10 h-10 p-2.5 flex justify-center items-center 
                    bg-black/30 backdrop-blur-sm border border-white/20 rounded-lg text-white
-                   transition-all duration-300 ${isOpen ? "opacity-60" : ""}`} {/* opacity berkurang saat terbuka */}
+                   transition-all duration-300 ${isOpen ? "opacity-60" : ""}`} 
         aria-label="Toggle menu"
       >
-        <ProfileIcon className="w-full h-full" /> {/* Menggunakan ikon Profile */}
+        <ProfileIcon className="w-full h-full" />
       </button>
 
       {/* Panel Menu (Overlay + Glassmorphism + Font Besar) */}
