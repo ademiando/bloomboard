@@ -8,7 +8,7 @@ const ProfileIcon = (props) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 24 24"
-    fill="#8E8E93" // <-- Warna abu-abu spesifik dari gambar Anda
+    fill="#8E8E93" // Warna abu-abu
     {...props}
   >
     <path
@@ -19,12 +19,30 @@ const ProfileIcon = (props) => (
   </svg>
 );
 
+// Ikon Close (X)
+const CloseIcon = (props) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    {...props}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M6 18L18 6M6 6l12 12"
+    />
+  </svg>
+);
+
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
 
   const toggleMenu = () => setIsOpen(!isOpen);
-  const closeMenu = () => setIsOpen(false);
+  const closeMenu = () => setIsOpen(false); // Fungsi khusus untuk menutup
 
   // Mencegah scroll di body saat menu terbuka
   if (typeof window !== "undefined") {
@@ -33,14 +51,14 @@ export default function Header() {
 
   return (
     <>
-      {/* Tombol Profile (Sangat Kecil, Bulat, Warna Abu, Transparan) */}
+      {/* Tombol Profile (Diperbesar sedikit, tanpa border) */}
       <button
         onClick={toggleMenu}
-        className={`fixed top-3 left-3 z-[60] w-7 h-7 p-1 flex justify-center items-center 
-                   bg-black/30 backdrop-blur-sm border border-white/10 rounded-full
+        className={`fixed top-3 left-3 z-[60] w-8 h-8 p-1.5 flex justify-center items-center 
+                   bg-black/30 backdrop-blur-sm rounded-full
                    transition-all duration-200 ease-in-out
                    hover:scale-110 active:scale-95
-                   ${isOpen ? "scale-90 opacity-0" : ""}`} // Tombol menghilang saat menu terbuka, seperti di gambar
+                   ${isOpen ? "scale-90 opacity-0" : "opacity-100"}`}
         aria-label="Toggle menu"
       >
         <ProfileIcon className="w-full h-full" />
@@ -53,6 +71,16 @@ export default function Header() {
                     transition-all duration-500 ease-in-out
                     ${isOpen ? "opacity-100 visible translate-x-0" : "opacity-0 invisible -translate-x-full"}`}
       >
+        {/* Tombol Close 'X' di dalam menu */}
+        <button
+          onClick={closeMenu} // Menggunakan fungsi closeMenu
+          className="fixed top-3 right-3 z-[60] w-8 h-8 p-1.5 flex justify-center items-center 
+                     text-gray-400 hover:text-white transition-colors duration-200"
+          aria-label="Close menu"
+        >
+          <CloseIcon className="w-full h-full" />
+        </button>
+
         <div className="max-w-6xl w-full h-full flex flex-col items-center">
           {/* Konten Atas & Tengah (Hanya Nav) */}
           <div className="flex-grow flex flex-col items-center justify-center text-center">
