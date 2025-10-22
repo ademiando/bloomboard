@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 
-// Ikon Profile SVG berdasarkan gambar yang Anda berikan
+// Ikon Profile SVG
 const ProfileIcon = (props) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -33,22 +33,24 @@ export default function Header() {
 
   return (
     <>
-      {/* Tombol Profile (berfungsi sebagai tombol menu) */}
+      {/* Tombol Profile (Bulat, Putih, Lebih Kecil) */}
       <button
         onClick={toggleMenu}
-        className={`fixed top-3 left-3 z-[60] w-10 h-10 p-2.5 flex justify-center items-center 
-                   bg-black/30 backdrop-blur-sm border border-white/20 rounded-lg text-white
-                   transition-all duration-300 ${isOpen ? "opacity-60" : ""}`} 
+        className={`fixed top-3 left-3 z-[60] w-9 h-9 p-2 flex justify-center items-center 
+                   bg-white text-black rounded-full shadow-lg
+                   transition-all duration-300 ease-in-out
+                   ${isOpen ? "bg-white/80" : ""}`} 
         aria-label="Toggle menu"
       >
         <ProfileIcon className="w-full h-full" />
       </button>
 
-      {/* Panel Menu (Overlay + Glassmorphism + Font Besar) */}
+      {/* Panel Menu (Animasi Slide-in + Glassmorphism) */}
       <div
         className={`fixed inset-0 z-50 p-8 flex flex-col items-center 
-                    bg-black/80 backdrop-blur-lg transition-opacity duration-300
-                    ${isOpen ? "opacity-100 visible" : "opacity-0 invisible"}`}
+                    bg-black/80 backdrop-blur-lg 
+                    transition-all duration-500 ease-in-out
+                    ${isOpen ? "opacity-100 visible translate-x-0" : "opacity-0 invisible -translate-x-full"}`}
       >
         <div className="max-w-6xl w-full h-full flex flex-col items-center">
           {/* Konten Atas & Tengah (Hanya Nav) */}
