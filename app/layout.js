@@ -1,8 +1,7 @@
-
 import "./globals.css";
 import Image from "next/image";
 import Link from "next/link";
-import Header from "./Header"; // <-- 1. IMPORT KOMPONEN BARU
+import Header from "./Header"; // <-- Header hamburger Anda
 
 export const metadata = {
   title: "Bloomboard",
@@ -13,15 +12,13 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        {/* 2. PANGGIL KOMPONEN HEADER BARU */}
         <Header />
-
-        {/* 3. BLOK HEADER LAMA SUDAH DIHAPUS */}
 
         <main>{children}</main>
 
-        {/* Footer (Tidak diubah sesuai permintaan) */}
-        <footer className="bg-[#07102a] border-t border-gray-800 mt-16">
+        {/* Footer */}
+        {/* DIUBAH: bg-[#07102a] menjadi bg-black */}
+        <footer className="bg-black border-t border-gray-800 mt-16">
           <div className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm text-gray-400">
             <div>
               <Image src="/logo.svg" alt="Bloomboard" width={120} height={30} />
