@@ -1,13 +1,9 @@
+// Ganti seluruh isi file Anda dengan kode ini
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// Metadata untuk halaman ini (dari tag <title>)
-export const metadata = {
-  title: "Dasbor Portofolio",
-};
-
-// Komponen untuk memasukkan CSS kustom Anda secara global
+// Komponen untuk memasukkan CSS kustom Anda
 const GlobalStyles = () => (
   <style jsx global>{`
     body, .main-background {
@@ -37,13 +33,13 @@ const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 
 const BackArrowIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
 const TrashIcon = ({className}) => (<svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>);
 const ArrowUpIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/></svg>;
-const ArrowDownIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
+const ArrowDownIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z"/></svg>;
 const InfoIcon = ({className}) => <svg className={className} width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>;
 const FullscreenIcon = ({className}) => (<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>);
 const ExitFullscreenIcon = ({ className }) => (<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 0-2-2h-3M3 16h3a2 2 0 0 0 2 2v3"/></svg>);
 const PencilIcon = (props) => (<svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>);
 
-// --- Colorful Sector Icons ---
+// --- Colorful Sector Icons (dari file HTML) ---
 const ColorfulEquityIcon = () => (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M4 18h16" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round"/>
@@ -88,6 +84,7 @@ const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const YAHOO_FINANCE_SEARCH_URL = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
 const PROXIED_YAHOO_SEARCH = (q) => PROXY_URL(YAHOO_FINANCE_SEARCH_URL(q));
 
+// Menggunakan API Yahoo Finance dari file HTML
 const YAHOO_QUOTE_URL = (symbols) => `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(','))}`;
 const PROXIED_YAHOO_QUOTE = (symbols) => PROXY_URL(YAHOO_QUOTE_URL(symbols));
 
@@ -187,7 +184,6 @@ const BottomSheet = ({ isOpen, onClose, children }) => {
 };
 
 /* ===================== Main Component ===================== */
-// Ini adalah komponen utama Anda, diekspor sebagai default
 export default function PortfolioDashboard() {
   const STORAGE_VERSION = "v26"; 
   const [assets, setAssets] = useState(() => isBrowser ? JSON.parse(localStorage.getItem(`pf_assets_${STORAGE_VERSION}`) || "[]").map(ensureNumericAsset) : []);
@@ -277,6 +273,7 @@ export default function PortfolioDashboard() {
       const newFlashes = {};
       const newHistory = {...priceHistory};
 
+      // Menggunakan Logika Fetching dari file HTML (Yahoo Finance)
       if (stockSymbols.length > 0) {
         try {
           const res = await fetch(PROXIED_YAHOO_QUOTE(stockSymbols));
@@ -331,6 +328,7 @@ export default function PortfolioDashboard() {
         setAssets(prev => prev.map(a => {
             if (newPrices[a.symbol]) {
                 const newPriceData = newPrices[a.symbol];
+                // Logika harga dari file HTML
                 const priceInUSD = (a.symbol.endsWith('.JK') && a.type === 'stock') ? newPriceData.price / usdIdr : newPriceData.price;
                 
                 const prevAsset = prevAssetsRef.current?.[a.id];
@@ -382,6 +380,7 @@ export default function PortfolioDashboard() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const q = query.trim();
+        // Menggunakan API dari file HTML
         const url = searchMode === 'crypto' 
             ? PROXY_URL(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}`) 
             : PROXIED_YAHOO_SEARCH(q);
@@ -451,6 +450,7 @@ export default function PortfolioDashboard() {
     addTransaction({ id: `tx:${Date.now()}`, type: "withdraw", amount: amountIDR, date: Date.now() }); setBalanceModalOpen(false);
   };
   
+  // Menggunakan Logika Export dari file HTML
   const handleExport = () => {
     if (transactions.length === 0) { alert("No transactions to export."); return; }
     const formatCsvCell = (cellData) => { 
@@ -478,6 +478,7 @@ export default function PortfolioDashboard() {
 
   const handleImportClick = () => { importInputRef.current.click(); };
 
+  // Menggunakan Logika Import dari file HTML
   const handleFileImport = (event) => {
     const file = event.target.files[0];
     if (!file) { return; }
@@ -608,9 +609,8 @@ export default function PortfolioDashboard() {
   };
 
   return (
-    // React.Fragment untuk membungkus GlobalStyles dan konten utama
-    <> 
-      <GlobalStyles />
+    <React.Fragment>
+      <GlobalStyles /> {/* Memanggil komponen style */}
       <div className="bg-black text-gray-300 min-h-screen font-sans main-background">
         <div className="max-w-4xl mx-auto">
           <header className="p-4 flex justify-between items-center sticky top-0 bg-black/50 backdrop-blur-sm z-10">
@@ -732,6 +732,7 @@ export default function PortfolioDashboard() {
                                       </div>
                                       <div className={`text-right p-1 rounded-md ${flashClass}`}>
                                           <p className="text-base font-semibold text-white tabular-nums">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</p>
+                                          {/* Menggunakan Logika change 24h dari file HTML */}
                                           <p className={`text-xs font-semibold tabular-nums ${changeColor}`}>
                                               {r.change24hUSD >= 0 ? '+' : ''}{formatCurrency((r.symbol.endsWith('.JK') ? r.change24hUSD * usdIdr : r.change24hUSD), false, displaySymbol, usdIdr)} ({r.change24hPct?.toFixed(2) ?? '0.00'}%)
                                           </p>
@@ -762,10 +763,12 @@ export default function PortfolioDashboard() {
             </div>
 
           </main>
+          {/* Menggunakan Modal Detail Aset dari file HTML (yang menyertakan TradeForm) */}
           <AssetDetailModal isOpen={isAssetDetailModalOpen} onClose={() => setAssetDetailModalOpen(false)} asset={selectedAssetForDetail} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
           <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)} size="lg"><AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol, handleSetWatchedAsset, watchedAssetIds}} /></Modal>
           <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)} size="lg"><BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} /></Modal>
           <Modal title="Portfolio Growth" isOpen={isEquityModalOpen} onClose={() => setIsEquityModalOpen(false)}><EquityGrowthView equitySeries={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} totalEquity={derivedData.totalEquity} /></Modal>
+          {/* Menggunakan Komponen Alokasi dari file HTML (dengan ikon berwarna) */}
           <Modal title="Portfolio Allocation" isOpen={isAllocationModalOpen} onClose={() => setIsAllocationModalOpen(false)}><PortfolioAllocation data={derivedData.rows} tradingBalance={financialSummaries.tradingBalance} displaySymbol={displaySymbol} usdIdr={usdIdr}/></Modal>
           <Modal title="Transaction History" isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)}><HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={handleDeleteTransaction} /></Modal>
           <Modal title="Trade Performance" isOpen={isPerformanceModalOpen} onClose={() => setIsPerformanceModalOpen(false)} size="2xl">
@@ -778,7 +781,7 @@ export default function PortfolioDashboard() {
                   sortBy={assetSortBy}
                   setSortBy={setAssetSortBy}
                   displayAs={assetDisplayAs}
-                  setDisplayAs={setDisplayAs}
+                  setDisplayAs={setAssetDisplayAs}
                   onClose={() => setIsAssetOptionsOpen(false)}
               />
           </Modal>
@@ -786,7 +789,7 @@ export default function PortfolioDashboard() {
           <input type="file" ref={importInputRef} onChange={handleFileImport} className="hidden" accept=".csv" />
         </div>
       </div>
-    </>
+    </React.Fragment>
   );
 }
 
@@ -898,6 +901,7 @@ const AreaChart = ({ data: chartData, simplified = false, displaySymbol, range, 
 };
 
 /* ===================== Sub-Components & Pages ===================== */
+// Menggunakan Logika EquityGrowthView dari file HTML
 const EquityGrowthView = ({ equitySeries, displaySymbol, usdIdr, totalEquity }) => {
     const [chartRange, setChartRange] = useState("All");
     const [returnPeriod, setReturnPeriod] = useState('Monthly');
@@ -931,7 +935,6 @@ const EquityGrowthView = ({ equitySeries, displaySymbol, usdIdr, totalEquity }) 
                 if (point.t <= timestamp) {
                     lastKnownEquity = point.v;
                 } else {
-                    // Since the series is sorted, we can break early.
                     break;
                 }
             }
@@ -945,7 +948,7 @@ const EquityGrowthView = ({ equitySeries, displaySymbol, usdIdr, totalEquity }) 
             const daysInMonth = new Date(year, month, 0).getDate();
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentDate = new Date(year, month - 1, day, 23, 59, 59, 999);
-                if (currentDate.getTime() > Date.now()) break; // Don't show future dates
+                if (currentDate.getTime() > Date.now()) break; 
                 if (currentDate.getTime() < equitySeries[0].t) continue;
                 
                 const startOfDay = new Date(currentDate);
@@ -1048,6 +1051,7 @@ const EquityGrowthView = ({ equitySeries, displaySymbol, usdIdr, totalEquity }) 
         </div>
     );
 };
+// Menggunakan Logika TradeStatsView dari file HTML
 const TradeStatsView = ({ stats, transactions, displaySymbol, usdIdr }) => {
     const [chartRange, setChartRange] = useState("All");
     const { maxProfitPct, maxLossPct } = useMemo(() => {
@@ -1199,6 +1203,7 @@ const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions,
     const handleInputChange = (field, value) => { if (field === 'shares') { setShares(value); const num = toNum(price) * toNum(value); setTotal(num > 0 ? `${num}` : ''); } else if (field === 'price') { setPrice(value); const num = toNum(value) * toNum(shares); setTotal(num > 0 ? `${num}` : ''); } else if (field === 'total') { setTotal(value); const nTotal = toNum(value), nShares = toNum(shares); if (nShares > 0) setPrice(String(nTotal / nShares)); } };
     return ( <div className="space-y-4"> <div className="flex border-b border-white/10">{[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (<button key={item.key} onClick={() => setSearchMode(item.key)} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>))}</div> {searchMode !== 'nonliquid' ? ( <div className="space-y-4"> <div className="relative"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by code or name..." className="w-full rounded bg-zinc-800 px-3 py-2 text-sm outline-none border border-zinc-700 text-white" />{suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full glass-card max-h-56 overflow-auto">{suggestions.map((s, i) => (<div key={i} className="w-full px-3 py-2 text-left hover:bg-white/10 flex items-center gap-3"><button className="flex-1 flex items-center gap-3 text-left" onClick={() => { setSelectedSuggestion(s); setQuery(s.display); setSuggestions([]); }}><img src={s.image} alt={s.symbol} className="w-6 h-6 rounded-full bg-zinc-700" onError={(e) => e.target.style.display='none'} /><div className="flex-1 overflow-hidden"><div className="font-medium text-gray-100 truncate">{s.display}</div><div className="text-xs text-gray-400">{s.exchange}</div></div></button>{s.type === 'crypto' && <button onClick={() => handleSetWatchedAsset(s.id)} className="text-yellow-500 hover:text-yellow-400"><StarIcon isFilled={watchedAssetIds.includes(s.id)} /></button>}</div>))}</div>}</div> <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div><label className="text-xs text-gray-400">Qty</label><input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div><div><label className="text-xs text-gray-400">Price ({displaySymbol})</label><input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div></div> <div><label className="text-xs text-gray-400">Total Value ({displaySymbol})</label><input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div> <div className="flex justify-end"><button onClick={() => addAssetWithInitial(shares, price)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div> </div> ) : ( <div className="space-y-4"> <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><input value={nlName} onChange={e => setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlQty} onChange={e => setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlPrice} onChange={e => setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><select value={nlPriceCcy} onChange={e => setNlPriceCcy(e.target.value)} className="rounded bg-zinc-800 px-2 py-2 text-sm border border-zinc-700 text-white"><option value="IDR">IDR</option><option value="USD">USD</option></select><input type="date" value={nlPurchaseDate} onChange={e => setNlPurchaseDate(e.target.value)} className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlYoy} onChange={e => setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /></div> <input value={nlDesc} onChange={e => setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /> <div className="flex justify-end"><button onClick={addNonLiquidAsset} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div> </div> )} </div> );
 };
+// Menggunakan AssetDetailModal dari file HTML
 const AssetDetailModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, displaySymbol }) => {
     if (!isOpen || !asset) return null;
     
@@ -1221,6 +1226,7 @@ const AssetDetailModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usd
         </Modal>
     );
 };
+// Menggunakan TradeForm dari file HTML
 const TradeForm = ({ asset, onBuy, onSell, onDelete, usdIdr, displaySymbol }) => {
     const [mode, setMode] = useState('buy'); const [shares, setShares] = useState(''); const [price, setPrice] = useState(''); const [total, setTotal] = useState('');
     useEffect(() => { if (asset) { const priceVal = displaySymbol === "Rp" ? asset.lastPriceUSD * usdIdr : asset.lastPriceUSD; setPrice(String(isFinite(priceVal) ? (displaySymbol === "$" ? priceVal.toFixed(8) : Math.round(priceVal)) : '')); setShares(''); setTotal(''); } }, [asset, usdIdr, displaySymbol, mode]);
@@ -1229,6 +1235,7 @@ const TradeForm = ({ asset, onBuy, onSell, onDelete, usdIdr, displaySymbol }) =>
     const doSubmit = () => { if (mode === 'buy') onBuy(asset, shares, priceUSD); else if (mode === 'sell') onSell(asset, shares, priceUSD); };
     return (<div className="space-y-3"> <div className="flex bg-zinc-800 rounded-full p-1"><button onClick={() => setMode('buy')} className={`w-1/2 py-1.5 text-xs font-semibold rounded-full ${mode === 'buy' ? 'bg-emerald-600 text-white' : 'text-gray-300'}`}>Buy</button><button onClick={() => setMode('sell')} disabled={asset.shares <= 0} className={`w-1/2 py-1.5 text-xs font-semibold rounded-full ${mode === 'sell' ? 'bg-red-600 text-white' : 'text-gray-300'} disabled:bg-zinc-700 disabled:text-gray-500`}>Sell</button></div> <div className="grid grid-cols-1 sm:grid-cols-3 gap-2"><div><label className="text-xs text-gray-400">Qty</label><input type="text" value={shares} onChange={e=>handleInputChange('shares', e.target.value)} className="w-full text-sm mt-1 bg-zinc-800 px-2 py-1.5 rounded border border-zinc-700 text-white" /></div> <div><label className="text-xs text-gray-400">Price ({displaySymbol})</label><input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full text-sm mt-1 bg-zinc-800 px-2 py-1.5 rounded border border-zinc-700 text-white" /></div> <div><label className="text-xs text-gray-400">Total ({displaySymbol})</label><input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full text-sm mt-1 bg-zinc-800 px-2 py-1.5 rounded border border-zinc-700 text-white" /></div></div> <div className="flex gap-2"><button onClick={doSubmit} className={`flex-1 py-2 rounded font-semibold text-white text-sm ${mode === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}</button>{asset.shares > 0 && <button onClick={() => onDelete(asset)} title="Delete (liquidate)" className="py-2 px-3 rounded bg-zinc-700 hover:bg-zinc-600 text-white flex items-center gap-2"><TrashIcon className="w-4 h-4 text-white" /></button>}</div> </div>);
 }
+// Menggunakan TradingViewWidget dari file HTML
 const TradingViewWidget = ({ asset }) => {
   const containerRef = useRef(null);
   const widgetContainerRef = useRef(null);
@@ -1253,6 +1260,7 @@ const TradingViewWidget = ({ asset }) => {
   };
 
   useEffect(() => {
+    // Memastikan skrip TradingView dimuat
     const scriptId = 'tradingview-widget-script';
     let script = document.getElementById(scriptId);
 
@@ -1271,6 +1279,7 @@ const TradingViewWidget = ({ asset }) => {
             new window.TradingView.widget({
                 autosize: true,
                 symbol: formatSymbolForTV(asset),
+                // Menggunakan interval dari file HTML
                 interval: asset.type === 'stock' ? 'D' : '240',
                 timezone: "Asia/Jakarta",
                 theme: "dark",
@@ -1292,9 +1301,17 @@ const TradingViewWidget = ({ asset }) => {
         script.async = true;
         script.onload = createWidget;
         document.head.appendChild(script);
-    } else {
+    } else if (typeof window.TradingView !== 'undefined') {
         createWidget();
+    } else {
+        // Jika skrip ada tapi TradingView belum siap, tunggu onload
+        script.addEventListener('load', createWidget);
     }
+
+    return () => {
+      // Hapus listener jika komponen di-unmount
+      script.removeEventListener('load', createWidget);
+    };
   }, [asset]);
 
   if (!asset) return null;
@@ -1309,6 +1326,7 @@ const TradingViewWidget = ({ asset }) => {
     </div>
   );
 };
+// Menggunakan PortfolioAllocation dari file HTML (ikon berwarna)
 const PortfolioAllocation = ({ data: fullAssetData, tradingBalance, displaySymbol, usdIdr }) => {
     const [activeTab, setActiveTab] = useState('Asset');
     const [hoveredSegment, setHoveredSegment] = useState(null);
@@ -1423,7 +1441,6 @@ const PortfolioAllocation = ({ data: fullAssetData, tradingBalance, displaySymbo
         </div> 
     );
 };
-
 const AssetOptionsPanel = ({ sortBy, setSortBy, displayAs, setDisplayAs, onClose }) => {
     return (
         <div className="space-y-6 text-gray-300">
@@ -1503,5 +1520,3 @@ const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
         </div>
     );
 }
-
-// Bagian ReactDOM.createRoot(...) dihapus karena Next.js menanganinya secara otomatis
