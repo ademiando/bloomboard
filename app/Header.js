@@ -35,29 +35,29 @@ export default function Header() {
 
   return (
     <>
-      {/* Tombol Hamburger (Garis Tiga dengan Animasi X) */}
+      {/* Tombol Hamburger (Lebih Kecil dan Rapat) */}
       <button
         onClick={toggleMenu}
-        className={`fixed top-3 left-3 z-[60] w-8 h-8 p-1.5 flex flex-col justify-center items-center gap-1.5 
+        className={`fixed top-3 left-3 z-[60] w-7 h-7 p-1.5 flex flex-col justify-center items-center gap-1 
                    bg-black/30 backdrop-blur-sm rounded-md
                    transition-all duration-300 ease-in-out
-                   hover:bg-black/50 ${isOpen ? "opacity-0" : "opacity-100"}`} // Sembunyikan tombol hamburger saat menu terbuka
+                   hover:bg-black/50`}
         aria-label="Toggle menu"
       >
         {/* Animasi Garis menjadi X */}
         <span
-          className={`block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out ${
-            isOpen ? "transform rotate-45 translate-y-[4px]" : ""
+          className={`block w-full h-[1.5px] bg-gray-300 transition-all duration-300 ease-in-out ${
+            isOpen ? "transform rotate-45 translate-y-[3px]" : "" // Disesuaikan
           }`}
         ></span>
         <span
-          className={`block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out ${
+          className={`block w-full h-[1.5px] bg-gray-300 transition-all duration-300 ease-in-out ${
             isOpen ? "opacity-0" : ""
           }`}
         ></span>
         <span
-          className={`block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out ${
-            isOpen ? "transform -rotate-45 -translate-y-[10px]" : ""
+          className={`block w-full h-[1.5px] bg-gray-300 transition-all duration-300 ease-in-out ${
+            isOpen ? "transform -rotate-45 -translate-y-[3px]" : "" // Disesuaikan
           }`}
         ></span>
       </button>
