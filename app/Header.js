@@ -3,22 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 
-// Ikon Profile SVG dengan warna abu-abu spesifik
-const ProfileIcon = (props) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 24 24"
-    fill="#8E8E93" // Warna abu-abu
-    {...props}
-  >
-    <path
-      fillRule="evenodd"
-      d="M18.685 19.027a.75.75 0 011.086.745c-.328 1.1-.96 2.03-1.843 2.768a16.828 16.828 0 01-5.467 1.152c-2.433 0-4.782-.445-6.892-1.272a.75.75 0 01.385-1.46c2.015.797 4.382 1.205 6.818 1.205 1.765 0 3.492-.262 5.093-.76a15.352 15.352 0 001.203-.432A.75.75 0 0118.685 19.027zM12 11.25a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5zM12 9.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5zM12 12.75c3.55 0 6.786 1.114 9.172 2.903.684.512 1.054 1.34 1.054 2.247v1.5a.75.75 0 01-.75.75H1.5a.75.75 0 01-.75-.75v-1.5c0-.907.37-1.735 1.054-2.247C5.214 13.864 8.45 12.75 12 12.75z"
-      clipRule="evenodd"
-    />
-  </svg>
-);
-
 // Ikon Close (X)
 const CloseIcon = (props) => (
   <svg
@@ -51,37 +35,55 @@ export default function Header() {
 
   return (
     <>
-      {/* Tombol Profile (Diperbesar sedikit, tanpa border) */}
+      {/* Tombol Hamburger (Garis Tiga dengan Animasi X) */}
       <button
         onClick={toggleMenu}
-        className={`fixed top-3 left-3 z-[60] w-8 h-8 p-1.5 flex justify-center items-center 
-                   bg-black/30 backdrop-blur-sm rounded-full
-                   transition-all duration-200 ease-in-out
-                   hover:scale-110 active:scale-95
-                   ${isOpen ? "scale-90 opacity-0" : "opacity-100"}`}
+        className={`fixed top-3 left-3 z-[60] w-8 h-8 p-1.5 flex flex-col justify-center items-center gap-1.5 
+                   bg-black/30 backdrop-blur-sm rounded-md
+                   transition-all duration-300 ease-in-out
+                   hover:bg-black/50 ${isOpen ? "opacity-0" : "opacity-100"}`} // Sembunyikan tombol hamburger saat menu terbuka
         aria-label="Toggle menu"
       >
-        <ProfileIcon className="w-full h-full" />
+        <span
+          className="block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out"
+        ></span>
+        <span
+          className="block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out"
+        ></span>
+        <span
+          className="block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out"
+        ></span>
       </button>
 
-      {/* Panel Menu (Animasi Slide-in + Glassmorphism) */}
+      {/* --- Panel Menu (Lebar 75% dari Kanan) --- */}
+      
+      {/* 1. Latar Belakang Overlay (Klik untuk menutup) */}
       <div
-        className={`fixed inset-0 z-50 p-8 flex flex-col items-center 
-                    bg-black/80 backdrop-blur-lg 
-                    transition-all duration-500 ease-in-out
-                    ${isOpen ? "opacity-100 visible translate-x-0" : "opacity-0 invisible -translate-x-full"}`}
+        onClick={closeMenu}
+        className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-sm
+                    transition-opacity duration-500 ease-in-out
+                    ${isOpen ? "opacity-100 visible" : "opacity-0 invisible"}`}
+      ></div>
+
+      {/* 2. Konten Menu (Slide-in 75%) */}
+      <div
+        className={`fixed top-0 right-0 z-50 h-full w-[75%] max-w-sm 
+                    p-8 flex flex-col items-center 
+                    bg-black/80 backdrop-blur-lg shadow-2xl
+                    transition-transform duration-500 ease-in-out
+                    ${isOpen ? "translate-x-0" : "translate-x-full"}`} // Slide dari kanan
       >
         {/* Tombol Close 'X' di dalam menu */}
         <button
-          onClick={closeMenu} // Menggunakan fungsi closeMenu
-          className="fixed top-3 right-3 z-[60] w-8 h-8 p-1.5 flex justify-center items-center 
+          onClick={closeMenu}
+          className="absolute top-3 right-3 z-[60] w-8 h-8 p-1.5 flex justify-center items-center 
                      text-gray-400 hover:text-white transition-colors duration-200"
           aria-label="Close menu"
         >
           <CloseIcon className="w-full h-full" />
         </button>
 
-        <div className="max-w-6xl w-full h-full flex flex-col items-center">
+        <div className="w-full h-full flex flex-col items-center">
           {/* Konten Atas & Tengah (Hanya Nav) */}
           <div className="flex-grow flex flex-col items-center justify-center text-center">
             
