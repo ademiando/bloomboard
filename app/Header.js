@@ -44,18 +44,25 @@ export default function Header() {
                    hover:bg-black/50 ${isOpen ? "opacity-0" : "opacity-100"}`} // Sembunyikan tombol hamburger saat menu terbuka
         aria-label="Toggle menu"
       >
+        {/* Animasi Garis menjadi X */}
         <span
-          className="block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out"
+          className={`block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out ${
+            isOpen ? "transform rotate-45 translate-y-[4px]" : ""
+          }`}
         ></span>
         <span
-          className="block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out"
+          className={`block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out ${
+            isOpen ? "opacity-0" : ""
+          }`}
         ></span>
         <span
-          className="block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out"
+          className={`block w-full h-0.5 bg-gray-300 transition-all duration-300 ease-in-out ${
+            isOpen ? "transform -rotate-45 -translate-y-[10px]" : ""
+          }`}
         ></span>
       </button>
 
-      {/* --- Panel Menu (Lebar 75% dari Kanan) --- */}
+      {/* --- Panel Menu (Lebar 75% dari Kiri) --- */}
       
       {/* 1. Latar Belakang Overlay (Klik untuk menutup) */}
       <div
@@ -67,11 +74,11 @@ export default function Header() {
 
       {/* 2. Konten Menu (Slide-in 75%) */}
       <div
-        className={`fixed top-0 right-0 z-50 h-full w-[75%] max-w-sm 
+        className={`fixed top-0 left-0 z-50 h-full w-[75%] max-w-sm 
                     p-8 flex flex-col items-center 
                     bg-black/80 backdrop-blur-lg shadow-2xl
                     transition-transform duration-500 ease-in-out
-                    ${isOpen ? "translate-x-0" : "translate-x-full"}`} // Slide dari kanan
+                    ${isOpen ? "translate-x-0" : "-translate-x-full"}`} // Slide dari kiri
       >
         {/* Tombol Close 'X' di dalam menu */}
         <button
