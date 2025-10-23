@@ -3,30 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 
-// Ikon Close (X)
-const CloseIcon = (props) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    fill="none"
-    viewBox="0 0 24 24"
-    strokeWidth={1.5}
-    stroke="currentColor"
-    {...props}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M6 18L18 6M6 6l12 12"
-    />
-  </svg>
-);
-
+// Komponen Ikon Close (X) sudah dihapus karena tidak lagi digunakan
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
 
+  // Sekarang toggleMenu menangani buka dan tutup
   const toggleMenu = () => setIsOpen(!isOpen);
-  const closeMenu = () => setIsOpen(false); // Fungsi khusus untuk menutup
+  
+  // Fungsi closeMenu yang spesifik masih berguna untuk item link
+  const closeMenu = () => setIsOpen(false); 
 
   // Mencegah scroll di body saat menu terbuka
   if (typeof window !== "undefined") {
@@ -37,7 +23,7 @@ export default function Header() {
     <>
       {/* Tombol Hamburger (Lebih Kecil dan Rapat) */}
       <button
-        onClick={toggleMenu}
+        onClick={toggleMenu} // Menggunakan toggleMenu untuk buka/tutup
         className={`fixed top-3 left-3 z-[60] w-7 h-7 p-1.5 flex flex-col justify-center items-center gap-1 
                    bg-black/30 backdrop-blur-sm rounded-md
                    transition-all duration-300 ease-in-out
@@ -47,7 +33,7 @@ export default function Header() {
         {/* Animasi Garis menjadi X */}
         <span
           className={`block w-full h-[1.5px] bg-gray-300 transition-all duration-300 ease-in-out ${
-            isOpen ? "transform rotate-45 translate-y-[3px]" : "" // Disesuaikan
+            isOpen ? "transform rotate-45 translate-y-[3px]" : "" 
           }`}
         ></span>
         <span
@@ -57,7 +43,7 @@ export default function Header() {
         ></span>
         <span
           className={`block w-full h-[1.5px] bg-gray-300 transition-all duration-300 ease-in-out ${
-            isOpen ? "transform -rotate-45 -translate-y-[3px]" : "" // Disesuaikan
+            isOpen ? "transform -rotate-45 -translate-y-[3px]" : "" 
           }`}
         ></span>
       </button>
@@ -66,7 +52,7 @@ export default function Header() {
       
       {/* 1. Latar Belakang Overlay (Klik untuk menutup) */}
       <div
-        onClick={closeMenu}
+        onClick={closeMenu} // Tetap bisa klik overlay untuk menutup
         className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-sm
                     transition-opacity duration-500 ease-in-out
                     ${isOpen ? "opacity-100 visible" : "opacity-0 invisible"}`}
@@ -80,15 +66,7 @@ export default function Header() {
                     transition-transform duration-500 ease-in-out
                     ${isOpen ? "translate-x-0" : "-translate-x-full"}`} // Slide dari kiri
       >
-        {/* Tombol Close 'X' di dalam menu */}
-        <button
-          onClick={closeMenu}
-          className="absolute top-3 right-3 z-[60] w-8 h-8 p-1.5 flex justify-center items-center 
-                     text-gray-400 hover:text-white transition-colors duration-200"
-          aria-label="Close menu"
-        >
-          <CloseIcon className="w-full h-full" />
-        </button>
+        {/* Tombol Close 'X' (DIHAPUS) */}
 
         <div className="w-full h-full flex flex-col items-center">
           {/* Konten Atas & Tengah (Hanya Nav) */}
