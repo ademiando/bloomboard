@@ -26,7 +26,8 @@ const GlobalStyles = () => (
 
 
 /* ===================== Icons ===================== */
-// Ikon ini (UserAvatar) tidak lagi digunakan di header, namun tetap dipertahankan jika diperlukan di tempat lain.
+// Ikon ini (UserAvatar) sesuai dengan gambar .jpg yang Anda unggah
+// UserAvatar tidak lagi digunakan di header, namun tetap dipertahankan jika diperlukan di tempat lain.
 const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#374151"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" fill="#9CA3AF"></path></svg>);
 const MoreVerticalIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>);
 const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>);
@@ -78,15 +79,21 @@ const SearchIcon = (props) => (<svg {...props} width="20" height="20" viewBox="0
 const StarIcon = ({ isFilled, ...props }) => (<svg {...props} width="20" height="20" viewBox="0 0 24 24" fill={isFilled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>);
 
 /* ===================== Config & Helpers ===================== */
-// PERUBAHAN: Menggunakan definisi API dari file page (16).js
+const PROXY_URL = (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
-const YAHOO_FINANCE_SEARCH_URL = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
-const PROXIED_YAHOO_SEARCH = (q) => `https://api.allorigins.win/raw?url=${encodeURIComponent(YAHOO_FINANCE_SEARCH_URL(q))}`;
 
-const FINNHUB_TOKEN = "cns0a0pr01qj9b42289gcns0a0pr01qj9b4228a0";
-const FINNHUB_QUOTE = (symbol) => `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_TOKEN}`;
-const COINGECKO_MARKETS = (ids) => `${COINGECKO_API}/coins/markets?vs_currency=usd&ids=${encodeURIComponent(ids)}&price_change_percentage=24h`;
-// AKHIR PERUBAHAN
+// PERUBAHAN 3: Menambahkan cache-buster (timestamp) untuk memastikan data baru
+const YAHOO_FINANCE_SEARCH_URL = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&_cb=${new Date().getTime()}`; // Ditambahkan cache-buster
+const PROXIED_YAHOO_SEARCH = (q) => PROXY_URL(YAHOO_FINANCE_SEARCH_URL(q));
+
+// Menggunakan API Yahoo Finance dari file HTML
+// PERUBAHAN 3: Menambahkan cache-buster (timestamp) untuk memastikan data baru
+const YAHOO_QUOTE_URL = (symbols) => `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(','))}&_cb=${new Date().getTime()}`; // Ditambahkan cache-buster
+const PROXIED_YAHOO_QUOTE = (symbols) => PROXY_URL(YAHOO_QUOTE_URL(symbols));
+
+// PERUBAHAN 3: Menambahkan cache-buster (timestamp) untuk memastikan data baru
+const COINGECKO_MARKETS_URL = (ids) => `${COINGECKO_API}/coins/markets?vs_currency=usd&ids=${encodeURIComponent(ids)}&price_change_percentage=24h&_cb=${new Date().getTime()}`; // Ditambahkan cache-buster
+const COINGECKO_MARKETS = (ids) => PROXY_URL(COINGECKO_MARKETS_URL(ids));
 
 const isBrowser = typeof window !== "undefined";
 const toNum = (v) => { const n = Number(String(v).replace(/,/g, '').replace(/\s/g,'')); return isNaN(n) ? 0 : n; };
@@ -260,7 +267,6 @@ export default function PortfolioDashboard() {
 
 
   useEffect(() => {
-    // PERUBAHAN: Menggunakan logika pollPrices dari file page (16).js (Finnhub, Coingecko direct, 25s)
     const pollPrices = async () => {
       if (assets.length === 0 && watchedAssetIds.length === 0) return;
 
@@ -271,15 +277,25 @@ export default function PortfolioDashboard() {
       const newFlashes = {};
       const newHistory = {...priceHistory};
 
-      for (const symbol of stockSymbols) {
+      // Menggunakan Logika Fetching dari file HTML (Yahoo Finance)
+      if (stockSymbols.length > 0) {
         try {
-          const res = await fetch(FINNHUB_QUOTE(symbol));
+          const res = await fetch(PROXIED_YAHOO_QUOTE(stockSymbols));
           const data = await res.json();
-          if (data && data.c > 0) {
-            const priceInUSD = symbol.endsWith('.JK') ? data.c / usdIdr : data.c;
-            newPrices[symbol] = { price: priceInUSD, change: data.d ?? 0, pctChange: data.dp ?? 0 };
+          if (data.quoteResponse && data.quoteResponse.result) {
+            data.quoteResponse.result.forEach(item => {
+              if (item.regularMarketPrice) {
+                newPrices[item.symbol] = {
+                  price: item.regularMarketPrice,
+                  change: item.regularMarketChange,
+                  pctChange: item.regularMarketChangePercent
+                };
+              }
+            });
           }
-        } catch (e) { console.error(`Failed to fetch price for ${symbol}`, e); }
+        } catch (e) {
+          console.error("Failed to fetch stock prices from Yahoo Finance", e);
+        }
       }
       
       const allCryptoIds = [...new Set([...portfolioCryptoIds, ...watchedAssetIds])];
@@ -292,7 +308,7 @@ export default function PortfolioDashboard() {
             if (Array.isArray(data)) {
                 data.forEach(item => {
                     if (watchedAssetIds.includes(item.id)) {
-                        newWatchedData[item.id] = {
+                         newWatchedData[item.id] = {
                             id: item.id, price_usd: item.current_price,
                             change_24h: item.price_change_percentage_24h,
                             name: item.name, symbol: item.symbol.toUpperCase(), image: item.image,
@@ -307,7 +323,7 @@ export default function PortfolioDashboard() {
                 });
                 setWatchedAssetData(newWatchedData);
             } else {
-                 console.error("Unexpected data format from crypto API:", data);
+                console.error("Unexpected data format from crypto API:", data);
             }
         } catch (e) { console.error("Failed to fetch crypto prices", e); }
       }
@@ -316,19 +332,22 @@ export default function PortfolioDashboard() {
         setAssets(prev => prev.map(a => {
             if (newPrices[a.symbol]) {
                 const newPriceData = newPrices[a.symbol];
+                // Logika harga dari file HTML
+                const priceInUSD = (a.symbol.endsWith('.JK') && a.type === 'stock') ? newPriceData.price / usdIdr : newPriceData.price;
+                
                 const prevAsset = prevAssetsRef.current?.[a.id];
 
-                if (prevAsset && newPriceData.price !== prevAsset.lastPriceUSD) {
-                    newFlashes[a.id] = newPriceData.price > prevAsset.lastPriceUSD ? 'up' : 'down';
+                if (prevAsset && priceInUSD !== prevAsset.lastPriceUSD) {
+                    newFlashes[a.id] = priceInUSD > prevAsset.lastPriceUSD ? 'up' : 'down';
                 }
 
                 const history = (newHistory[a.id] || []).slice(-29);
-                history.push(newPriceData.price);
+                history.push(priceInUSD);
                 newHistory[a.id] = history;
 
                 return { 
                     ...a, 
-                    lastPriceUSD: newPriceData.price,
+                    lastPriceUSD: priceInUSD,
                     change24hUSD: newPriceData.change,
                     change24hPct: newPriceData.pctChange
                 };
@@ -354,9 +373,9 @@ export default function PortfolioDashboard() {
     };
 
     pollPrices();
-    const id = setInterval(pollPrices, 25000); // Polling every 25 seconds
+    // PERUBAHAN 3: Interval sudah 1 menit (60000ms) sesuai permintaan.
+    const id = setInterval(pollPrices, 60000); // Polling every 1 minute
     return () => clearInterval(id);
-    // AKHIR PERUBAHAN
   }, [assets.length, usdIdr, watchedAssetIds]);
 
   const searchTimeoutRef = useRef(null);
@@ -366,9 +385,11 @@ export default function PortfolioDashboard() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const q = query.trim();
-        // PERUBAHAN: Menggunakan URL search dari file page (16).js (Coingecko direct)
-        const url = searchMode === 'crypto' ? `${COINGECKO_API}/search?query=${encodeURIComponent(q)}` : PROXIED_YAHOO_SEARCH(q);
-        // AKHIR PERUBAHAN
+        // Menggunakan API dari file HTML
+        // PERUBAHAN 3: Menambahkan cache-buster untuk pencarian crypto
+        const url = searchMode === 'crypto' 
+            ? PROXY_URL(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}&_cb=${new Date().getTime()}`) 
+            : PROXIED_YAHOO_SEARCH(q); // PROXIED_YAHOO_SEARCH sudah memiliki cache-buster
         const res = await fetch(url);
         if (!res.ok) throw new Error('Search API failed');
         const j = await res.json();
@@ -435,22 +456,35 @@ export default function PortfolioDashboard() {
     addTransaction({ id: `tx:${Date.now()}`, type: "withdraw", amount: amountIDR, date: Date.now() }); setBalanceModalOpen(false);
   };
   
-  // PERUBAHAN: Menggunakan logika Export dari file page (16).js (CSV flattened)
+  // Menggunakan Logika Export dari file HTML
   const handleExport = () => {
     if (transactions.length === 0) { alert("No transactions to export."); return; }
-    const formatCsvCell = (cellData) => { const stringData = String(cellData ?? ''); if (stringData.includes(',') || stringData.includes('"') || stringData.includes('\n')) { return `"${stringData.replace(/"/g, '""')}"`; } return stringData; };
-    const headers = ['id', 'date', 'type', 'symbol', 'name', 'qty', 'pricePerUnit', 'cost', 'proceeds', 'realized', 'amount', 'assetId', 'note', 'assetStub_id', 'assetStub_type', 'assetStub_symbol', 'assetStub_name', 'assetStub_image', 'assetStub_coingeckoId'];
+    const formatCsvCell = (cellData) => { 
+        const stringData = String(cellData ?? ''); 
+        if (stringData.includes(',') || stringData.includes('"') || stringData.includes('\n')) { 
+            return `"${stringData.replace(/"/g, '""')}"`; 
+        } 
+        return stringData; 
+    };
+    const headers = ['id', 'date', 'type', 'symbol', 'name', 'qty', 'pricePerUnit', 'cost', 'proceeds', 'realized', 'amount', 'assetId', 'note', 'assetStub'];
     const headerRow = headers.join(',') + '\n';
-    const rows = transactions.map(tx => { const rowData = headers.map(header => { if (header.startsWith('assetStub_')) { const key = header.replace('assetStub_', ''); return tx.assetStub ? tx.assetStub[key] : ''; } return tx[header]; }); return rowData.map(formatCsvCell).join(','); }).join('\n');
+    const rows = transactions.map(tx => { 
+        const rowData = headers.map(header => { 
+            if (header === 'assetStub') {
+                return tx.assetStub ? JSON.stringify(tx.assetStub) : '';
+            }
+            return tx[header]; 
+        }); 
+        return rowData.map(formatCsvCell).join(','); 
+    }).join('\n');
     const csvContent = headerRow + rows; const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a");
     if (link.download !== undefined) { const url = URL.createObjectURL(blob); link.setAttribute("href", url); link.setAttribute("download", `transactions_${new Date().toISOString().split('T')[0]}.csv`); link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link); }
     setManagePortfolioOpen(false);
   };
-  // AKHIR PERUBAHAN
 
   const handleImportClick = () => { importInputRef.current.click(); };
 
-  // PERUBAHAN: Menggunakan logika Import dari file page (16).js (CSV flattened)
+  // Menggunakan Logika Import dari file HTML
   const handleFileImport = (event) => {
     const file = event.target.files[0];
     if (!file) { return; }
@@ -464,9 +498,20 @@ export default function PortfolioDashboard() {
             const newTransactions = lines.filter(line => line.trim() !== '').map(line => {
                 const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(val => val.startsWith('"') && val.endsWith('"') ? val.slice(1, -1).replace(/""/g, '"') : val);
                 const tx = {};
-                headers.forEach((header, index) => { if (values[index] !== undefined) tx[header] = values[index]; });
-                if (tx.type === 'buy' && tx.assetStub_symbol) { tx.assetStub = { id: tx.assetStub_id, type: tx.assetStub_type, symbol: tx.assetStub_symbol, name: tx.assetStub_name, image: tx.assetStub_image, coingeckoId: tx.assetStub_coingeckoId, }; }
-                Object.keys(tx).forEach(key => { if (key.startsWith('assetStub_')) delete tx[key]; });
+                headers.forEach((header, index) => { 
+                     if (values[index] !== undefined) {
+                        if (header === 'assetStub' && values[index]) {
+                            try {
+                                tx[header] = JSON.parse(values[index]);
+                            } catch (e) {
+                                console.error("Failed to parse assetStub JSON:", values[index], e);
+                                tx[header] = null;
+                            }
+                        } else {
+                            tx[header] = values[index]; 
+                        }
+                     }
+                });
                 const numericFields = ['date', 'qty', 'pricePerUnit', 'cost', 'proceeds', 'realized', 'amount'];
                 numericFields.forEach(field => { if (tx[field]) tx[field] = toNum(tx[field]); });
                 return tx;
@@ -476,7 +521,6 @@ export default function PortfolioDashboard() {
     };
     reader.readAsText(file); setManagePortfolioOpen(false);
   };
-  // AKHIR PERUBAHAN
 
   const handleSetWatchedAsset = (cryptoId) => {
     setWatchedAssetIds(prev => {
@@ -575,8 +619,8 @@ export default function PortfolioDashboard() {
       <GlobalStyles /> {/* Memanggil komponen style */}
       <div className="bg-black text-gray-300 min-h-screen font-sans main-background">
         <div className="max-w-4xl mx-auto">
-          {/* PERUBAHAN: Header dipertahankan dari file sebelumnya (logo dihapus) */}
           <header className="p-4 flex justify-between items-center sticky top-0 bg-black/50 backdrop-blur-sm z-10">
+              {/* PERUBAHAN 1: Logo profil (UserAvatar) dihapus */}
               <div className="flex items-center gap-3">{/* Logo dihapus sesuai permintaan */}</div>
               <div className="flex items-center gap-3">
                   <button onClick={() => setAddAssetModalOpen(true)} className="text-gray-400 hover:text-white"><SearchIcon /></button>
@@ -584,7 +628,6 @@ export default function PortfolioDashboard() {
                   <button onClick={() => setManagePortfolioOpen(true)} className="text-gray-400 hover:text-white"><MoreVerticalIcon /></button>
               </div>
           </header>
-          {/* AKHIR PERUBAHAN */}
           <main>
             <section className="p-4">
               <div className="grid grid-cols-2 gap-3 sm:gap-4">
@@ -696,9 +739,9 @@ export default function PortfolioDashboard() {
                                       </div>
                                       <div className={`text-right p-1 rounded-md ${flashClass}`}>
                                           <p className="text-base font-semibold text-white tabular-nums">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</p>
-                                          {/* PERUBAHAN: Logika tampilan 24h disesuaikan agar cocok dengan data Finnhub/Coingecko (keduanya sudah USD) */}
+                                          {/* Menggunakan Logika change 24h dari file HTML */}
                                           <p className={`text-xs font-semibold tabular-nums ${changeColor}`}>
-                                              {r.change24hUSD >= 0 ? '+' : ''}{formatCurrency(r.change24hUSD, true, displaySymbol, usdIdr)} ({r.change24hPct?.toFixed(2) ?? '0.00'}%)
+                                              {r.change24hUSD >= 0 ? '+' : ''}{formatCurrency((r.symbol.endsWith('.JK') ? r.change24hUSD * usdIdr : r.change24hUSD), false, displaySymbol, usdIdr)} ({r.change24hPct?.toFixed(2) ?? '0.00'}%)
                                           </p>
                                       </div>
                                   </div>
@@ -727,20 +770,21 @@ export default function PortfolioDashboard() {
             </div>
 
           </main>
+          {/* Menggunakan Modal Detail Aset dari file HTML (yang menyertakan TradeForm) */}
           <AssetDetailModal isOpen={isAssetDetailModalOpen} onClose={() => setAssetDetailModalOpen(false)} asset={selectedAssetForDetail} onBuy={handleBuy} onSell={handleSell} onDelete={handleDeleteAsset} usdIdr={usdIdr} displaySymbol={displaySymbol} />
           <Modal title="Add New Asset" isOpen={isAddAssetModalOpen} onClose={() => setAddAssetModalOpen(false)} size="lg"><AddAssetForm {...{searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol, handleSetWatchedAsset, watchedAssetIds}} /></Modal>
           <Modal title={`${balanceModalMode} Balance`} isOpen={isBalanceModalOpen} onClose={() => setBalanceModalOpen(false)} size="lg"><BalanceManager onConfirm={balanceModalMode === 'Add' ? handleAddBalance : handleWithdraw} /></Modal>
           <Modal title="Portfolio Growth" isOpen={isEquityModalOpen} onClose={() => setIsEquityModalOpen(false)}><EquityGrowthView equitySeries={equitySeries} displaySymbol={displaySymbol} usdIdr={usdIdr} totalEquity={derivedData.totalEquity} /></Modal>
+          {/* Menggunakan Komponen Alokasi dari file HTML (dengan ikon berwarna) */}
           <Modal title="Portfolio Allocation" isOpen={isAllocationModalOpen} onClose={() => setIsAllocationModalOpen(false)}><PortfolioAllocation data={derivedData.rows} tradingBalance={financialSummaries.tradingBalance} displaySymbol={displaySymbol} usdIdr={usdIdr}/></Modal>
           <Modal title="Transaction History" isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)}><HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={handleDeleteTransaction} /></Modal>
           
-          {/* PERUBAHAN: Tinggi modal 70vh dipertahankan dari file sebelumnya */}
+          {/* PERUBAHAN 2: Mengubah max-h-[80vh] menjadi max-h-[70vh] */}
           <Modal title="Trade Performance" isOpen={isPerformanceModalOpen} onClose={() => setIsPerformanceModalOpen(false)} size="2xl">
               <div className="max-h-[70vh] overflow-y-auto">
                   <TradeStatsView stats={derivedData.tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} />
               </div>
           </Modal>
-          {/* AKHIR PERUBAHAN */}
 
           <Modal title="Asset Options" isOpen={isAssetOptionsOpen} onClose={() => setIsAssetOptionsOpen(false)} size="lg">
               <AssetOptionsPanel 
@@ -867,10 +911,7 @@ const AreaChart = ({ data: chartData, simplified = false, displaySymbol, range, 
 };
 
 /* ===================== Sub-Components & Pages ===================== */
-// PERUBAHAN: Komponen-komponen di bawah ini dipertahankan dari file (15).js (sebelumnya)
-// karena file (16).js memiliki implementasi yang berbeda/hilang
-// dan permintaan Anda hanya untuk mengubah *pemanggilan API*.
-
+// Menggunakan Logika EquityGrowthView dari file HTML
 const EquityGrowthView = ({ equitySeries, displaySymbol, usdIdr, totalEquity }) => {
     const [chartRange, setChartRange] = useState("All");
     const [returnPeriod, setReturnPeriod] = useState('Monthly');
@@ -1020,6 +1061,7 @@ const EquityGrowthView = ({ equitySeries, displaySymbol, usdIdr, totalEquity }) 
         </div>
     );
 };
+// Menggunakan Logika TradeStatsView dari file HTML
 const TradeStatsView = ({ stats, transactions, displaySymbol, usdIdr }) => {
     const [chartRange, setChartRange] = useState("All");
     const { maxProfitPct, maxLossPct } = useMemo(() => {
@@ -1155,6 +1197,339 @@ const HistoryView = ({ transactions, usdIdr, displaySymbol, onDeleteTransaction 
                     <td className="p-3 text-gray-400 text-xs">{new Date(tx.date).toLocaleString()}</td>
                     <td className="p-3 capitalize font-semibold">{tx.type}</td>
                     <td className="p-3 text-xs">{tx.type === 'buy' || tx.type === 'sell' || tx.type === 'delete' ? (<React.Fragment><div><strong>{tx.symbol}</strong></div><div>{formatQty(tx.qty)} @ {formatCurrency(tx.pricePerUnit, true, displaySymbol, usdIdr)}</div></React.Fragment>) : (<span>-</span>)}</td>
-                    <td className="p-3 text-right">{formatCurrency(tx.type === 'deposit' || tx.type === 'withdraw' ? tx.amount : (tx.cost ||
+                    <td className="p-3 text-right">{formatCurrency(tx.type === 'deposit' || tx.type === 'withdraw' ? tx.amount : (tx.cost || tx.proceeds || 0) * usdIdr, false, 'Rp', usdIdr)}</td>
+                    <td className="p-3 text-right"><button onClick={() => onDeleteTransaction(tx.id)} className="text-red-500 hover:text-red-400"><TrashIcon className="w-4 h-4" /></button></td>
+                </tr>
+                ))}
+                {transactions.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-gray-500">No history</td></tr>}
+            </tbody>
+        </table>
+    </div>
+);
+const BalanceManager = ({ onConfirm }) => { const [amount, setAmount] = useState(''); return ( <form onSubmit={(e) => { e.preventDefault(); onConfirm(amount); }} className="space-y-4"> <div><label className="block text-sm font-medium mb-1 text-gray-400">Amount (dalam Rupiah)</label><input type="number" step="any" value={amount} onChange={e => setAmount(e.target.value)} autoFocus className="w-full bg-zinc-800 px-3 py-2 rounded border border-zinc-700 text-white" placeholder="e.g. 1000000" /></div> <button type="submit" className="w-full py-2.5 rounded font-semibold bg-emerald-600 text-white hover:bg-emerald-500">Confirm</button> </form> ); };
+const ManagePortfolioSheet = ({ onAddBalance, onWithdraw, onClearAll, onExport, onImport }) => ( <div className="p-4 text-white text-sm"> <h3 className="text-base font-semibold mb-4 px-2">Manage Portfolio</h3> <div className="space-y-1"> <button onClick={onAddBalance} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Add Balance</button> <button onClick={onWithdraw} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Withdraw</button> <div className="border-t border-zinc-700 my-2"></div> <button onClick={onExport} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Export as CSV</button> <button onClick={onImport} className="w-full text-left p-2 rounded hover:bg-zinc-700/50 text-gray-300">Import from CSV</button> <div className="border-t border-zinc-700 my-2"></div> <button onClick={onClearAll} className="w-full text-left p-2 rounded hover:bg-red-700/20 text-red-400">Erase all data</button> </div> </div> );
+const AddAssetForm = ({ searchMode, setSearchMode, query, setQuery, suggestions, setSelectedSuggestion, addAssetWithInitial, addNonLiquidAsset, nlName, setNlName, nlQty, setNlQty, nlPrice, setNlPrice, nlPriceCcy, setNlPriceCcy, nlPurchaseDate, setNlPurchaseDate, nlYoy, setNlYoy, nlDesc, setNlDesc, displaySymbol, handleSetWatchedAsset, watchedAssetIds }) => {
+    const [shares, setShares] = useState(''); const [price, setPrice] = useState(''); const [total, setTotal] = useState('');
+    const handleInputChange = (field, value) => { if (field === 'shares') { setShares(value); const num = toNum(price) * toNum(value); setTotal(num > 0 ? `${num}` : ''); } else if (field === 'price') { setPrice(value); const num = toNum(value) * toNum(shares); setTotal(num > 0 ? `${num}` : ''); } else if (field === 'total') { setTotal(value); const nTotal = toNum(value), nShares = toNum(shares); if (nShares > 0) setPrice(String(nTotal / nShares)); } };
+    return ( <div className="space-y-4"> <div className="flex border-b border-white/10">{[{ key: 'stock', label: 'Stock' }, { key:'crypto', label:'Crypto' }, { key:'nonliquid', label:'Non-Liquid' }].map(item => (<button key={item.key} onClick={() => setSearchMode(item.key)} className={`px-3 py-2 text-sm font-medium ${searchMode === item.key ? 'text-white border-b-2 border-emerald-400' : 'text-gray-400'}`}>{item.label}</button>))}</div> {searchMode !== 'nonliquid' ? ( <div className="space-y-4"> <div className="relative"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by code or name..." className="w-full rounded bg-zinc-800 px-3 py-2 text-sm outline-none border border-zinc-700 text-white" />{suggestions.length > 0 && <div className="absolute z-50 mt-1 w-full glass-card max-h-56 overflow-auto">{suggestions.map((s, i) => (<div key={i} className="w-full px-3 py-2 text-left hover:bg-white/10 flex items-center gap-3"><button className="flex-1 flex items-center gap-3 text-left" onClick={() => { setSelectedSuggestion(s); setQuery(s.display); setSuggestions([]); }}><img src={s.image} alt={s.symbol} className="w-6 h-6 rounded-full bg-zinc-700" onError={(e) => e.target.style.display='none'} /><div className="flex-1 overflow-hidden"><div className="font-medium text-gray-100 truncate">{s.display}</div><div className="text-xs text-gray-400">{s.exchange}</div></div></button>{s.type === 'crypto' && <button onClick={() => handleSetWatchedAsset(s.id)} className="text-yellow-500 hover:text-yellow-400"><StarIcon isFilled={watchedAssetIds.includes(s.id)} /></button>}</div>))}</div>}</div> <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div><label className="text-xs text-gray-400">Qty</label><input value={shares} onChange={e => handleInputChange('shares', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div><div><label className="text-xs text-gray-400">Price ({displaySymbol})</label><input value={price} onChange={e => handleInputChange('price', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div></div> <div><label className="text-xs text-gray-400">Total Value ({displaySymbol})</label><input value={total} onChange={e => handleInputChange('total', e.target.value)} className="w-full mt-1 rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" type="text" /></div> <div className="flex justify-end"><button onClick={() => addAssetWithInitial(shares, price)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Position</button></div> </div> ) : ( <div className="space-y-4"> <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><input value={nlName} onChange={e => setNlName(e.target.value)} placeholder="Asset Name (e.g. Property)" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlQty} onChange={e => setNlQty(e.target.value)} placeholder="Quantity" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlPrice} onChange={e => setNlPrice(e.target.value)} placeholder="Purchase Price" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><select value={nlPriceCcy} onChange={e => setNlPriceCcy(e.target.value)} className="rounded bg-zinc-800 px-2 py-2 text-sm border border-zinc-700 text-white"><option value="IDR">IDR</option><option value="USD">USD</option></select><input type="date" value={nlPurchaseDate} onChange={e => setNlPurchaseDate(e.target.value)} className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /><input value={nlYoy} onChange={e => setNlYoy(e.target.value)} placeholder="Est. Yearly Gain (%)" type="number" className="rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /></div> <input value={nlDesc} onChange={e => setNlDesc(e.target.value)} placeholder="Description (optional)" className="w-full rounded bg-zinc-800 px-3 py-2 text-sm border border-zinc-700 text-white" /> <div className="flex justify-end"><button onClick={addNonLiquidAsset} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold">Add Asset</button></div> </div> )} </div> );
+};
+// Menggunakan AssetDetailModal dari file HTML
+const AssetDetailModal = ({ isOpen, onClose, asset, onBuy, onSell, onDelete, usdIdr, displaySymbol }) => {
+    if (!isOpen || !asset) return null;
+    
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`${asset.symbol} - ${asset.name}`} size="3xl">
+            <div className="space-y-4">
+                <TradingViewWidget asset={asset} />
+                {asset.shares > 0 && (
+                    <div className="border-t border-white/10 pt-4">
+                      <TradeForm asset={asset} onBuy={onBuy} onSell={onSell} onDelete={onDelete} usdIdr={usdIdr} displaySymbol={displaySymbol} />
+                    </div>
+                )}
+                 {asset.shares === 0 && (
+                    <div className="border-t border-white/10 pt-4">
+                       <p className="text-center text-gray-400 text-sm mb-4">You do not own this asset yet. Place a buy order to add it to your portfolio.</p>
+                       <TradeForm asset={asset} onBuy={onBuy} onSell={onSell} onDelete={onDelete} usdIdr={usdIdr} displaySymbol={displaySymbol} />
+                    </div>
+                )}
+            </div>
+        </Modal>
+    );
+};
+// Menggunakan TradeForm dari file HTML
+const TradeForm = ({ asset, onBuy, onSell, onDelete, usdIdr, displaySymbol }) => {
+    const [mode, setMode] = useState('buy'); const [shares, setShares] = useState(''); const [price, setPrice] = useState(''); const [total, setTotal] = useState('');
+    useEffect(() => { if (asset) { const priceVal = displaySymbol === "Rp" ? asset.lastPriceUSD * usdIdr : asset.lastPriceUSD; setPrice(String(isFinite(priceVal) ? (displaySymbol === "$" ? priceVal.toFixed(8) : Math.round(priceVal)) : '')); setShares(''); setTotal(''); } }, [asset, usdIdr, displaySymbol, mode]);
+    const handleInputChange = (field, value) => { if (field === 'shares') { setShares(value); const nPrice = toNum(price), nShares = toNum(value); setTotal(nPrice > 0 && nShares > 0 ? (nPrice * nShares).toString() : ''); } else if (field === 'price') { setPrice(value); const nPrice = toNum(value), nShares = toNum(shares); setTotal(nPrice > 0 && nShares > 0 ? (nPrice * nShares).toString() : ''); } else if (field === 'total') { setTotal(value); const nTotal = toNum(value), nShares = toNum(shares); if (nShares > 0 && nTotal > 0) setPrice(String((nTotal / nShares).toFixed(8))); } };
+    const priceUSD = (displaySymbol === 'Rp') ? toNum(price) / usdIdr : toNum(price);
+    const doSubmit = () => { if (mode === 'buy') onBuy(asset, shares, priceUSD); else if (mode === 'sell') onSell(asset, shares, priceUSD); };
+    return (<div className="space-y-3"> <div className="flex bg-zinc-800 rounded-full p-1"><button onClick={() => setMode('buy')} className={`w-1/2 py-1.5 text-xs font-semibold rounded-full ${mode === 'buy' ? 'bg-emerald-600 text-white' : 'text-gray-300'}`}>Buy</button><button onClick={() => setMode('sell')} disabled={asset.shares <= 0} className={`w-1/2 py-1.5 text-xs font-semibold rounded-full ${mode === 'sell' ? 'bg-red-600 text-white' : 'text-gray-300'} disabled:bg-zinc-700 disabled:text-gray-500`}>Sell</button></div> <div className="grid grid-cols-1 sm:grid-cols-3 gap-2"><div><label className="text-xs text-gray-400">Qty</label><input type="text" value={shares} onChange={e=>handleInputChange('shares', e.target.value)} className="w-full text-sm mt-1 bg-zinc-800 px-2 py-1.5 rounded border border-zinc-700 text-white" /></div> <div><label className="text-xs text-gray-400">Price ({displaySymbol})</label><input type="text" value={price} onChange={e=>handleInputChange('price', e.target.value)} className="w-full text-sm mt-1 bg-zinc-800 px-2 py-1.5 rounded border border-zinc-700 text-white" /></div> <div><label className="text-xs text-gray-400">Total ({displaySymbol})</label><input type="text" value={total} onChange={e=>handleInputChange('total', e.target.value)} className="w-full text-sm mt-1 bg-zinc-800 px-2 py-1.5 rounded border border-zinc-700 text-white" /></div></div> <div className="flex gap-2"><button onClick={doSubmit} className={`flex-1 py-2 rounded font-semibold text-white text-sm ${mode === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>Confirm {mode.charAt(0).toUpperCase() + mode.slice(1)}</button>{asset.shares > 0 && <button onClick={() => onDelete(asset)} title="Delete (liquidate)" className="py-2 px-3 rounded bg-zinc-700 hover:bg-zinc-600 text-white flex items-center gap-2"><TrashIcon className="w-4 h-4 text-white" /></button>}</div> </div>);
+}
+// Menggunakan TradingViewWidget dari file HTML
+const TradingViewWidget = ({ asset }) => {
+  const containerRef = useRef(null);
+  const widgetContainerRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      widgetContainerRef.current?.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  useEffect(() => {
+    // Memastikan skrip TradingView dimuat
+    const scriptId = 'tradingview-widget-script';
+    let script = document.getElementById(scriptId);
+
+    const formatSymbolForTV = (asset) => {
+      if (asset.type === 'crypto') { return `BINANCE:${asset.symbol.toUpperCase()}USDT`; }
+      if (asset.type === 'stock') {
+        if (asset.symbol.endsWith('.JK')) { return `IDX:${asset.symbol.replace('.JK', '')}`; }
+        return asset.symbol;
+      }
+      return asset.symbol;
+    };
+    
+    const createWidget = () => {
+        if (containerRef.current && typeof window.TradingView !== 'undefined' && asset) {
+            containerRef.current.innerHTML = '';
+            new window.TradingView.widget({
+                autosize: true,
+                symbol: formatSymbolForTV(asset),
+                // Menggunakan interval dari file HTML
+                interval: asset.type === 'stock' ? 'D' : '240',
+                timezone: "Asia/Jakarta",
+                theme: "dark",
+                style: "1",
+                locale: "en",
+                enable_publishing: false,
+                allow_symbol_change: false,
+                hide_side_toolbar: false,
+                container_id: containerRef.current.id,
+            });
+        }
+    };
+
+    if (!script) {
+        script = document.createElement("script");
+        script.id = scriptId;
+        script.src = "https://s3.tradingview.com/tv.js";
+        script.type = "text/javascript";
+        script.async = true;
+        script.onload = createWidget;
+        document.head.appendChild(script);
+    } else if (typeof window.TradingView !== 'undefined') {
+        createWidget();
+    } else {
+        // Jika skrip ada tapi TradingView belum siap, tunggu onload
+        script.addEventListener('load', createWidget);
+    }
+
+    return () => {
+      // Hapus listener jika komponen di-unmount
+      if (script) {
+        script.removeEventListener('load', createWidget);
+      }
+    };
+  }, [asset]);
+
+  if (!asset) return null;
+  const uniqueId = `tradingview-widget-container-${asset.id || asset.symbol}`;
+  
+  return (
+    <div ref={widgetContainerRef} className="tradingview-widget-container relative bg-zinc-900 rounded-lg overflow-hidden aspect-[16/9]">
+      <button onClick={handleToggleFullscreen} className="absolute top-2 right-2 z-10 p-1.5 bg-zinc-800/70 rounded-md hover:bg-zinc-700 transition-colors" aria-label="Toggle Fullscreen">
+          {isFullscreen ? <ExitFullscreenIcon className="text-gray-300" /> : <FullscreenIcon className="text-gray-300"/>}
+      </button>
+      <div id={uniqueId} ref={containerRef} className="w-full h-full"></div>
+    </div>
+  );
+};
+// Menggunakan PortfolioAllocation dari file HTML (ikon berwarna)
+const PortfolioAllocation = ({ data: fullAssetData, tradingBalance, displaySymbol, usdIdr }) => {
+    const [activeTab, setActiveTab] = useState('Asset');
+    const [hoveredSegment, setHoveredSegment] = useState(null);
+
+    const { equityData, sectorData } = useMemo(() => {
+        const tradingBalanceUSD = tradingBalance / usdIdr;
+        const colors = ["#22c55e", "#4ade80", "#86efac", "#a3e635", "#d9f99d", "#fde047", "#fbbf24", "#6b7280"];
+
+        // --- Sector Data Calculation ---
+        const secDataMap = {
+            'Cash': { value: tradingBalanceUSD, color: '#22c55e', icon: <ColorfulCashIcon /> },
+            'Equity': { value: 0, color: '#3b82f6', icon: <ColorfulEquityIcon /> }, 
+            'Crypto': { value: 0, color: '#f97316', icon: <ColorfulCryptoIcon /> }, 
+            'Non-Liquid': { value: 0, color: '#a16207', icon: <ColorfulNonLiquidIcon /> }
+        }; 
+        fullAssetData.forEach(asset => { 
+            if (asset.type === 'stock') secDataMap['Equity'].value += asset.marketValueUSD; 
+            else if (asset.type === 'crypto') secDataMap['Crypto'].value += asset.marketValueUSD; 
+            else if (asset.type === 'nonliquid') secDataMap['Non-Liquid'].value += asset.marketValueUSD; 
+        }); 
+        const finalSectorData = Object.entries(secDataMap).map(([name, data]) => ({ name, ...data })).filter(d => d.value > 0.01);
+
+        // --- Equity Data Calculation with Grouping ---
+        const allAssets = [
+            ...fullAssetData.map(d => ({ name: d.symbol, value: d.marketValueUSD, image: d.image, type: d.type })),
+            { name: 'Cash', value: tradingBalanceUSD, image: null, type: 'cash' }
+        ].filter(a => a.value > 0.01).sort((a, b) => b.value - a.value);
+
+        let finalEquityData;
+        if (allAssets.length > 8) {
+            const top7 = allAssets.slice(0, 7);
+            const others = allAssets.slice(7);
+            const othersValue = others.reduce((sum, item) => sum + item.value, 0);
+            finalEquityData = [ ...top7, { name: 'Lainnya', value: othersValue, type: 'other' } ];
+        } else {
+            finalEquityData = allAssets;
+        }
+
+        finalEquityData = finalEquityData.map((d, i) => {
+            let icon;
+            if (d.type === 'cash') {
+                icon = <ColorfulCashIcon />;
+            } else if (d.type === 'other') {
+                icon = <MoreVerticalIcon />;
+            } else if (d.type === 'stock') {
+                icon = <ColorfulEquityIcon />;
+            } else {
+                icon = d.image ? <img src={d.image} alt={d.name} className="w-full h-full rounded-full object-cover"/> : <ColorfulCryptoIcon />;
+            }
+            return { ...d, icon, color: colors[i % colors.length] };
+        });
+
+        return { equityData: finalEquityData, sectorData: finalSectorData };
+    }, [fullAssetData, tradingBalance, usdIdr]);
+
+    const data = activeTab === 'Asset' ? equityData : sectorData;
+    const totalValueUSD = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
+
+    if (!totalValueUSD) return <div className="mt-8 text-center text-gray-500">No assets to show in allocation.</div>;
+    const totalValueDisplay = totalValueUSD * (displaySymbol === "Rp" ? usdIdr : 1); 
+    const size = 200, strokeWidth = 20, innerRadius = (size / 2) - strokeWidth; 
+    let accumulatedAngle = 0;
+
+    return ( 
+        <div className="p-1 max-h-[70vh] overflow-y-auto">
+            <div className="flex gap-2 mb-4">
+                <button onClick={() => setActiveTab('Asset')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Asset' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Asset</button>
+                <button onClick={() => setActiveTab('Sector')} className={`px-4 py-1 text-sm rounded-full ${activeTab === 'Sector' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-gray-400'}`}>By Sector</button>
+            </div> 
+            <div className="relative flex justify-center items-center" style={{ width: size, height: size, margin: '0 auto 2rem auto' }}> 
+                <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90"> 
+                    {data.map((d, i) => { 
+                        const colorPalette = activeTab === 'Asset' ? ["#22c55e", "#4ade80", "#86efac", "#a3e635", "#d9f99d", "#fde047", "#fbbf24", "#6b7280"] : [];
+                        const color = d.color || colorPalette[i % colorPalette.length];
+                        const angle = totalValueUSD > 0 ? (d.value / totalValueUSD) * 360 : 0; 
+                        const segment = (<circle key={d.name} cx={size/2} cy={size/2} r={innerRadius} fill="transparent" stroke={color} strokeWidth={strokeWidth + (hoveredSegment === d.name ? 4 : 0)} strokeDasharray={`${(angle - 2) * Math.PI * innerRadius / 180} ${360 * Math.PI * innerRadius / 180}`} strokeDashoffset={-accumulatedAngle * Math.PI * innerRadius / 180} className="transition-all duration-300" onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}/>); 
+                        accumulatedAngle += angle; 
+                        return segment; 
+                    })} 
+                </svg> 
+                <div className="absolute flex flex-col items-center justify-center pointer-events-none">
+                    <div className="text-xl font-bold text-white">{formatCurrencyShort(totalValueDisplay, false, displaySymbol, 1)}</div>
+                    <div className="text-sm text-gray-400">{data.length} {activeTab === 'Asset' ? 'Items' : 'Sectors'}</div>
+                </div> 
+            </div> 
+            <div className="space-y-3">{data.map((d, i) => { 
+                const colorPalette = activeTab === 'Asset' ? ["#22c55e", "#4ade80", "#86efac", "#a3e635", "#d9f99d", "#fde047", "#fbbf24", "#6b7280"] : [];
+                const color = d.color || colorPalette[i % colorPalette.length];
+                const percentage = totalValueUSD > 0 ? (d.value / totalValueUSD) * 100 : 0; 
+                const valueDisplay = d.value * (displaySymbol === "Rp" ? usdIdr : 1); 
+                return (
+                    <div key={d.name} className={`p-2 rounded-lg transition-colors duration-300 ${hoveredSegment === d.name ? 'bg-black/20' : ''}`} onMouseOver={() => setHoveredSegment(d.name)} onMouseOut={() => setHoveredSegment(null)}>
+                        <div className="flex justify-between items-center text-sm">
+                            <div className="flex items-center gap-3 w-2/5">
+                                <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs flex-shrink-0">
+                                    {d.icon}
+                                </div>
+                                <div className="flex-1 truncate">
+                                    <div className="font-semibold text-white truncate">{d.name}</div>
+                                    <div className="text-xs text-gray-400">{formatCurrency(valueDisplay, false, displaySymbol, 1)}</div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 w-3/5">
+                                <div className="w-full bg-zinc-700 rounded-full h-1.5 flex-grow">
+                                    <div className="h-1.5 rounded-full" style={{ width: `${percentage}%`, backgroundColor: color }}></div>
+                                </div>
+                                <div className="text-white font-semibold text-xs w-12 text-right">{percentage.toFixed(1)}%</div>
+                            </div>
+                        </div>
+                    </div>); 
+            })}</div> 
+        </div> 
+    );
+};
+const AssetOptionsPanel = ({ sortBy, setSortBy, displayAs, setDisplayAs, onClose }) => {
+    return (
+        <div className="space-y-6 text-gray-300">
+            <div>
+                <h3 className="font-semibold text-white mb-3">Sort Assets By</h3>
+                <div className="space-y-2">
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="sort" value="default" checked={sortBy === 'default'} onChange={(e) => setSortBy(e.target.value)} className="accent-emerald-500" /> Default</label>
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="sort" value="allocation" checked={sortBy === 'allocation'} onChange={(e) => setSortBy(e.target.value)} className="accent-emerald-500" /> Allocation (High to Low)</label>
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="sort" value="purchaseDate" checked={sortBy === 'purchaseDate'} onChange={(e) => setSortBy(e.target.value)} className="accent-emerald-500" /> Purchase Date (Oldest First)</label>
+                </div>
+            </div>
+            <div>
+                <h3 className="font-semibold text-white mb-3">Display As</h3>
+                <div className="space-y-2">
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="display" value="card" checked={displayAs === 'card'} onChange={(e) => setDisplayAs(e.target.value)} className="accent-emerald-500" /> Cards</label>
+                    <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="display" value="table" checked={displayAs === 'table'} onChange={(e) => setDisplayAs(e.target.value)} className="accent-emerald-500" /> Table</label>
+                </div>
+            </div>
+            <div className="pt-4 border-t border-white/10 flex justify-end">
+                <button onClick={onClose} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded font-semibold text-sm">Done</button>
+            </div>
+        </div>
+    );
+};
+
+const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+                <thead className="text-xs text-gray-400 font-normal">
+                    <tr>
+                        <th scope="col" className="px-4 py-3">
+                            <div>Code</div>
+                            <div className="text-[10px] font-normal -mt-1">Qty</div>
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right">
+                            <div>Invested</div>
+                            <div className="text-[10px] font-normal -mt-1">Avg Price</div>
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right">
+                            <div>Market</div>
+                            <div className="text-[10px] font-normal -mt-1">Current Price</div>
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right">
+                            <div>Gain P&L</div>
+                            <div className="text-[10px] font-normal -mt-1">%</div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map(r => {
+                        const pnlColor = r.pnlUSD >= 0 ? 'text-emerald-400' : 'text-red-400';
+                        const pnlPrefix = r.pnlUSD > 0 ? '+' : '';
+                        return (
+                            <tr key={r.id} onClick={() => onRowClick(r)} className="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer">
+                                <td className="px-4 py-3 align-top">
+                                    <div className="font-medium text-white">{r.symbol}</div>
+                                    <div className="text-xs text-gray-400">{formatQty(r.shares)}</div>
+                                </td>
+                                <td className="px-4 py-3 text-right align-top tabular-nums">
+                                    <div className="font-medium text-white text-[11px]">{formatCurrency(r.investedUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-[10px] text-gray-400">{formatCurrency(r.avgPrice, true, displaySymbol, usdIdr)}</div>
+                                </td>
+                                <td className="px-4 py-3 text-right align-top tabular-nums">
+                                    <div className="font-medium text-white text-[11px]">{formatCurrency(r.marketValueUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className="text-[10px] text-gray-400">{formatCurrency(r.lastPriceUSD, true, displaySymbol, usdIdr)}</div>
+                                </td>
+                                <td className="px-4 py-3 text-right align-top tabular-nums">
+                                    <div className={`font-medium ${pnlColor} text-[11px]`}>{pnlPrefix}{formatCurrency(r.pnlUSD, true, displaySymbol, usdIdr)}</div>
+                                    <div className={`text-[10px] ${pnlColor}`}>{pnlPrefix}{r.pnlPct.toFixed(2)}%</div>
+                                </td>
+                            </tr>
+                        )
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
 
