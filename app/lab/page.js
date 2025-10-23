@@ -27,6 +27,7 @@ const GlobalStyles = () => (
 
 /* ===================== Icons ===================== */
 // Ikon ini (UserAvatar) sesuai dengan gambar .jpg yang Anda unggah
+// UserAvatar tidak lagi digunakan di header, namun tetap dipertahankan jika diperlukan di tempat lain.
 const UserAvatar = () => (<svg width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#374151"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm0-2c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" fill="#9CA3AF"></path></svg>);
 const MoreVerticalIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>);
 const ArrowRightIconSimple = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>);
@@ -81,14 +82,17 @@ const StarIcon = ({ isFilled, ...props }) => (<svg {...props} width="20" height=
 const PROXY_URL = (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
 const COINGECKO_API = "https://api.coingecko.com/api/v3";
 
-const YAHOO_FINANCE_SEARCH_URL = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`;
+// PERUBAHAN 3: Menambahkan cache-buster (timestamp) untuk memastikan data baru
+const YAHOO_FINANCE_SEARCH_URL = (q) => `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&_cb=${new Date().getTime()}`; // Ditambahkan cache-buster
 const PROXIED_YAHOO_SEARCH = (q) => PROXY_URL(YAHOO_FINANCE_SEARCH_URL(q));
 
 // Menggunakan API Yahoo Finance dari file HTML
-const YAHOO_QUOTE_URL = (symbols) => `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(','))}`;
+// PERUBAHAN 3: Menambahkan cache-buster (timestamp) untuk memastikan data baru
+const YAHOO_QUOTE_URL = (symbols) => `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(','))}&_cb=${new Date().getTime()}`; // Ditambahkan cache-buster
 const PROXIED_YAHOO_QUOTE = (symbols) => PROXY_URL(YAHOO_QUOTE_URL(symbols));
 
-const COINGECKO_MARKETS_URL = (ids) => `${COINGECKO_API}/coins/markets?vs_currency=usd&ids=${encodeURIComponent(ids)}&price_change_percentage=24h`;
+// PERUBAHAN 3: Menambahkan cache-buster (timestamp) untuk memastikan data baru
+const COINGECKO_MARKETS_URL = (ids) => `${COINGECKO_API}/coins/markets?vs_currency=usd&ids=${encodeURIComponent(ids)}&price_change_percentage=24h&_cb=${new Date().getTime()}`; // Ditambahkan cache-buster
 const COINGECKO_MARKETS = (ids) => PROXY_URL(COINGECKO_MARKETS_URL(ids));
 
 const isBrowser = typeof window !== "undefined";
@@ -369,6 +373,7 @@ export default function PortfolioDashboard() {
     };
 
     pollPrices();
+    // PERUBAHAN 3: Interval sudah 1 menit (60000ms) sesuai permintaan.
     const id = setInterval(pollPrices, 60000); // Polling every 1 minute
     return () => clearInterval(id);
   }, [assets.length, usdIdr, watchedAssetIds]);
@@ -381,9 +386,10 @@ export default function PortfolioDashboard() {
       try {
         const q = query.trim();
         // Menggunakan API dari file HTML
+        // PERUBAHAN 3: Menambahkan cache-buster untuk pencarian crypto
         const url = searchMode === 'crypto' 
-            ? PROXY_URL(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}`) 
-            : PROXIED_YAHOO_SEARCH(q);
+            ? PROXY_URL(`${COINGECKO_API}/search?query=${encodeURIComponent(q)}&_cb=${new Date().getTime()}`) 
+            : PROXIED_YAHOO_SEARCH(q); // PROXIED_YAHOO_SEARCH sudah memiliki cache-buster
         const res = await fetch(url);
         if (!res.ok) throw new Error('Search API failed');
         const j = await res.json();
@@ -614,7 +620,8 @@ export default function PortfolioDashboard() {
       <div className="bg-black text-gray-300 min-h-screen font-sans main-background">
         <div className="max-w-4xl mx-auto">
           <header className="p-4 flex justify-between items-center sticky top-0 bg-black/50 backdrop-blur-sm z-10">
-              <div className="flex items-center gap-3"><UserAvatar /></div>
+              {/* PERUBAHAN 1: Logo profil (UserAvatar) dihapus */}
+              <div className="flex items-center gap-3">{/* Logo dihapus sesuai permintaan */}</div>
               <div className="flex items-center gap-3">
                   <button onClick={() => setAddAssetModalOpen(true)} className="text-gray-400 hover:text-white"><SearchIcon /></button>
                   <div className="flex items-center gap-2"><span className="text-xs font-semibold text-gray-400">IDR</span><div role="switch" aria-checked={displaySymbol === "$"} onClick={() => setDisplaySymbol(prev => prev === "Rp" ? "$" : "Rp")} className={`relative w-12 h-6 rounded-full p-1 cursor-pointer transition ${displaySymbol === "$" ? 'bg-emerald-600' : 'bg-zinc-700'}`}><div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${displaySymbol === "$" ? 'translate-x-6' : 'translate-x-0'}`}></div></div><span className="text-xs font-semibold text-gray-400">USD</span></div>
@@ -771,11 +778,14 @@ export default function PortfolioDashboard() {
           {/* Menggunakan Komponen Alokasi dari file HTML (dengan ikon berwarna) */}
           <Modal title="Portfolio Allocation" isOpen={isAllocationModalOpen} onClose={() => setIsAllocationModalOpen(false)}><PortfolioAllocation data={derivedData.rows} tradingBalance={financialSummaries.tradingBalance} displaySymbol={displaySymbol} usdIdr={usdIdr}/></Modal>
           <Modal title="Transaction History" isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)}><HistoryView transactions={transactions} usdIdr={usdIdr} displaySymbol={displaySymbol} onDeleteTransaction={handleDeleteTransaction} /></Modal>
+          
+          {/* PERUBAHAN 2: Mengubah max-h-[80vh] menjadi max-h-[70vh] */}
           <Modal title="Trade Performance" isOpen={isPerformanceModalOpen} onClose={() => setIsPerformanceModalOpen(false)} size="2xl">
-              <div className="max-h-[80vh] overflow-y-auto">
+              <div className="max-h-[70vh] overflow-y-auto">
                   <TradeStatsView stats={derivedData.tradeStats} transactions={transactions} displaySymbol={displaySymbol} usdIdr={usdIdr} />
               </div>
           </Modal>
+
           <Modal title="Asset Options" isOpen={isAssetOptionsOpen} onClose={() => setIsAssetOptionsOpen(false)} size="lg">
               <AssetOptionsPanel 
                   sortBy={assetSortBy}
@@ -1310,7 +1320,9 @@ const TradingViewWidget = ({ asset }) => {
 
     return () => {
       // Hapus listener jika komponen di-unmount
-      script.removeEventListener('load', createWidget);
+      if (script) {
+        script.removeEventListener('load', createWidget);
+      }
     };
   }, [asset]);
 
@@ -1520,3 +1532,4 @@ const AssetTableView = ({ rows, displaySymbol, usdIdr, onRowClick }) => {
         </div>
     );
 }
+
